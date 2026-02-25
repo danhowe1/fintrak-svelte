@@ -6,4 +6,8 @@
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
-{@render children()}
+<main class="mx-auto min-h-screen max-w-6xl px-3 py-12">
+	<article class="prose prose-slate max-w-none">
+		{@render children()}
+	</article>
+</main>
