@@ -8,6 +8,9 @@
 <Card>
 	<h2>Fitness for your finances</h2>
 	<p>Want to take control of your families' future financial well-being and have fun doing it?</p>
+	<p>
+		<a class="text-slate-700" href="/dashboard">Go to dashboard (requires login)</a>
+	</p>
 </Card>
 
 <section class="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
