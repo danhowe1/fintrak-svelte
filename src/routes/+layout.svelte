@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { signIn } from '@auth/sveltekit/client';
+	import { AUTH_PROVIDER_ID, DEFAULT_AUTHENTICATED_REDIRECT } from '$lib/auth';
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -8,7 +9,6 @@
 
 	function getUserInitials() {
 		const source = data.session?.user?.name ?? data.session?.user?.email ?? '';
-		console.log(data.session?.user);
 		const parts = source
 			.split(/\s+/)
 			.map((part) => part.trim())
@@ -49,7 +49,9 @@
 						<Button type="submit">Log out</Button>
 					</form>
 				{:else}
-					<Button onclick={() => signIn('auth0', { redirectTo: '/dashboard' })}>Log in</Button>
+					<Button onclick={() => signIn(AUTH_PROVIDER_ID, { redirectTo: DEFAULT_AUTHENTICATED_REDIRECT })}>
+						Log in
+					</Button>
 				{/if}
 			</div>
 		</div>
