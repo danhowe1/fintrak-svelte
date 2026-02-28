@@ -47,12 +47,43 @@ Start the dev server:
 npm run dev
 ```
 
+## Database Smoke Test
+
+The repo includes a Supabase/Postgres smoke test in [tests/supabase.smoke.ts](/c:/Users/d-how/Github%20Projects/fintrak-svelte/tests/supabase.smoke.ts).
+
+Set one of these environment variables before running it:
+
+```env
+SUPABASE_DEV_DATABASE_URL=postgres://...
+```
+
+Supported names:
+
+- `SUPABASE_DEV_DATABASE_URL`
+- `SUPABASE_DB_URL`
+- `DATABASE_URL`
+
+Run the test with:
+
+```sh
+npm run test:db
+```
+
+For local development, prefer the Supabase session pooler connection string from the Supabase dashboard rather than the direct `db.<project-ref>.supabase.co` host. The direct host is commonly IPv6-only and can fail locally with `getaddrinfo ENOENT`.
+
+If your connection should not use SSL, you can also set:
+
+```env
+SUPABASE_DB_SSL=false
+```
+
 ## Scripts
 
 ```sh
 npm run dev
 npm run check
 npm run test
+npm run test:db
 npm run build
 ```
 
