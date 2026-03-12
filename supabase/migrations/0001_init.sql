@@ -59,7 +59,7 @@ $$;
 create table if not exists scenarios (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  description text,
+  details jsonb not null default '{}'::jsonb,
 
   created_by uuid not null references auth.users(id) on delete restrict,
 

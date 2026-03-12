@@ -1,2 +1,2 @@
 <h1>Dashboard</h1>
-<p>You are signed in.</p>
+<p>This is the single-scenario dashboard placeholder.</p>

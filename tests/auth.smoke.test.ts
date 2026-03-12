@@ -50,7 +50,7 @@ describe('auth smoke tests', () => {
 		expect(response.status).toBe(204);
 	});
 
-	it('defaults direct login to the dashboard when no callback URL is provided', async () => {
+	it('defaults direct login to the app resolver when no callback URL is provided', async () => {
 		const event = {
 			url: new URL('http://localhost/login'),
 			request: new Request('http://localhost/login')
@@ -58,7 +58,7 @@ describe('auth smoke tests', () => {
 
 		await loginGet(event as never);
 
-		expect(mocks.signInWithAuth0).toHaveBeenCalledWith(event, '/dashboard');
+		expect(mocks.signInWithAuth0).toHaveBeenCalledWith(event, '/app');
 	});
 
 	it('redirects logout GET requests to the provider logout URL', async () => {

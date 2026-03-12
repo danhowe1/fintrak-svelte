@@ -4,7 +4,16 @@ import { getAuthProviderId, createAuthProvider } from '$lib/server/auth-config';
 
 const auth = SvelteKitAuth({
 	providers: [createAuthProvider()],
-	trustHost: true
+	trustHost: true,
+	callbacks: {
+		session: async ({ session, token }) => {
+			if (token.sub && session.user) {
+				session.user.id = token.sub;
+			}
+
+			return session;
+		}
+	}
 });
 
 export const { handle, signIn, signOut } = auth;
