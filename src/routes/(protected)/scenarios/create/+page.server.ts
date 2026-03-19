@@ -15,6 +15,10 @@ const currencySchema = z
 	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a valid amount' })
 	.transform((value) => Number(value));
 
+const positiveCurrencySchema = currencySchema.refine((value) => value > 0, {
+	message: 'Must be greater than 0'
+});
+
 const createScenarioSchema = z.object({
 	scenarioName: z.string().trim().min(1, 'Scenario name is required'),
 	startDate: z.string().trim().refine((value) => !Number.isNaN(Date.parse(value)), {
@@ -31,6 +35,8 @@ const createScenarioSchema = z.object({
 		.trim()
 		.regex(/^\d+$/, { message: 'Retirement age must be a whole number' })
 		.transform((value) => Number(value)),
+	monthlyNetIncome: positiveCurrencySchema,
+	monthlyEssentialExpenses: positiveCurrencySchema,
 	accountName: z.string().trim().min(1, 'Account name is required'),
 	accountInterestRate: decimalOnePlaceSchema,
 	openingBalance: currencySchema
@@ -53,6 +59,8 @@ export const actions: Actions = {
 			personName: formData.get('personName'),
 			personDob: formData.get('personDob'),
 			retirementAge: formData.get('retirementAge'),
+			monthlyNetIncome: formData.get('monthlyNetIncome'),
+			monthlyEssentialExpenses: formData.get('monthlyEssentialExpenses'),
 			accountName: formData.get('accountName'),
 			accountInterestRate: formData.get('accountInterestRate'),
 			openingBalance: formData.get('openingBalance')
@@ -73,6 +81,8 @@ export const actions: Actions = {
 			personName,
 			personDob,
 			retirementAge,
+			monthlyNetIncome,
+			monthlyEssentialExpenses,
 			accountName,
 			accountInterestRate,
 			openingBalance
@@ -87,11 +97,13 @@ export const actions: Actions = {
 			personName,
 			personDob,
 			retirementAge,
+			monthlyNetIncome,
+			monthlyEssentialExpenses,
 			accountName,
 			accountInterestRate,
 			openingBalance
 		});
 
-		throw redirect(303, '/app');
+		throw redirect(303, '/dashboard');
 	}
 };

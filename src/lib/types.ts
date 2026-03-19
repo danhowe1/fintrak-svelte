@@ -26,3 +26,26 @@ export type PropertyDetails = {
 };
 
 export type Asset = PersonDetails | PropertyDetails;
+
+export type CashflowFrequency = 'monthly' | 'quarterly' | 'annually' | 'one_time';
+
+export type CashflowType = 'expense' | 'income' | 'transfer';
+
+export type CashflowCategory = 'living_expenses' | 'employment_income' | 'other';
+
+export type Cashflow = {
+	id: string;
+	scenarioId: string;
+	type: CashflowType;
+	category: CashflowCategory;
+	frequency: CashflowFrequency;
+	amount: number;
+	startDate: string;
+	endDate?: string | null;
+	sourceAccountId?: string | null;
+	destinationAccountId?: string | null;
+	description?: string | null;
+	createdBy?: string;
+	createdAt?: string;
+	updatedAt?: string;
+};

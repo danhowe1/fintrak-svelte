@@ -35,19 +35,26 @@
 				<span class="text-xl font-semibold tracking-tight text-slate-900">FinTrak</span>
 			</a>
 
-			<div class="flex items-center gap-3">
+			<div class="flex items-center gap-6">
 				{#if data.session}
-					<span
-						class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700"
-						aria-label="Signed in user"
-						title={data.session.user?.name ?? data.session.user?.email ?? 'Signed in user'}
-					>
-						{getUserInitials()}
-					</span>
-					<form method="POST" action="/logout">
-						<input type="hidden" name="redirectTo" value="/logout" />
-						<Button type="submit">Log out</Button>
-					</form>
+					<nav class="flex items-center gap-4 text-sm font-semibold text-slate-700">
+						<a class="hover:text-slate-900" href="/dashboard">Dashboard</a>
+						<a class="hover:text-slate-900" href="/scenarios">Scenarios</a>
+					</nav>
+
+					<div class="flex items-center gap-3">
+						<span
+							class="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-700"
+							aria-label="Signed in user"
+							title={data.session.user?.name ?? data.session.user?.email ?? 'Signed in user'}
+						>
+							{getUserInitials()}
+						</span>
+						<form method="POST" action="/logout">
+							<input type="hidden" name="redirectTo" value="/logout" />
+							<Button type="submit">Log out</Button>
+						</form>
+					</div>
 				{:else}
 					<Button onclick={() => signIn(AUTH_PROVIDER_ID, { redirectTo: DEFAULT_AUTHENTICATED_REDIRECT })}>
 						Log in

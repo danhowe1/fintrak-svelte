@@ -104,6 +104,30 @@
 					required
 				/>
 			</div>
+
+			<div class="grid gap-4 md:grid-cols-2">
+				<FormField
+					type="number"
+					label="Monthly net income"
+					name="monthlyNetIncome"
+					step="0.01"
+					placeholder="5000"
+					value={form?.values?.monthlyNetIncome ?? ''}
+					error={form?.errors?.monthlyNetIncome?.[0]}
+					required
+				/>
+
+				<FormField
+					type="number"
+					label="Monthly essential living expenses"
+					name="monthlyEssentialExpenses"
+					step="0.01"
+					placeholder="2500"
+					value={form?.values?.monthlyEssentialExpenses ?? ''}
+					error={form?.errors?.monthlyEssentialExpenses?.[0]}
+					required
+				/>
+			</div>
 		</FormSection>
 
 		<FormSection title="Default current account">
