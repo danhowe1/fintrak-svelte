@@ -25,6 +25,14 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(303, '/scenarios');
 	}
 
+	if (scenarioId && scenarioId !== event.cookies.get('currentScenarioId')) {
+		event.cookies.set('currentScenarioId', scenarioId, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+	}
+
 	const cashflows = await getCashflowsForScenario(scenario.id);
 
 	return {
