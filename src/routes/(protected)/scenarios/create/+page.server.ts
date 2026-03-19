@@ -21,15 +21,17 @@ const positiveCurrencySchema = currencySchema.refine((value) => value > 0, {
 
 const createScenarioSchema = z.object({
 	scenarioName: z.string().trim().min(1, 'Scenario name is required'),
-	startDate: z.string().trim().refine((value) => !Number.isNaN(Date.parse(value)), {
-		message: 'Start date is required'
-	}),
+	startDate: z
+		.string()
+		.trim()
+		.regex(/^(0[1-9]|1[0-2])\s?\d{4}$/, { message: 'Start month is required' }),
 	inflationRate: decimalOnePlaceSchema,
 	interestRateRise: decimalOnePlaceSchema,
 	personName: z.string().trim().min(1, 'Person name is required'),
-	personDob: z.string().trim().refine((value) => !Number.isNaN(Date.parse(value)), {
-		message: 'Date of birth is required'
-	}),
+	personDob: z
+		.string()
+		.trim()
+		.regex(/^(0[1-9]|1[0-2])\s?\d{4}$/, { message: 'Date of birth month is required' }),
 	retirementAge: z
 		.string()
 		.trim()
@@ -88,14 +90,21 @@ export const actions: Actions = {
 			openingBalance
 		} = parsed.data;
 
+		const normalizeMonth = (value: string) => {
+			const cleaned = value.replace(/\s+/g, '');
+			const month = cleaned.slice(0, 2);
+			const year = cleaned.slice(2);
+			return `${year}-${month}-01`;
+		};
+
 		await createScenarioWithPerson({
 			userId,
 			scenarioName,
-			startDate,
+			startDate: normalizeMonth(startDate),
 			inflationRate,
 			interestRateRise,
 			personName,
-			personDob,
+			personDob: normalizeMonth(personDob),
 			retirementAge,
 			monthlyNetIncome,
 			monthlyEssentialExpenses,

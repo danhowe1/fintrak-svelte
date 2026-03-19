@@ -7,12 +7,11 @@
 	export let form: ActionData;
 
 	const now = new Date();
-	const defaultStartDate = (() => {
+	const defaultStartMonth = (() => {
 		const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 		const year = firstOfMonth.getFullYear();
 		const month = String(firstOfMonth.getMonth() + 1).padStart(2, '0');
-		const day = String(firstOfMonth.getDate()).padStart(2, '0');
-		return `${year}-${month}-${day}`;
+		return `${month} ${year}`;
 	})();
 </script>
 
@@ -39,10 +38,13 @@
 			/>
 
 			<FormField
-				type="date"
-				label="Start date"
+				type="text"
+				label="Start month"
 				name="startDate"
-				value={form?.values?.startDate ?? defaultStartDate}
+				placeholder="MM YYYY"
+				inputmode="numeric"
+				pattern="^(0[1-9]|1[0-2])\\s?\\d{4}$"
+				value={form?.values?.startDate ?? defaultStartMonth}
 				error={form?.errors?.startDate?.[0]}
 				required
 			/>
@@ -84,9 +86,12 @@
 
 			<div class="grid gap-4 md:grid-cols-2">
 				<FormField
-					type="date"
-					label="Date of birth"
+					type="text"
+					label="Date of birth (MM YYYY)"
 					name="personDob"
+					placeholder="MM YYYY"
+					inputmode="numeric"
+					pattern="^(0[1-9]|1[0-2])\\s?\\d{4}$"
 					value={form?.values?.personDob ?? ''}
 					error={form?.errors?.personDob?.[0]}
 					required
