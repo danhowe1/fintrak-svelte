@@ -1,7 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { z } from 'zod';
-import { createScenarioWithPerson, getAuthenticatedUserId } from '$lib/server/database';
+import { createScenarioWithPerson } from '$lib/server/database';
 
 const decimalOnePlaceSchema = z
 	.string()
@@ -24,14 +24,14 @@ const createScenarioSchema = z.object({
 	startDate: z
 		.string()
 		.trim()
-		.regex(/^(0[1-9]|1[0-2])\s?\d{4}$/, { message: 'Start month is required' }),
+		.regex(/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/, { message: 'Start month is required' }),
 	inflationRate: decimalOnePlaceSchema,
 	interestRateRise: decimalOnePlaceSchema,
 	personName: z.string().trim().min(1, 'Person name is required'),
 	personDob: z
 		.string()
 		.trim()
-		.regex(/^(0[1-9]|1[0-2])\s?\d{4}$/, { message: 'Date of birth month is required' }),
+		.regex(/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/, { message: 'Date of birth month is required' }),
 	retirementAge: z
 		.string()
 		.trim()
@@ -46,8 +46,8 @@ const createScenarioSchema = z.object({
 
 export const actions: Actions = {
 	default: async (event) => {
-		const session = await event.locals.auth();
-		if (!session) {
+		const userId = event.locals.appUserId;
+		if (!userId) {
 			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
 			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
 		}
@@ -74,7 +74,6 @@ export const actions: Actions = {
 			return fail(400, { errors, values: payload });
 		}
 
-		const userId = getAuthenticatedUserId(session);
 		const {
 			scenarioName,
 			startDate,
@@ -91,13 +90,13 @@ export const actions: Actions = {
 		} = parsed.data;
 
 		const normalizeMonth = (value: string) => {
-			const cleaned = value.replace(/\s+/g, '');
+			const cleaned = value.replace(/\D/g, '');
 			const month = cleaned.slice(0, 2);
-			const year = cleaned.slice(2);
+			const year = cleaned.slice(2, 6);
 			return `${year}-${month}-01`;
 		};
 
-		await createScenarioWithPerson({
+		const scenarioId = await createScenarioWithPerson({
 			userId,
 			scenarioName,
 			startDate: normalizeMonth(startDate),
@@ -113,6 +112,13 @@ export const actions: Actions = {
 			openingBalance
 		});
 
+		event.cookies.set('currentScenarioId', scenarioId, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+
 		throw redirect(303, '/dashboard');
 	}
 };
+

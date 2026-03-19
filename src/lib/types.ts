@@ -20,8 +20,7 @@ export type PropertyDetails = {
 	type: 'property';
 	id: string;
 	name: string;
-	address: string;
-	value: number;
+	marketValue: number;
 	startDate: string;
 };
 

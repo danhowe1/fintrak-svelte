@@ -1,6 +1,7 @@
 import { redirect, type Handle } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { handle as authenticationHandle } from './auth';
+import { resolveAuthenticatedUserId } from '$lib/server/database';
 
 const PUBLIC_PATHS = new Set(['/', '/robots.txt', '/favicon.svg', '/login', '/logout']);
 const PUBLIC_PREFIXES = ['/auth', '/_app'];
@@ -26,6 +27,10 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 	if (!session) {
 		const callbackUrl = encodeURIComponent(`${path}${event.url.search}`);
 		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
+	}
+
+	if (!event.locals.appUserId) {
+		event.locals.appUserId = await resolveAuthenticatedUserId(session);
 	}
 
 	return resolve(event);

@@ -1,20 +1,17 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import {
-	getAuthenticatedUserId,
 	getCashflowsForScenario,
 	getScenarioForUserById,
 	getSingleScenarioForUser
 } from '$lib/server/database';
 
 export const load: PageServerLoad = async (event) => {
-	const session = await event.locals.auth();
-	if (!session) {
+	const userId = event.locals.appUserId;
+	if (!userId) {
 		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
 		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
 	}
-
-	const userId = getAuthenticatedUserId(session);
 	const scenarioId =
 		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
 	const scenario = scenarioId
@@ -25,8 +22,11 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(303, '/scenarios');
 	}
 
-	if (scenarioId && scenarioId !== event.cookies.get('currentScenarioId')) {
-		event.cookies.set('currentScenarioId', scenarioId, {
+	const currentScenarioId = event.cookies.get('currentScenarioId');
+	const scenarioToStore = scenarioId ?? scenario.id;
+
+	if (scenarioToStore && scenarioToStore !== currentScenarioId) {
+		event.cookies.set('currentScenarioId', scenarioToStore, {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax'
@@ -40,3 +40,4 @@ export const load: PageServerLoad = async (event) => {
 		cashflows
 	};
 };
+

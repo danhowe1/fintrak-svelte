@@ -26,7 +26,20 @@ export function createAuthProvider() {
 	return Auth0({
 		clientId: getRequiredEnv('AUTH_AUTH0_ID', 'AUTH0_ID'),
 		clientSecret: getRequiredEnv('AUTH_AUTH0_SECRET', 'AUTH0_SECRET'),
-		issuer: getRequiredEnv('AUTH_AUTH0_ISSUER', 'AUTH0_ISSUER')
+		issuer: getRequiredEnv('AUTH_AUTH0_ISSUER', 'AUTH0_ISSUER'),
+		authorization: {
+			params: {
+				scope: 'openid profile email'
+			}
+		},
+		profile(profile) {
+			return {
+				id: profile.sub,
+				name: profile.name,
+				email: profile.email,
+				image: profile.picture
+			};
+		}
 	});
 }
 

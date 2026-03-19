@@ -13,7 +13,9 @@ declare module '@auth/sveltekit' {
 declare global {
 	namespace App {
 		// interface Error {}
-		// interface Locals {}
+		interface Locals {
+			appUserId?: string;
+		}
 		interface PageData {
 			session?: Session | null;
 			scenarioCount?: number;

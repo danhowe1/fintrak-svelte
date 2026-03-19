@@ -43,7 +43,6 @@
 				name="startDate"
 				placeholder="MM YYYY"
 				inputmode="numeric"
-				pattern="^(0[1-9]|1[0-2])\\s?\\d{4}$"
 				value={form?.values?.startDate ?? defaultStartMonth}
 				error={form?.errors?.startDate?.[0]}
 				required
@@ -91,7 +90,6 @@
 					name="personDob"
 					placeholder="MM YYYY"
 					inputmode="numeric"
-					pattern="^(0[1-9]|1[0-2])\\s?\\d{4}$"
 					value={form?.values?.personDob ?? ''}
 					error={form?.errors?.personDob?.[0]}
 					required

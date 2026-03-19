@@ -14,6 +14,8 @@ const scenarioCountRowSchema = z.object({
 });
 
 const userIdSchema = z.string().min(1);
+const userEmailSchema = z.string().trim().min(1).optional();
+const userNameSchema = z.string().trim().min(1).optional();
 
 let pool: Pool | undefined;
 
@@ -38,17 +40,52 @@ function getPool() {
 	return pool;
 }
 
-export function getAuthenticatedUserId(session: { user?: { id?: string | null } } | null) {
-	return userIdSchema.parse(session?.user?.id);
+export function getAuthenticatedUser(session: {
+	user?: { id?: string | null; email?: string | null; name?: string | null };
+} | null) {
+	return {
+		id: userIdSchema.parse(session?.user?.id),
+		email: userEmailSchema.parse(session?.user?.email ?? undefined),
+		name: userNameSchema.parse(session?.user?.name ?? undefined)
+	};
+}
+
+export async function resolveAuthenticatedUserId(session: {
+	user?: { id?: string | null; email?: string | null; name?: string | null };
+} | null) {
+	const { id, email, name } = getAuthenticatedUser(session);
+	const provider = 'auth0';
+
+	const identity = await getIdentity(provider, id);
+	if (identity) {
+		await ensureAppUser(identity.app_user_id, { email, name });
+		return identity.app_user_id;
+	}
+
+	if (email) {
+		const existingByEmail = await getAppUserIdByEmail(email);
+		if (existingByEmail) {
+			await ensureAppUser(existingByEmail, { email, name });
+			await createIdentity(provider, id, existingByEmail);
+			return existingByEmail;
+		}
+	}
+
+	const newAppUserId = await createAppUser({ email, name });
+	await createIdentity(provider, id, newAppUserId);
+	return newAppUserId;
 }
 
 export async function countScenariosForUser(userId: string) {
-	await ensureAppUser(userId);
 	const result = await getPool().query<{ scenario_count: number | string }>(
 		`
-			select count(*)::int as scenario_count
-			from scenario_members
-			where user_id = $1::text
+			select count(distinct s.id)::int as scenario_count
+			from scenarios s
+			left join scenario_members sm
+				on sm.scenario_id = s.id
+			   and sm.user_id = $1::text
+			where sm.user_id is not null
+			   or s.created_by = $1::text
 		`,
 		[userId]
 	);
@@ -74,13 +111,15 @@ export type ScenarioListItem = {
 };
 
 export async function getSingleScenarioForUser(userId: string) {
-	await ensureAppUser(userId);
 	const result = await getPool().query<ScenarioSummary>(
 		`
 			select s.id, s.name
 			from scenarios s
-			inner join scenario_members sm on sm.scenario_id = s.id
-			where sm.user_id = $1::text
+			left join scenario_members sm
+				on sm.scenario_id = s.id
+			   and sm.user_id = $1::text
+			where sm.user_id is not null
+			   or s.created_by = $1::text
 			order by s.created_at desc
 			limit 1
 		`,
@@ -91,14 +130,15 @@ export async function getSingleScenarioForUser(userId: string) {
 }
 
 export async function getScenarioForUserById(userId: string, scenarioId: string) {
-	await ensureAppUser(userId);
 	const result = await getPool().query<ScenarioListItem>(
 		`
 			select s.id, s.name, s.details, s.created_at
 			from scenarios s
-			inner join scenario_members sm on sm.scenario_id = s.id
-			where sm.user_id = $1::text
-			  and s.id = $2::uuid
+			left join scenario_members sm
+				on sm.scenario_id = s.id
+			   and sm.user_id = $1::text
+			where s.id = $2::uuid
+			  and (sm.user_id is not null or s.created_by = $1::text)
 			limit 1
 		`,
 		[userId, scenarioId]
@@ -108,16 +148,110 @@ export async function getScenarioForUserById(userId: string, scenarioId: string)
 }
 
 export async function getScenariosForUser(userId: string) {
-	await ensureAppUser(userId);
 	const result = await getPool().query<ScenarioListItem>(
 		`
-			select s.id, s.name, s.details, s.created_at
+			select distinct s.id, s.name, s.details, s.created_at
 			from scenarios s
-			inner join scenario_members sm on sm.scenario_id = s.id
-			where sm.user_id = $1::text
+			left join scenario_members sm
+				on sm.scenario_id = s.id
+			   and sm.user_id = $1::text
+			where sm.user_id is not null
+			   or s.created_by = $1::text
 			order by s.created_at desc
 		`,
 		[userId]
+	);
+
+	return result.rows;
+}
+
+export type AssetListItem = {
+	id: string;
+	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation';
+	name: string;
+	details: Record<string, unknown>;
+	created_at: string;
+	relationships: {
+		accountName: string;
+		role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+	}[];
+};
+
+export async function getAssetsForScenario(scenarioId: string) {
+	const result = await getPool().query<AssetListItem>(
+		`
+			select
+				a.id,
+				a.asset_type,
+				a.name,
+				a.details,
+				a.created_at,
+				coalesce(
+					jsonb_agg(
+						distinct jsonb_build_object(
+							'accountName', acc.name,
+							'role', aa.relationship_role
+						)
+					) filter (where acc.id is not null),
+					'[]'::jsonb
+				) as relationships
+			from assets a
+			left join asset_accounts aa on aa.asset_id = a.id
+			left join accounts acc on acc.id = aa.account_id
+			where a.scenario_id = $1::uuid
+			group by a.id
+			order by a.created_at desc
+		`,
+		[scenarioId]
+	);
+
+	return result.rows;
+}
+
+export type AccountListItem = {
+	id: string;
+	account_type:
+		| 'current_account'
+		| 'mortgage_account'
+		| 'savings_account'
+		| 'credit_card'
+		| 'brokerage'
+		| 'super_account';
+	name: string;
+	details: Record<string, unknown>;
+	created_at: string;
+	relationships: {
+		assetName: string;
+		role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+	}[];
+};
+
+export async function getAccountsForScenario(scenarioId: string) {
+	const result = await getPool().query<AccountListItem>(
+		`
+			select
+				a.id,
+				a.account_type,
+				a.name,
+				a.details,
+				a.created_at,
+				coalesce(
+					jsonb_agg(
+						distinct jsonb_build_object(
+							'assetName', ass.name,
+							'role', aa.relationship_role
+						)
+					) filter (where ass.id is not null),
+					'[]'::jsonb
+				) as relationships
+			from accounts a
+			left join asset_accounts aa on aa.account_id = a.id
+			left join assets ass on ass.id = aa.asset_id
+			where a.scenario_id = $1::uuid
+			group by a.id
+			order by a.created_at desc
+		`,
+		[scenarioId]
 	);
 
 	return result.rows;
@@ -170,6 +304,102 @@ export async function getCashflowsForScenario(scenarioId: string) {
 	return result.rows;
 }
 
+export type CreateAssetInput = {
+	scenarioId: string;
+	assetType: AssetListItem['asset_type'];
+	name: string;
+	details: Record<string, unknown>;
+};
+
+export async function createAsset(input: CreateAssetInput, client?: Pool['prototype']) {
+	const db = client ?? getPool();
+	const result = await db.query<{ id: string }>(
+		`
+			insert into assets (scenario_id, asset_type, name, details)
+			values ($1::uuid, $2::asset_type, $3::text, $4::jsonb)
+			returning id
+		`,
+		[input.scenarioId, input.assetType, input.name, input.details]
+	);
+
+	const assetId = result.rows[0]?.id;
+	if (!assetId) {
+		throw new Error('Asset insert failed');
+	}
+
+	return assetId;
+}
+
+export type CreateAccountInput = {
+	scenarioId: string;
+	accountType: AccountListItem['account_type'];
+	name: string;
+	details: Record<string, unknown>;
+};
+
+export async function createAccount(input: CreateAccountInput, client?: Pool['prototype']) {
+	const db = client ?? getPool();
+	const result = await db.query<{ id: string }>(
+		`
+			insert into accounts (scenario_id, account_type, name, details)
+			values ($1::uuid, $2::account_type, $3::text, $4::jsonb)
+			returning id
+		`,
+		[input.scenarioId, input.accountType, input.name, input.details]
+	);
+
+	const accountId = result.rows[0]?.id;
+	if (!accountId) {
+		throw new Error('Account insert failed');
+	}
+
+	return accountId;
+}
+
+export async function getOrCreateAssetAccount(
+	client: Pool['prototype'],
+	input: {
+		scenarioId: string;
+		assetId: string;
+		accountId: string;
+		role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+	}
+) {
+	const existing = await client.query<{ id: string }>(
+		`
+			select id
+			from asset_accounts
+			where scenario_id = $1::uuid
+			  and asset_id = $2::uuid
+			  and account_id = $3::uuid
+			  and relationship_role = $4::asset_account_role
+			limit 1
+		`,
+		[input.scenarioId, input.assetId, input.accountId, input.role]
+	);
+
+	const existingId = existing.rows[0]?.id;
+	if (existingId) {
+		return existingId;
+	}
+
+	const inserted = await client.query<{ id: string }>(
+		`
+			insert into asset_accounts (scenario_id, asset_id, account_id, relationship_role)
+			values ($1::uuid, $2::uuid, $3::uuid, $4::asset_account_role)
+			returning id
+		`,
+		[input.scenarioId, input.assetId, input.accountId, input.role]
+	);
+
+	const assetAccountId = inserted.rows[0]?.id;
+	if (!assetAccountId) {
+		throw new Error('Asset account insert failed');
+	}
+
+	return assetAccountId;
+}
+
 export type CreateScenarioWithPersonInput = {
 	userId: string;
 	scenarioName: string;
@@ -191,7 +421,7 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 	try {
 		await client.query('begin');
 
-		await ensureAppUser(input.userId, client);
+		await ensureAppUser(input.userId, undefined, client);
 
 		const scenarioId = await insertScenario(client, input);
 
@@ -236,17 +466,83 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 	}
 }
 
-async function ensureAppUser(userId: string, client?: Pool['prototype']) {
+async function ensureAppUser(
+	userId: string,
+	input?: { email?: string; name?: string },
+	client?: Pool['prototype']
+) {
 	const db = client ?? getPool();
 	await db.query(
 		`
-			insert into app_users (id)
-			values ($1::text)
-			on conflict (id) do nothing
+			insert into app_users (id, email, name)
+			values ($1::text, $2::text, $3::text)
+			on conflict (id) do update
+			set email = coalesce(excluded.email, app_users.email),
+			    name = coalesce(excluded.name, app_users.name)
 		`,
-		[userId]
+		[userId, input?.email ?? null, input?.name ?? null]
 	);
 }
+
+async function getAppUserIdByEmail(email: string) {
+	const result = await getPool().query<{ id: string }>(
+		`
+			select id
+			from app_users
+			where email = $1::text
+			order by created_at asc
+			limit 1
+		`,
+		[email]
+	);
+
+	return result.rows[0]?.id ?? null;
+}
+
+async function createAppUser(input?: { email?: string; name?: string }) {
+	const result = await getPool().query<{ id: string }>(
+		`
+			insert into app_users (id, email, name)
+			values (gen_random_uuid()::text, $1::text, $2::text)
+			returning id
+		`,
+		[input?.email ?? null, input?.name ?? null]
+	);
+
+	const id = result.rows[0]?.id;
+	if (!id) {
+		throw new Error('App user insert failed');
+	}
+
+	return id;
+}
+
+async function getIdentity(provider: string, providerUserId: string) {
+	const result = await getPool().query<{ app_user_id: string }>(
+		`
+			select app_user_id
+			from app_user_identities
+			where provider = $1::text
+			  and provider_user_id = $2::text
+			limit 1
+		`,
+		[provider, providerUserId]
+	);
+
+	return result.rows[0] ?? null;
+}
+
+async function createIdentity(provider: string, providerUserId: string, appUserId: string) {
+	await getPool().query(
+		`
+			insert into app_user_identities (app_user_id, provider, provider_user_id)
+			values ($1::text, $2::text, $3::text)
+			on conflict (provider, provider_user_id) do nothing
+		`,
+		[appUserId, provider, providerUserId]
+	);
+}
+
 
 async function insertScenario(client: Pool['prototype'], input: CreateScenarioWithPersonInput) {
 	const scenarioResult = await client.query<{ id: string }>(
@@ -442,3 +738,114 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 		]
 	);
 }
+
+export type CreatePersonAssetWithCashflowsInput = {
+	scenarioId: string;
+	userId: string;
+	name: string;
+	dob: string;
+	retirementAge: number;
+	startDate: string;
+	employmentIncome: number;
+	essentialExpenses: number;
+	incomeAccount:
+		| { type: 'existing'; accountId: string }
+		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
+	expenseAccount:
+		| { type: 'existing'; accountId: string }
+		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
+};
+
+export async function createPersonAssetWithCashflows(
+	input: CreatePersonAssetWithCashflowsInput
+) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+
+		const assetId = await createAsset(
+			{
+				scenarioId: input.scenarioId,
+				assetType: 'person',
+				name: input.name,
+				details: {
+					dob: input.dob,
+					retirementAge: input.retirementAge,
+					startDate: input.startDate
+				}
+			},
+			client
+		);
+
+		const resolveAccount = async (
+			account:
+				| { type: 'existing'; accountId: string }
+				| { type: 'new'; name: string; interestRate: number; openingBalance: number }
+		) => {
+			if (account.type === 'existing') {
+				return account.accountId;
+			}
+
+			return await createAccount(
+				{
+					scenarioId: input.scenarioId,
+					accountType: 'current_account',
+					name: account.name,
+					details: {
+						interestRate: account.interestRate,
+						openingBalance: account.openingBalance
+					}
+				},
+				client
+			);
+		};
+
+		const incomeAccountId = await resolveAccount(input.incomeAccount);
+		const expenseAccountId = await resolveAccount(input.expenseAccount);
+
+		const incomeAssetAccountId = await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: incomeAccountId,
+			role: 'held_in'
+		});
+
+		const expenseAssetAccountId = await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: expenseAccountId,
+			role: 'held_in'
+		});
+
+		await insertCashflow(client, {
+			scenarioId: input.scenarioId,
+			type: 'income',
+			frequency: 'monthly',
+			category: 'employment_income',
+			amount: input.employmentIncome,
+			startDate: input.startDate,
+			destinationAssetAccountId: incomeAssetAccountId,
+			createdBy: input.userId
+		});
+
+		await insertCashflow(client, {
+			scenarioId: input.scenarioId,
+			type: 'expense',
+			frequency: 'monthly',
+			category: 'living_expenses',
+			amount: input.essentialExpenses,
+			startDate: input.startDate,
+			sourceAssetAccountId: expenseAssetAccountId,
+			createdBy: input.userId
+		});
+
+		await client.query('commit');
+		return assetId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
