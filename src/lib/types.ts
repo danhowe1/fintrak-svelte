@@ -42,8 +42,8 @@ export type Cashflow = {
 	amount: number;
 	startDate: string;
 	endDate?: string | null;
-	sourceAccountId?: string | null;
-	destinationAccountId?: string | null;
+	sourceAssetAccountId?: string | null;
+	destinationAssetAccountId?: string | null;
 	description?: string | null;
 	createdBy?: string;
 	createdAt?: string;

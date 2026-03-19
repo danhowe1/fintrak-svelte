@@ -29,7 +29,9 @@
 						<th class="px-4 py-3">Start</th>
 						<th class="px-4 py-3">End</th>
 						<th class="px-4 py-3">Source</th>
+						<th class="px-4 py-3">Source account</th>
 						<th class="px-4 py-3">Destination</th>
+						<th class="px-4 py-3">Destination account</th>
 						<th class="px-4 py-3">Description</th>
 					</tr>
 				</thead>
@@ -44,7 +46,9 @@
 							</td>
 							<td class="px-4 py-3">{cashflow.start_date}</td>
 							<td class="px-4 py-3">{cashflow.end_date ?? '—'}</td>
+							<td class="px-4 py-3">{cashflow.source_asset_name ?? 'External'}</td>
 							<td class="px-4 py-3">{cashflow.source_account_name ?? 'External'}</td>
+							<td class="px-4 py-3">{cashflow.destination_asset_name ?? 'External'}</td>
 							<td class="px-4 py-3">{cashflow.destination_account_name ?? 'External'}</td>
 							<td class="px-4 py-3">{cashflow.description ?? '—'}</td>
 						</tr>

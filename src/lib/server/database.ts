@@ -132,8 +132,8 @@ export type CashflowSummary = {
 	start_date: string;
 	end_date: string | null;
 	description: string | null;
-	source_account_id: string | null;
-	destination_account_id: string | null;
+	source_asset_name: string | null;
+	destination_asset_name: string | null;
 	source_account_name: string | null;
 	destination_account_name: string | null;
 };
@@ -150,13 +150,17 @@ export async function getCashflowsForScenario(scenarioId: string) {
 				c.start_date,
 				c.end_date,
 				c.description,
-				c.source_account_id,
-				c.destination_account_id,
-				sa.name as source_account_name,
-				da.name as destination_account_name
+				sasset.name as source_asset_name,
+				dasset.name as destination_asset_name,
+				sacc.name as source_account_name,
+				dacc.name as destination_account_name
 			from cashflows c
-			left join accounts sa on sa.id = c.source_account_id
-			left join accounts da on da.id = c.destination_account_id
+			left join asset_accounts saa on saa.id = c.source_asset_account_id
+			left join asset_accounts daa on daa.id = c.destination_asset_account_id
+			left join assets sasset on sasset.id = saa.asset_id
+			left join assets dasset on dasset.id = daa.asset_id
+			left join accounts sacc on sacc.id = saa.account_id
+			left join accounts dacc on dacc.id = daa.account_id
 			where c.scenario_id = $1::uuid
 			order by c.start_date asc, c.created_at asc
 		`,
@@ -192,8 +196,9 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 		const scenarioId = await insertScenario(client, input);
 
 		await insertScenarioMember(client, scenarioId, input.userId);
-		await insertPersonAsset(client, scenarioId, input);
+		const personAssetId = await insertPersonAsset(client, scenarioId, input);
 		const accountId = await insertDefaultAccount(client, scenarioId, input);
+		const assetAccountId = await insertAssetAccount(client, scenarioId, personAssetId, accountId);
 
 		if (input.monthlyNetIncome > 0) {
 			await insertCashflow(client, {
@@ -203,7 +208,7 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 				category: 'employment_income',
 				amount: input.monthlyNetIncome,
 				startDate: input.startDate,
-				destinationAccountId: accountId,
+				destinationAssetAccountId: assetAccountId,
 				createdBy: input.userId
 			});
 		}
@@ -216,7 +221,7 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 				category: 'living_expenses',
 				amount: input.monthlyEssentialExpenses,
 				startDate: input.startDate,
-				sourceAccountId: accountId,
+				sourceAssetAccountId: assetAccountId,
 				createdBy: input.userId
 			});
 		}
@@ -294,7 +299,7 @@ async function insertPersonAsset(
 	scenarioId: string,
 	input: CreateScenarioWithPersonInput
 ) {
-	await client.query(
+	const assetResult = await client.query<{ id: string }>(
 		`
 			insert into assets (scenario_id, asset_type, name, details)
 			values (
@@ -307,9 +312,17 @@ async function insertPersonAsset(
 					'startDate', $5::text
 				)
 			)
+			returning id
 		`,
 		[scenarioId, input.personName, input.personDob, input.retirementAge, input.startDate]
 	);
+
+	const assetId = assetResult.rows[0]?.id;
+	if (!assetId) {
+		throw new Error('Person asset insert failed');
+	}
+
+	return assetId;
 }
 
 async function insertDefaultAccount(
@@ -342,6 +355,34 @@ async function insertDefaultAccount(
 	return accountId;
 }
 
+async function insertAssetAccount(
+	client: Pool['prototype'],
+	scenarioId: string,
+	assetId: string,
+	accountId: string
+) {
+	const result = await client.query<{ id: string }>(
+		`
+			insert into asset_accounts (scenario_id, asset_id, account_id, relationship_role)
+			values (
+				$1::uuid,
+				$2::uuid,
+				$3::uuid,
+				'held_in'::asset_account_role
+			)
+			returning id
+		`,
+		[scenarioId, assetId, accountId]
+	);
+
+	const assetAccountId = result.rows[0]?.id;
+	if (!assetAccountId) {
+		throw new Error('Asset account insert failed');
+	}
+
+	return assetAccountId;
+}
+
 type InsertCashflowInput = {
 	scenarioId: string;
 	type: 'expense' | 'income' | 'transfer';
@@ -350,8 +391,8 @@ type InsertCashflowInput = {
 	amount: number;
 	startDate: string;
 	endDate?: string | null;
-	sourceAccountId?: string | null;
-	destinationAccountId?: string | null;
+	sourceAssetAccountId?: string | null;
+	destinationAssetAccountId?: string | null;
 	description?: string | null;
 	createdBy: string;
 };
@@ -367,8 +408,8 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 				amount,
 				start_date,
 				end_date,
-				source_account_id,
-				destination_account_id,
+				source_asset_account_id,
+				destination_asset_account_id,
 				description,
 				created_by
 			)
@@ -394,8 +435,8 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 			input.amount,
 			input.startDate,
 			input.endDate ?? null,
-			input.sourceAccountId ?? null,
-			input.destinationAccountId ?? null,
+			input.sourceAssetAccountId ?? null,
+			input.destinationAssetAccountId ?? null,
 			input.description ?? null,
 			input.createdBy
 		]
