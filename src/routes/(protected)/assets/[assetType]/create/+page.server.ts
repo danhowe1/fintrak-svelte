@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
 	createAsset,
 	createPersonAssetWithCashflows,
+	createPropertyAssetWithExpense,
 	getAccountsForScenario,
 	getScenarioForUserById
 } from '$lib/server/database';
@@ -26,15 +27,17 @@ const decimalOnePlaceSchema = z
 	.transform((value) => Number(value));
 
 const uuidSchema = z.string().uuid();
+const assetTypeSchema = z.enum(['person', 'property', 'mortgage', 'superannuation']);
 
 const createAssetSchema = z
 	.object({
-		assetType: z.enum(['person', 'property', 'mortgage', 'superannuation']),
+		assetType: assetTypeSchema,
 		name: z.string().trim().min(1, 'Asset name is required'),
 		startMonth: monthSchema,
 		personDob: z.string().trim().optional(),
 		retirementAge: z.string().trim().optional(),
 		propertyMarketValue: z.string().trim().optional(),
+		propertyOwnershipExpense: z.string().trim().optional(),
 		employmentIncome: z.string().trim().optional(),
 		essentialExpenses: z.string().trim().optional(),
 		incomeAccountChoice: z.string().trim().optional(),
@@ -184,6 +187,60 @@ const createAssetSchema = z
 					path: ['propertyMarketValue']
 				});
 			}
+			if (
+				!data.propertyOwnershipExpense ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyOwnershipExpense)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Ownership expense is required',
+					path: ['propertyOwnershipExpense']
+				});
+			}
+			if (!data.expenseAccountChoice) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select an expenses account option',
+					path: ['expenseAccountChoice']
+				});
+			} else if (data.expenseAccountChoice === 'new') {
+				if (!data.expenseAccountName) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Expense account name is required',
+						path: ['expenseAccountName']
+					});
+				}
+				if (
+					!data.expenseAccountInterestRate ||
+					!/^-?\d+(\.\d)?$/.test(data.expenseAccountInterestRate)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Expense account interest rate is required',
+						path: ['expenseAccountInterestRate']
+					});
+				}
+				if (
+					!data.expenseAccountOpeningBalance ||
+					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountOpeningBalance)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Expense account opening balance is required',
+						path: ['expenseAccountOpeningBalance']
+					});
+				}
+			} else {
+				const parsed = uuidSchema.safeParse(data.expenseAccountChoice);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Expense account selection is invalid',
+						path: ['expenseAccountChoice']
+					});
+				}
+			}
 		}
 	});
 
@@ -200,6 +257,7 @@ export const load: PageServerLoad = async (event) => {
 		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
 		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
 	}
+
 	const scenarioId = event.cookies.get('currentScenarioId');
 	if (!scenarioId) {
 		throw redirect(303, '/scenarios');
@@ -210,19 +268,14 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(303, '/scenarios');
 	}
 
-	const requestedType = event.url.searchParams.get('type');
-	if (!requestedType || requestedType === 'person') {
-		throw redirect(303, '/assets/create/person');
+	const assetType = assetTypeSchema.safeParse(event.params.assetType);
+	if (!assetType.success) {
+		throw redirect(303, '/assets');
 	}
 
 	const accounts = await getAccountsForScenario(scenario.id);
 
-	const assetType =
-		requestedType && ['person', 'property', 'mortgage', 'superannuation'].includes(requestedType)
-			? requestedType
-			: 'person';
-
-	return { scenario, assetType, accounts };
+	return { scenario, assetType: assetType.data, accounts };
 };
 
 export const actions: Actions = {
@@ -232,6 +285,7 @@ export const actions: Actions = {
 			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
 			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
 		}
+
 		const scenarioId = event.cookies.get('currentScenarioId');
 		if (!scenarioId) {
 			throw redirect(303, '/scenarios');
@@ -242,25 +296,31 @@ export const actions: Actions = {
 			throw redirect(303, '/scenarios');
 		}
 
+		const assetType = assetTypeSchema.safeParse(event.params.assetType);
+		if (!assetType.success) {
+			throw redirect(303, '/assets');
+		}
+
 		const formData = await event.request.formData();
 		const payload = {
-			assetType: formData.get('assetType'),
+			assetType: assetType.data,
 			name: formData.get('name'),
 			startMonth: formData.get('startMonth'),
-			personDob: formData.get('personDob'),
-			retirementAge: formData.get('retirementAge'),
-			propertyMarketValue: formData.get('propertyMarketValue'),
-			employmentIncome: formData.get('employmentIncome'),
-			essentialExpenses: formData.get('essentialExpenses'),
-			incomeAccountChoice: formData.get('incomeAccountChoice'),
-			expenseAccountChoice: formData.get('expenseAccountChoice'),
-			useSameAccount: formData.get('useSameAccount'),
-			incomeAccountName: formData.get('incomeAccountName'),
-			incomeAccountInterestRate: formData.get('incomeAccountInterestRate'),
-			incomeAccountOpeningBalance: formData.get('incomeAccountOpeningBalance'),
-			expenseAccountName: formData.get('expenseAccountName'),
-			expenseAccountInterestRate: formData.get('expenseAccountInterestRate'),
-			expenseAccountOpeningBalance: formData.get('expenseAccountOpeningBalance')
+			personDob: formData.get('personDob') ?? '',
+			retirementAge: formData.get('retirementAge') ?? '',
+			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
+			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
+			employmentIncome: formData.get('employmentIncome') ?? '',
+			essentialExpenses: formData.get('essentialExpenses') ?? '',
+			incomeAccountChoice: formData.get('incomeAccountChoice') ?? '',
+			expenseAccountChoice: formData.get('expenseAccountChoice') ?? '',
+			useSameAccount: formData.get('useSameAccount') ?? '',
+			incomeAccountName: formData.get('incomeAccountName') ?? '',
+			incomeAccountInterestRate: formData.get('incomeAccountInterestRate') ?? '',
+			incomeAccountOpeningBalance: formData.get('incomeAccountOpeningBalance') ?? '',
+			expenseAccountName: formData.get('expenseAccountName') ?? '',
+			expenseAccountInterestRate: formData.get('expenseAccountInterestRate') ?? '',
+			expenseAccountOpeningBalance: formData.get('expenseAccountOpeningBalance') ?? ''
 		};
 
 		const parsed = createAssetSchema.safeParse(payload);
@@ -270,12 +330,12 @@ export const actions: Actions = {
 		}
 
 		const {
-			assetType,
 			name,
 			startMonth,
 			personDob,
 			retirementAge,
 			propertyMarketValue,
+			propertyOwnershipExpense,
 			employmentIncome,
 			essentialExpenses,
 			incomeAccountChoice,
@@ -289,24 +349,12 @@ export const actions: Actions = {
 			expenseAccountOpeningBalance
 		} = parsed.data;
 
-		const requestedType = event.url.searchParams.get('type');
-		if (requestedType && requestedType !== assetType) {
-			return fail(400, {
-				errors: { assetType: ['Asset type does not match the selected create flow.'] },
-				values: payload
-			});
-		}
-
 		const details: Record<string, unknown> = {
 			startDate: normalizeMonth(startMonth)
 		};
 
-		if (assetType === 'property') {
-			details.marketValue = currencySchema.parse(propertyMarketValue ?? '');
-		}
-
 		try {
-			if (assetType === 'person') {
+			if (assetType.data === 'person') {
 				await createPersonAssetWithCashflows({
 					scenarioId: scenario.id,
 					userId,
@@ -321,9 +369,7 @@ export const actions: Actions = {
 							? {
 									type: 'new',
 									name: incomeAccountName ?? 'Income account',
-									interestRate: decimalOnePlaceSchema.parse(
-										incomeAccountInterestRate ?? '0'
-									),
+									interestRate: decimalOnePlaceSchema.parse(incomeAccountInterestRate ?? '0'),
 									openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
 								}
 							: { type: 'existing', accountId: incomeAccountChoice ?? '' },
@@ -350,10 +396,30 @@ export const actions: Actions = {
 									}
 								: { type: 'existing', accountId: expenseAccountChoice ?? '' }
 				});
+			} else if (assetType.data === 'property') {
+				await createPropertyAssetWithExpense({
+					scenarioId: scenario.id,
+					userId,
+					name,
+					startDate: details.startDate as string,
+					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
+					ownershipExpense: currencySchema.parse(propertyOwnershipExpense ?? ''),
+					expenseAccount:
+						expenseAccountChoice === 'new'
+							? {
+									type: 'new',
+									name: expenseAccountName ?? 'Expenses account',
+									interestRate: decimalOnePlaceSchema.parse(
+										expenseAccountInterestRate ?? '0'
+									),
+									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
+								}
+							: { type: 'existing', accountId: expenseAccountChoice ?? '' }
+				});
 			} else {
 				await createAsset({
 					scenarioId: scenario.id,
-					assetType,
+					assetType: assetType.data,
 					name,
 					details
 				});
@@ -368,4 +434,3 @@ export const actions: Actions = {
 		throw redirect(303, '/assets');
 	}
 };
-

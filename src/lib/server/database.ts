@@ -260,7 +260,7 @@ export async function getAccountsForScenario(scenarioId: string) {
 export type CashflowSummary = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
-	category: 'living_expenses' | 'employment_income' | 'other';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	start_date: string;
@@ -683,7 +683,7 @@ type InsertCashflowInput = {
 	scenarioId: string;
 	type: 'expense' | 'income' | 'transfer';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
-	category: 'living_expenses' | 'employment_income' | 'other';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
 	amount: number;
 	startDate: string;
 	endDate?: string | null;
@@ -756,6 +756,18 @@ export type CreatePersonAssetWithCashflowsInput = {
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 };
 
+export type CreatePropertyAssetWithExpenseInput = {
+	scenarioId: string;
+	userId: string;
+	name: string;
+	startDate: string;
+	marketValue: number;
+	ownershipExpense: number;
+	expenseAccount:
+		| { type: 'existing'; accountId: string }
+		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
+};
+
 export async function createPersonAssetWithCashflows(
 	input: CreatePersonAssetWithCashflowsInput
 ) {
@@ -800,8 +812,17 @@ export async function createPersonAssetWithCashflows(
 			);
 		};
 
+		const sameNewAccount =
+			input.incomeAccount.type === 'new' &&
+			input.expenseAccount.type === 'new' &&
+			input.incomeAccount.name === input.expenseAccount.name &&
+			input.incomeAccount.interestRate === input.expenseAccount.interestRate &&
+			input.incomeAccount.openingBalance === input.expenseAccount.openingBalance;
+
 		const incomeAccountId = await resolveAccount(input.incomeAccount);
-		const expenseAccountId = await resolveAccount(input.expenseAccount);
+		const expenseAccountId = sameNewAccount
+			? incomeAccountId
+			: await resolveAccount(input.expenseAccount);
 
 		const incomeAssetAccountId = await getOrCreateAssetAccount(client, {
 			scenarioId: input.scenarioId,
@@ -834,6 +855,79 @@ export async function createPersonAssetWithCashflows(
 			frequency: 'monthly',
 			category: 'living_expenses',
 			amount: input.essentialExpenses,
+			startDate: input.startDate,
+			sourceAssetAccountId: expenseAssetAccountId,
+			createdBy: input.userId
+		});
+
+		await client.query('commit');
+		return assetId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+export async function createPropertyAssetWithExpense(
+	input: CreatePropertyAssetWithExpenseInput
+) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+
+		const assetId = await createAsset(
+			{
+				scenarioId: input.scenarioId,
+				assetType: 'property',
+				name: input.name,
+				details: {
+					startDate: input.startDate,
+					marketValue: input.marketValue
+				}
+			},
+			client
+		);
+
+		const resolveAccount = async (
+			account:
+				| { type: 'existing'; accountId: string }
+				| { type: 'new'; name: string; interestRate: number; openingBalance: number }
+		) => {
+			if (account.type === 'existing') {
+				return account.accountId;
+			}
+
+			return await createAccount(
+				{
+					scenarioId: input.scenarioId,
+					accountType: 'current_account',
+					name: account.name,
+					details: {
+						interestRate: account.interestRate,
+						openingBalance: account.openingBalance
+					}
+				},
+				client
+			);
+		};
+
+		const expenseAccountId = await resolveAccount(input.expenseAccount);
+
+		const expenseAssetAccountId = await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: expenseAccountId,
+			role: 'held_in'
+		});
+
+		await insertCashflow(client, {
+			scenarioId: input.scenarioId,
+			type: 'expense',
+			frequency: 'monthly',
+			category: 'asset_ownership',
+			amount: input.ownershipExpense,
 			startDate: input.startDate,
 			sourceAssetAccountId: expenseAssetAccountId,
 			createdBy: input.userId

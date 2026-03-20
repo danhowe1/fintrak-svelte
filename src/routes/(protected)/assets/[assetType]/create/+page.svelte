@@ -7,8 +7,7 @@
 	export let data: PageData;
 	export let form: ActionData;
 
-	const selectedType =
-		(form?.values?.assetType as string) ?? (data.assetType ?? 'person');
+	const selectedType = (form?.values?.assetType as string) ?? data.assetType;
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
 	let useSameAccount = (form?.values?.useSameAccount as string) === 'on';
@@ -268,7 +267,6 @@
 						</div>
 					{/if}
 				{/if}
-
 			</FormSection>
 		{/if}
 
@@ -284,6 +282,71 @@
 					error={form?.errors?.propertyMarketValue?.[0]}
 					required
 				/>
+
+				<FormField
+					type="number"
+					label="Monthly ownership expense"
+					name="propertyOwnershipExpense"
+					step="0.01"
+					placeholder="400"
+					value={form?.values?.propertyOwnershipExpense ?? ''}
+					error={form?.errors?.propertyOwnershipExpense?.[0]}
+					required
+				/>
+
+				<label class="grid gap-2 text-sm font-medium text-slate-700">
+					Expenses account
+					<select
+						name="expenseAccountChoice"
+						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+						required
+						bind:value={expenseAccountChoice}
+					>
+						<option value="" disabled selected={expenseAccountChoice === ''}>
+							Select an account
+						</option>
+						<option value="new">Create new account</option>
+						{#each data.accounts as account}
+							<option value={account.id}>{account.name}</option>
+						{/each}
+					</select>
+					{#if form?.errors?.expenseAccountChoice?.[0]}
+						<span class="text-xs text-rose-600">{form.errors.expenseAccountChoice[0]}</span>
+					{/if}
+				</label>
+
+				{#if expenseAccountChoice === 'new'}
+					<div class="grid gap-4 md:grid-cols-3">
+						<FormField
+							label="Account name"
+							name="expenseAccountName"
+							placeholder="Expenses account"
+							value={form?.values?.expenseAccountName ?? ''}
+							error={form?.errors?.expenseAccountName?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							label="Interest rate (%)"
+							name="expenseAccountInterestRate"
+							step="0.1"
+							placeholder="1.5"
+							value={form?.values?.expenseAccountInterestRate ?? ''}
+							error={form?.errors?.expenseAccountInterestRate?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							label="Opening balance"
+							name="expenseAccountOpeningBalance"
+							step="0.01"
+							placeholder="0"
+							value={form?.values?.expenseAccountOpeningBalance ?? ''}
+							error={form?.errors?.expenseAccountOpeningBalance?.[0]}
+							required
+						/>
+					</div>
+				{/if}
 			</FormSection>
 		{/if}
 

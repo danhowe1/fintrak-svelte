@@ -45,27 +45,27 @@
 	<p class="text-sm text-slate-600">Manage assets for the current scenario.</p>
 	<div class="flex flex-wrap gap-2">
 		<a
-			href="/assets/create/person"
+			href="/assets/person/create"
 			class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
 		>
 			Create person
 		</a>
 		<a
-			href="/assets/create?type=property"
+			href="/assets/property/create"
 			class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
 		>
 			Create property
 		</a>
 		{#if data.assets.some((asset) => asset.asset_type === 'property')}
 			<a
-				href="/assets/create?type=mortgage"
+				href="/assets/mortgage/create"
 				class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
 			>
 				Create mortgage
 			</a>
 		{/if}
 		<a
-			href="/assets/create?type=superannuation"
+			href="/assets/superannuation/create"
 			class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
 		>
 			Create superannuation
