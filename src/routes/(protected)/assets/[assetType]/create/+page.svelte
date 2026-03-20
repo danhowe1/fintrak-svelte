@@ -11,6 +11,9 @@
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
 	let useSameAccount = (form?.values?.useSameAccount as string) === 'on';
+	let mortgagePaymentSourceChoice =
+		(form?.values?.mortgagePaymentSourceChoice as string) ?? '';
+	let mortgageInterestOnly = (form?.values?.mortgageInterestOnly as string) === 'on';
 
 	const now = new Date();
 	const defaultMonth = (() => {
@@ -343,6 +346,179 @@
 							placeholder="0"
 							value={form?.values?.expenseAccountOpeningBalance ?? ''}
 							error={form?.errors?.expenseAccountOpeningBalance?.[0]}
+							required
+						/>
+					</div>
+				{/if}
+			</FormSection>
+		{/if}
+
+		{#if selectedType === 'mortgage'}
+			<FormSection title="Mortgage details">
+				<label class="grid gap-2 text-sm font-medium text-slate-700">
+					Secured by property
+					<select
+						name="mortgagePropertyId"
+						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+						required
+					>
+						<option
+							value=""
+							disabled
+							selected={(form?.values?.mortgagePropertyId ?? '') === ''}
+						>
+							Select a property
+						</option>
+						{#each data.properties as property}
+							<option
+								value={property.id}
+								selected={(form?.values?.mortgagePropertyId ?? '') === property.id}
+							>
+								{property.name}
+							</option>
+						{/each}
+					</select>
+					{#if form?.errors?.mortgagePropertyId?.[0]}
+						<span class="text-xs text-rose-600">{form.errors.mortgagePropertyId[0]}</span>
+					{/if}
+				</label>
+
+				<div class="grid gap-4 md:grid-cols-2">
+					<FormField
+						type="number"
+						label="Term remaining (years)"
+						name="mortgageTermYears"
+						min="0"
+						step="1"
+						placeholder="25"
+						value={form?.values?.mortgageTermYears ?? ''}
+						error={form?.errors?.mortgageTermYears?.[0]}
+						required
+					/>
+					<FormField
+						type="number"
+						label="Term remaining (months)"
+						name="mortgageTermMonths"
+						min="0"
+						max="11"
+						step="1"
+						placeholder="0"
+						value={form?.values?.mortgageTermMonths ?? ''}
+						error={form?.errors?.mortgageTermMonths?.[0]}
+						required
+					/>
+				</div>
+
+				<label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+					<input
+						type="checkbox"
+						name="mortgageInterestOnly"
+						bind:checked={mortgageInterestOnly}
+						class="h-4 w-4 rounded border-slate-300 text-slate-900"
+					/>
+					Interest-only period
+				</label>
+
+				{#if mortgageInterestOnly}
+					<FormField
+						type="text"
+						label="Interest-only ends (MM YYYY)"
+						name="mortgageInterestOnlyEnd"
+						placeholder="MM YYYY"
+						inputmode="numeric"
+						value={form?.values?.mortgageInterestOnlyEnd ?? ''}
+						error={form?.errors?.mortgageInterestOnlyEnd?.[0]}
+						required
+					/>
+				{/if}
+			</FormSection>
+
+			<FormSection title="Mortgage account">
+				<FormField
+					label="Account name"
+					name="mortgageAccountName"
+					placeholder="Mortgage account"
+					value={form?.values?.mortgageAccountName ?? ''}
+					error={form?.errors?.mortgageAccountName?.[0]}
+					required
+				/>
+
+				<div class="grid gap-4 md:grid-cols-2">
+					<FormField
+						type="number"
+						label="Interest rate (%)"
+						name="mortgageAccountInterestRate"
+						step="0.1"
+						placeholder="6.2"
+						value={form?.values?.mortgageAccountInterestRate ?? ''}
+						error={form?.errors?.mortgageAccountInterestRate?.[0]}
+						required
+					/>
+					<FormField
+						type="number"
+						label="Opening balance"
+						name="mortgageAccountOpeningBalance"
+						step="0.01"
+						placeholder="500000"
+						value={form?.values?.mortgageAccountOpeningBalance ?? ''}
+						error={form?.errors?.mortgageAccountOpeningBalance?.[0]}
+						required
+					/>
+				</div>
+			</FormSection>
+
+			<FormSection title="Payment source account">
+				<label class="grid gap-2 text-sm font-medium text-slate-700">
+					Payment source account
+					<select
+						name="mortgagePaymentSourceChoice"
+						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+						required
+						bind:value={mortgagePaymentSourceChoice}
+					>
+						<option value="" disabled selected={mortgagePaymentSourceChoice === ''}>
+							Select an account
+						</option>
+						<option value="new">Create new current account</option>
+						{#each data.currentAccounts as account}
+							<option value={account.id}>{account.name}</option>
+						{/each}
+					</select>
+					{#if form?.errors?.mortgagePaymentSourceChoice?.[0]}
+						<span class="text-xs text-rose-600">
+							{form.errors.mortgagePaymentSourceChoice[0]}
+						</span>
+					{/if}
+				</label>
+
+				{#if mortgagePaymentSourceChoice === 'new'}
+					<div class="grid gap-4 md:grid-cols-3">
+						<FormField
+							label="Account name"
+							name="mortgagePaymentSourceName"
+							placeholder="Payment account"
+							value={form?.values?.mortgagePaymentSourceName ?? ''}
+							error={form?.errors?.mortgagePaymentSourceName?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							label="Interest rate (%)"
+							name="mortgagePaymentSourceInterestRate"
+							step="0.1"
+							placeholder="1.5"
+							value={form?.values?.mortgagePaymentSourceInterestRate ?? ''}
+							error={form?.errors?.mortgagePaymentSourceInterestRate?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							label="Opening balance"
+							name="mortgagePaymentSourceOpeningBalance"
+							step="0.01"
+							placeholder="0"
+							value={form?.values?.mortgagePaymentSourceOpeningBalance ?? ''}
+							error={form?.errors?.mortgagePaymentSourceOpeningBalance?.[0]}
 							required
 						/>
 					</div>

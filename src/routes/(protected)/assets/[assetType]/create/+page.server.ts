@@ -5,7 +5,9 @@ import {
 	createAsset,
 	createPersonAssetWithCashflows,
 	createPropertyAssetWithExpense,
+	createMortgageAssetWithAccounts,
 	getAccountsForScenario,
+	getAssetsForScenario,
 	getScenarioForUserById
 } from '$lib/server/database';
 
@@ -38,6 +40,18 @@ const createAssetSchema = z
 		retirementAge: z.string().trim().optional(),
 		propertyMarketValue: z.string().trim().optional(),
 		propertyOwnershipExpense: z.string().trim().optional(),
+		mortgagePropertyId: z.string().trim().optional(),
+		mortgageTermYears: z.string().trim().optional(),
+		mortgageTermMonths: z.string().trim().optional(),
+		mortgageInterestOnly: z.string().trim().optional(),
+		mortgageInterestOnlyEnd: z.string().trim().optional(),
+		mortgageAccountName: z.string().trim().optional(),
+		mortgageAccountInterestRate: z.string().trim().optional(),
+		mortgageAccountOpeningBalance: z.string().trim().optional(),
+		mortgagePaymentSourceChoice: z.string().trim().optional(),
+		mortgagePaymentSourceName: z.string().trim().optional(),
+		mortgagePaymentSourceInterestRate: z.string().trim().optional(),
+		mortgagePaymentSourceOpeningBalance: z.string().trim().optional(),
 		employmentIncome: z.string().trim().optional(),
 		essentialExpenses: z.string().trim().optional(),
 		incomeAccountChoice: z.string().trim().optional(),
@@ -242,6 +256,142 @@ const createAssetSchema = z
 				}
 			}
 		}
+
+		if (data.assetType === 'mortgage') {
+			if (!data.mortgagePropertyId) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select a property to secure this mortgage',
+					path: ['mortgagePropertyId']
+				});
+			} else {
+				const parsed = uuidSchema.safeParse(data.mortgagePropertyId);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Property selection is invalid',
+						path: ['mortgagePropertyId']
+					});
+				}
+			}
+
+			if (!data.mortgageTermYears || !/^\d+$/.test(data.mortgageTermYears)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Term remaining (years) is required',
+					path: ['mortgageTermYears']
+				});
+			}
+
+			if (
+				data.mortgageTermMonths === undefined ||
+				data.mortgageTermMonths === '' ||
+				!/^\d+$/.test(data.mortgageTermMonths)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Term remaining (months) is required',
+					path: ['mortgageTermMonths']
+				});
+			}
+
+			const monthsValue = Number(data.mortgageTermMonths ?? 0);
+			if (Number.isNaN(monthsValue) || monthsValue < 0 || monthsValue > 11) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Months must be between 0 and 11',
+					path: ['mortgageTermMonths']
+				});
+			}
+
+			if (
+				data.mortgageInterestOnly === 'on'
+			) {
+				if (
+					!data.mortgageInterestOnlyEnd ||
+					!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.mortgageInterestOnlyEnd)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Interest-only end month is required',
+						path: ['mortgageInterestOnlyEnd']
+					});
+				}
+			}
+
+			if (!data.mortgageAccountName) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Mortgage account name is required',
+					path: ['mortgageAccountName']
+				});
+			}
+			if (
+				!data.mortgageAccountInterestRate ||
+				!/^-?\d+(\.\d)?$/.test(data.mortgageAccountInterestRate)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Mortgage account interest rate is required',
+					path: ['mortgageAccountInterestRate']
+				});
+			}
+			if (
+				!data.mortgageAccountOpeningBalance ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageAccountOpeningBalance)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Mortgage account opening balance is required',
+					path: ['mortgageAccountOpeningBalance']
+				});
+			}
+
+			if (!data.mortgagePaymentSourceChoice) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select a payment source account',
+					path: ['mortgagePaymentSourceChoice']
+				});
+			} else if (data.mortgagePaymentSourceChoice === 'new') {
+				if (!data.mortgagePaymentSourceName) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Payment source account name is required',
+						path: ['mortgagePaymentSourceName']
+					});
+				}
+				if (
+					!data.mortgagePaymentSourceInterestRate ||
+					!/^-?\d+(\.\d)?$/.test(data.mortgagePaymentSourceInterestRate)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Payment source account interest rate is required',
+						path: ['mortgagePaymentSourceInterestRate']
+					});
+				}
+				if (
+					!data.mortgagePaymentSourceOpeningBalance ||
+					!/^-?\d+(\.\d{1,2})?$/.test(data.mortgagePaymentSourceOpeningBalance)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Payment source account opening balance is required',
+						path: ['mortgagePaymentSourceOpeningBalance']
+					});
+				}
+			} else {
+				const parsed = uuidSchema.safeParse(data.mortgagePaymentSourceChoice);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Payment source account selection is invalid',
+						path: ['mortgagePaymentSourceChoice']
+					});
+				}
+			}
+		}
 	});
 
 const normalizeMonth = (value: string) => {
@@ -274,8 +424,12 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const accounts = await getAccountsForScenario(scenario.id);
+	const properties = (await getAssetsForScenario(scenario.id)).filter(
+		(asset) => asset.asset_type === 'property'
+	);
+	const currentAccounts = accounts.filter((account) => account.account_type === 'current_account');
 
-	return { scenario, assetType: assetType.data, accounts };
+	return { scenario, assetType: assetType.data, accounts, properties, currentAccounts };
 };
 
 export const actions: Actions = {
@@ -310,6 +464,20 @@ export const actions: Actions = {
 			retirementAge: formData.get('retirementAge') ?? '',
 			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
 			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
+			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
+			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
+			mortgageTermMonths: formData.get('mortgageTermMonths') ?? '',
+			mortgageInterestOnly: formData.get('mortgageInterestOnly') ?? '',
+			mortgageInterestOnlyEnd: formData.get('mortgageInterestOnlyEnd') ?? '',
+			mortgageAccountName: formData.get('mortgageAccountName') ?? '',
+			mortgageAccountInterestRate: formData.get('mortgageAccountInterestRate') ?? '',
+			mortgageAccountOpeningBalance: formData.get('mortgageAccountOpeningBalance') ?? '',
+			mortgagePaymentSourceChoice: formData.get('mortgagePaymentSourceChoice') ?? '',
+			mortgagePaymentSourceName: formData.get('mortgagePaymentSourceName') ?? '',
+			mortgagePaymentSourceInterestRate:
+				formData.get('mortgagePaymentSourceInterestRate') ?? '',
+			mortgagePaymentSourceOpeningBalance:
+				formData.get('mortgagePaymentSourceOpeningBalance') ?? '',
 			employmentIncome: formData.get('employmentIncome') ?? '',
 			essentialExpenses: formData.get('essentialExpenses') ?? '',
 			incomeAccountChoice: formData.get('incomeAccountChoice') ?? '',
@@ -336,6 +504,18 @@ export const actions: Actions = {
 			retirementAge,
 			propertyMarketValue,
 			propertyOwnershipExpense,
+			mortgagePropertyId,
+			mortgageTermYears,
+			mortgageTermMonths,
+			mortgageInterestOnly,
+			mortgageInterestOnlyEnd,
+			mortgageAccountName,
+			mortgageAccountInterestRate,
+			mortgageAccountOpeningBalance,
+			mortgagePaymentSourceChoice,
+			mortgagePaymentSourceName,
+			mortgagePaymentSourceInterestRate,
+			mortgagePaymentSourceOpeningBalance,
 			employmentIncome,
 			essentialExpenses,
 			incomeAccountChoice,
@@ -415,6 +595,41 @@ export const actions: Actions = {
 									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 								}
 							: { type: 'existing', accountId: expenseAccountChoice ?? '' }
+				});
+			} else if (assetType.data === 'mortgage') {
+				details.termYears = Number(mortgageTermYears ?? 0);
+				details.termMonths = Number(mortgageTermMonths ?? 0);
+				details.interestOnly = mortgageInterestOnly === 'on';
+				if (mortgageInterestOnly === 'on') {
+					details.interestOnlyEnd = normalizeMonth(mortgageInterestOnlyEnd ?? '');
+				}
+				await createMortgageAssetWithAccounts({
+					scenarioId: scenario.id,
+					userId,
+					name,
+					propertyId: mortgagePropertyId ?? '',
+					details,
+					mortgageAccount: {
+						name: mortgageAccountName ?? 'Mortgage account',
+						interestRate: decimalOnePlaceSchema.parse(mortgageAccountInterestRate ?? '0'),
+						openingBalance: currencySchema.parse(mortgageAccountOpeningBalance ?? '0')
+					},
+					paymentSourceAccount:
+						mortgagePaymentSourceChoice === 'new'
+							? {
+									type: 'new',
+									name: mortgagePaymentSourceName ?? 'Payment source account',
+									interestRate: decimalOnePlaceSchema.parse(
+										mortgagePaymentSourceInterestRate ?? '0'
+									),
+									openingBalance: currencySchema.parse(
+										mortgagePaymentSourceOpeningBalance ?? '0'
+									)
+								}
+							: {
+									type: 'existing',
+									accountId: mortgagePaymentSourceChoice ?? ''
+								}
 				});
 			} else {
 				await createAsset({

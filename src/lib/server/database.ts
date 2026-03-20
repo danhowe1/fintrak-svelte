@@ -170,6 +170,7 @@ export type AssetListItem = {
 	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation';
 	name: string;
 	details: Record<string, unknown>;
+	property_id?: string | null;
 	created_at: string;
 	relationships: {
 		accountName: string;
@@ -185,6 +186,7 @@ export async function getAssetsForScenario(scenarioId: string) {
 				a.asset_type,
 				a.name,
 				a.details,
+				a.property_id,
 				a.created_at,
 				coalesce(
 					jsonb_agg(
@@ -309,17 +311,24 @@ export type CreateAssetInput = {
 	assetType: AssetListItem['asset_type'];
 	name: string;
 	details: Record<string, unknown>;
+	propertyId?: string | null;
 };
 
 export async function createAsset(input: CreateAssetInput, client?: Pool['prototype']) {
 	const db = client ?? getPool();
 	const result = await db.query<{ id: string }>(
 		`
-			insert into assets (scenario_id, asset_type, name, details)
-			values ($1::uuid, $2::asset_type, $3::text, $4::jsonb)
+			insert into assets (scenario_id, asset_type, name, details, property_id)
+			values ($1::uuid, $2::asset_type, $3::text, $4::jsonb, $5::uuid)
 			returning id
 		`,
-		[input.scenarioId, input.assetType, input.name, input.details]
+		[
+			input.scenarioId,
+			input.assetType,
+			input.name,
+			input.details,
+			input.propertyId ?? null
+		]
 	);
 
 	const assetId = result.rows[0]?.id;
@@ -768,6 +777,18 @@ export type CreatePropertyAssetWithExpenseInput = {
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 };
 
+export type CreateMortgageAssetWithAccountsInput = {
+	scenarioId: string;
+	userId: string;
+	name: string;
+	propertyId: string;
+	details: Record<string, unknown>;
+	mortgageAccount: { name: string; interestRate: number; openingBalance: number };
+	paymentSourceAccount:
+		| { type: 'existing'; accountId: string }
+		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
+};
+
 export async function createPersonAssetWithCashflows(
 	input: CreatePersonAssetWithCashflowsInput
 ) {
@@ -931,6 +952,88 @@ export async function createPropertyAssetWithExpense(
 			startDate: input.startDate,
 			sourceAssetAccountId: expenseAssetAccountId,
 			createdBy: input.userId
+		});
+
+		await client.query('commit');
+		return assetId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+export async function createMortgageAssetWithAccounts(
+	input: CreateMortgageAssetWithAccountsInput
+) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+
+		const assetId = await createAsset(
+			{
+				scenarioId: input.scenarioId,
+				assetType: 'mortgage',
+				name: input.name,
+				details: input.details,
+				propertyId: input.propertyId
+			},
+			client
+		);
+
+		const mortgageAccountId = await createAccount(
+			{
+				scenarioId: input.scenarioId,
+				accountType: 'mortgage_account',
+				name: input.mortgageAccount.name,
+				details: {
+					interestRate: input.mortgageAccount.interestRate,
+					openingBalance: input.mortgageAccount.openingBalance
+				}
+			},
+			client
+		);
+
+		const resolvePaymentSourceAccount = async (
+			account:
+				| { type: 'existing'; accountId: string }
+				| { type: 'new'; name: string; interestRate: number; openingBalance: number }
+		) => {
+			if (account.type === 'existing') {
+				return account.accountId;
+			}
+
+			return await createAccount(
+				{
+					scenarioId: input.scenarioId,
+					accountType: 'current_account',
+					name: account.name,
+					details: {
+						interestRate: account.interestRate,
+						openingBalance: account.openingBalance
+					}
+				},
+				client
+			);
+		};
+
+		const paymentSourceAccountId = await resolvePaymentSourceAccount(
+			input.paymentSourceAccount
+		);
+
+		await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: mortgageAccountId,
+			role: 'held_in'
+		});
+
+		await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: paymentSourceAccountId,
+			role: 'funding_source'
 		});
 
 		await client.query('commit');

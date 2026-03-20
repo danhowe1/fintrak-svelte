@@ -36,6 +36,13 @@
 			.map((rel) => `${rel.accountName} (${formatLabel(rel.role)})`)
 			.join(', ');
 	};
+
+	const formatTerm = (years?: number, months?: number) => {
+		if (typeof years !== 'number' && typeof months !== 'number') return '—';
+		const safeYears = typeof years === 'number' ? years : 0;
+		const safeMonths = typeof months === 'number' ? months : 0;
+		return `${safeYears}y ${safeMonths}m`;
+	};
 </script>
 
 <h1>Assets</h1>
@@ -104,6 +111,12 @@
 									{asset.details?.retirementAge ?? '—'}
 								{:else if asset.asset_type === 'property'}
 									Market value {asset.details?.marketValue ?? '—'}
+								{:else if asset.asset_type === 'mortgage'}
+									Term {formatTerm(asset.details?.termYears as number, asset.details?.termMonths as number)}
+									{#if asset.details?.interestOnly}
+										, interest-only until{' '}
+										{formatMonth((asset.details?.interestOnlyEnd as string) ?? '')}
+									{/if}
 								{:else}
 									—
 								{/if}
