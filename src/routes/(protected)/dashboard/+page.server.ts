@@ -11,7 +11,6 @@ import {
 import { buildProjection } from '$lib/server/projection';
 
 export const load: PageServerLoad = async (event) => {
-	event.depends('projection');
 	const parentData = await event.parent();
 	const userId = event.locals.appUserId;
 	if (!userId) {

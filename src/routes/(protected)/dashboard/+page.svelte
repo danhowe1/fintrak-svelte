@@ -1,6 +1,5 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { invalidate } from '$app/navigation';
 	import { afterUpdate, onDestroy } from 'svelte';
 	import Chart from 'chart.js/auto';
 
@@ -35,21 +34,13 @@
 		return value < 0 ? `-${formatted}` : formatted;
 	};
 
-const formatRate = (value: number, decimals: number) =>
-	Number.isFinite(value) ? value.toFixed(decimals) : '0';
+	const formatRate = (value: number, decimals: number) =>
+		Number.isFinite(value) ? value.toFixed(decimals) : '0';
 
-const updateRates = async (deltaInflation: number, deltaInterest: number) => {
-	if (isUpdating) return;
-	isUpdating = true;
-	const formData = new FormData();
-	formData.set('inflationRate', String(data.sessionRates.inflationRate));
-	formData.set('interestRateChange', String(data.sessionRates.interestRateChange));
-	formData.set('deltaInflation', String(deltaInflation));
-	formData.set('deltaInterest', String(deltaInterest));
-	await fetch('?/updateRates', { method: 'POST', body: formData });
-	await invalidate('projection');
-	isUpdating = false;
-};
+	let projectionData = data.projection;
+	let sessionRates = data.sessionRates;
+	let projectionVersion = 1;
+	let projectionError: string | null = null;
 
 	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 
@@ -57,16 +48,56 @@ let projectionView: 'balances' | 'transactions' = 'balances';
 let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
 let isUpdating = false;
 
-const updateProjectionRange = async (range: typeof projectionRange) => {
-	if (isUpdating) return;
-	isUpdating = true;
-	projectionRange = range;
-	const formData = new FormData();
-	formData.set('projectionRange', range);
-	await fetch('?/updateRange', { method: 'POST', body: formData });
-	await invalidate('projection');
-	isUpdating = false;
-};
+	const refreshProjection = async () => {
+		const url = new URL('/dashboard/projection', window.location.origin);
+		url.searchParams.set('scenarioId', data.scenario.id);
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error('Unable to refresh the projection. Please try again.');
+		}
+		const payload = await response.json();
+		projectionData = payload.projection;
+		sessionRates = payload.sessionRates;
+		projectionRange = payload.projectionRange;
+		projectionVersion += 1;
+		projectionError = null;
+	};
+
+	const updateProjectionRange = async (range: typeof projectionRange) => {
+		if (isUpdating) return;
+		isUpdating = true;
+		try {
+			projectionRange = range;
+			const formData = new FormData();
+			formData.set('projectionRange', range);
+			await fetch('?/updateRange', { method: 'POST', body: formData });
+			await refreshProjection();
+		} catch (error) {
+			projectionError =
+				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+		} finally {
+			isUpdating = false;
+		}
+	};
+
+	const updateRates = async (deltaInflation: number, deltaInterest: number) => {
+		if (isUpdating) return;
+		isUpdating = true;
+		try {
+			const formData = new FormData();
+			formData.set('inflationRate', String(sessionRates.inflationRate));
+			formData.set('interestRateChange', String(sessionRates.interestRateChange));
+			formData.set('deltaInflation', String(deltaInflation));
+			formData.set('deltaInterest', String(deltaInterest));
+			await fetch('?/updateRates', { method: 'POST', body: formData });
+			await refreshProjection();
+		} catch (error) {
+			projectionError =
+				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+		} finally {
+			isUpdating = false;
+		}
+	};
 
 	const parseYearMonth = (value: unknown) => {
 		if (!value) return null;
@@ -98,16 +129,16 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 	$: chartProjection = (() => {
 		if (projectionRange === '10y' || projectionRange === 'all') {
 			return {
-				accounts: (data.projection.accounts ?? []).map((series) => ({
+				accounts: (projectionData.accounts ?? []).map((series) => ({
 					...series,
 					points: getAnnualPoints(series.points)
 				})),
-				transactions: data.projection.transactions ?? []
+				transactions: projectionData.transactions ?? []
 			};
 		}
 		return {
-			accounts: data.projection.accounts ?? [],
-			transactions: data.projection.transactions ?? []
+			accounts: projectionData.accounts ?? [],
+			transactions: projectionData.transactions ?? []
 		};
 	})();
 	$: totalSeries = (() => {
@@ -167,8 +198,6 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 
 	let chart: Chart | null = null;
 	let chartCanvas: HTMLCanvasElement | null = null;
-	let chartRangeKey = data.projectionRange;
-
 	const buildChartData = () => {
 		const labels = chartAxisPoints.map((point) => point.monthLabel);
 		const datasets = [];
@@ -300,13 +329,7 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 		chart = null;
 	}
 
-	$: if (chart && data.projectionRange !== chartRangeKey) {
-		chart.destroy();
-		chart = null;
-		chartRangeKey = data.projectionRange;
-	}
-
-	$: if (chart) {
+	$: if (chart && projectionVersion) {
 		chart.data = buildChartData();
 		chart.options = buildChartOptions();
 		chart.update();
@@ -406,7 +429,7 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 				Inflation rate
 			</span>
 			<span class="text-sm font-semibold text-slate-900">
-				{formatRate(data.sessionRates.inflationRate, 1)}%
+				{formatRate(sessionRates.inflationRate, 1)}%
 			</span>
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
@@ -432,7 +455,7 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 				Interest rate change
 			</span>
 			<span class="text-sm font-semibold text-slate-900">
-				{formatRate(data.sessionRates.interestRateChange, 2)}%
+				{formatRate(sessionRates.interestRateChange, 2)}%
 			</span>
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
@@ -454,6 +477,11 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 			</div>
 		</div>
 	</div>
+	{#if projectionError}
+		<div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+			{projectionError}
+		</div>
+	{/if}
 
 	{#if projectionView === 'balances'}
 		{#if chartProjection.accounts.length === 0}
@@ -473,7 +501,7 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 				{/if}
 			</div>
 		{/if}
-	{:else if data.projection.transactions.length === 0}
+	{:else if projectionData.transactions.length === 0}
 		<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
 	{:else}
 		<div class="mt-4 max-h-96 overflow-x-auto overflow-y-auto">
@@ -490,7 +518,7 @@ const updateProjectionRange = async (range: typeof projectionRange) => {
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-100 text-slate-700">
-					{#each data.projection.transactions as transaction}
+					{#each projectionData.transactions as transaction}
 						<tr
 							class={`whitespace-nowrap ${
 								transaction.cashflowType === 'income'
