@@ -504,7 +504,7 @@ let isUpdating = false;
 	{:else if projectionData.transactions.length === 0}
 		<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
 	{:else}
-		<div class="mt-4 max-h-96 overflow-x-auto overflow-y-auto">
+		<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
 			<table class="min-w-full divide-y divide-slate-200 text-xs">
 				<thead
 					class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
@@ -539,6 +539,16 @@ let isUpdating = false;
 					{/each}
 				</tbody>
 			</table>
+			{#if isUpdating}
+				<div class="absolute inset-0 grid place-items-center bg-white/70">
+					<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
+						<span
+							class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
+						></span>
+						<span>Updating projection…</span>
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/if}
 </section>

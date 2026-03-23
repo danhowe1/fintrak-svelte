@@ -6,7 +6,12 @@ type YearMonth = {
 export type ProjectionTransaction = {
 	cashflowId: string;
 	cashflowType: 'expense' | 'income' | 'transfer';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'other'
+		| 'interest';
 	accountId: string;
 	accountName: string;
 	amount: number;
@@ -48,6 +53,13 @@ type ProjectionCashflow = {
 
 type ProjectionAccount = {
 	id: string;
+	account_type:
+		| 'current_account'
+		| 'mortgage_account'
+		| 'savings_account'
+		| 'credit_card'
+		| 'brokerage'
+		| 'super_account';
 	name: string;
 	details: Record<string, unknown>;
 };
@@ -130,6 +142,16 @@ const getOpeningBalance = (details: Record<string, unknown>) => {
 	return 0;
 };
 
+const getInterestRate = (details: Record<string, unknown>) => {
+	const value = details?.interestRate;
+	if (typeof value === 'number' && Number.isFinite(value)) return value;
+	if (typeof value === 'string') {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : 0;
+	}
+	return 0;
+};
+
 const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 	switch (frequency) {
 		case 'monthly':
@@ -148,6 +170,7 @@ const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 export const buildProjection = (input: {
 	scenarioStartDate?: string | null;
 	inflationRate?: number | null;
+	interestRateChange?: number | null;
 	maxMonths?: number | null;
 	cashflows: ProjectionCashflow[];
 	accounts: ProjectionAccount[];
@@ -170,12 +193,15 @@ export const buildProjection = (input: {
 	const endYearMonth = cappedEnd;
 	const totalMonths = Math.max(0, monthsBetween(startYearMonth, endYearMonth));
 	const inflationRate = input.inflationRate ?? 0;
+	const interestRateChange = input.interestRateChange ?? 0;
 
 	const accountMap = new Map(
 		input.accounts.map((account) => [
 			account.id,
 			{
 				name: account.name,
+				type: account.account_type,
+				interestRate: getInterestRate(account.details),
 				balance: getOpeningBalance(account.details)
 			}
 		])
@@ -270,14 +296,20 @@ export const buildProjection = (input: {
 				? cashflow.amount * inflationFactor
 				: cashflow.amount;
 
-			const pushTransaction = (accountId: string, signedAmount: number) => {
+			const pushTransaction = (
+				accountId: string,
+				signedAmount: number,
+				cashflowType: ProjectionTransaction['cashflowType'],
+				category: ProjectionTransaction['category'],
+				cashflowId: string
+			) => {
 				const accountInfo = accountMap.get(accountId);
 				if (!accountInfo) return;
 				accountInfo.balance += signedAmount;
 				transactions.push({
-					cashflowId: cashflow.id,
-					cashflowType: cashflow.cashflow_type,
-					category: cashflow.category,
+					cashflowId,
+					cashflowType,
+					category,
 					accountId,
 					accountName: accountInfo.name,
 					amount: signedAmount,
@@ -288,20 +320,78 @@ export const buildProjection = (input: {
 
 			if (cashflow.cashflow_type === 'income') {
 				if (cashflow.destination_account_id) {
-					pushTransaction(cashflow.destination_account_id, rawAmount);
+					pushTransaction(
+						cashflow.destination_account_id,
+						rawAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id
+					);
 				}
 			} else if (cashflow.cashflow_type === 'expense') {
 				if (cashflow.source_account_id) {
-					pushTransaction(cashflow.source_account_id, -rawAmount);
+					pushTransaction(
+						cashflow.source_account_id,
+						-rawAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id
+					);
 				}
 			} else {
 				if (cashflow.source_account_id) {
-					pushTransaction(cashflow.source_account_id, -rawAmount);
+					pushTransaction(
+						cashflow.source_account_id,
+						-rawAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id
+					);
 				}
 				if (cashflow.destination_account_id) {
-					pushTransaction(cashflow.destination_account_id, rawAmount);
+					pushTransaction(
+						cashflow.destination_account_id,
+						rawAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id
+					);
 				}
 			}
+		}
+
+		for (const [accountId, accountInfo] of accountMap.entries()) {
+			if (accountInfo.type !== 'current_account' && accountInfo.type !== 'savings_account') {
+				continue;
+			}
+
+			if (accountInfo.balance <= 0) {
+				continue;
+			}
+
+			const baseRate =
+				typeof accountInfo.interestRate === 'number' && Number.isFinite(accountInfo.interestRate)
+					? accountInfo.interestRate
+					: 0;
+			if (baseRate === 0) {
+				continue;
+			}
+			const effectiveRate = baseRate + interestRateChange;
+			const monthlyRate = effectiveRate / 100 / 12;
+			const interestAmount = accountInfo.balance * monthlyRate;
+			if (interestAmount === 0) continue;
+
+			accountInfo.balance += interestAmount;
+			transactions.push({
+				cashflowId: 'interest',
+				cashflowType: 'income',
+				category: 'interest',
+				accountId,
+				accountName: accountInfo.name,
+				amount: interestAmount,
+				date: currentDate,
+				monthLabel
+			});
 		}
 
 		for (const series of accountSeries) {
