@@ -4,6 +4,7 @@
 	import './layout.css';
 	import favicon from '$lib/assets/favicon.svg';
 	import Button from '$lib/components/ui/Button.svelte';
+	import { page } from '$app/stores';
 
 	let { children, data } = $props();
 
@@ -70,7 +71,9 @@
 
 	<main class="mx-auto max-w-6xl px-3 py-12">
 		<article class="prose max-w-none prose-slate">
-			{@render children()}
+			{#key $page.url.pathname}
+				{@render children()}
+			{/key}
 		</article>
 	</main>
 </div>
