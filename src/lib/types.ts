@@ -3,7 +3,7 @@ export type ScenarioDetails = {
 	name: string;
 	startDate: string;
 	inflationRate: number;
-	interestRateRise: number;
+	interestRateChange: number;
 	assets: Asset[];
 };
 
