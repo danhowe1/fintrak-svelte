@@ -32,9 +32,7 @@
 		relationships: { accountName: string; role: string }[] | undefined
 	) => {
 		if (!relationships || relationships.length === 0) return '—';
-		return relationships
-			.map((rel) => `${rel.accountName} (${formatLabel(rel.role)})`)
-			.join(', ');
+		return relationships.map((rel) => `${rel.accountName} (${formatLabel(rel.role)})`).join(', ');
 	};
 
 	const formatTerm = (years?: number, months?: number) => {
@@ -88,7 +86,9 @@
 	{:else}
 		<div class="mt-4 overflow-x-auto">
 			<table class="min-w-full divide-y divide-slate-200 text-xs">
-				<thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+				<thead
+					class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+				>
 					<tr>
 						<th class="px-4 py-3">Type</th>
 						<th class="px-4 py-3">Name</th>
@@ -112,7 +112,10 @@
 								{:else if asset.asset_type === 'property'}
 									Market value {asset.details?.marketValue ?? '—'}
 								{:else if asset.asset_type === 'mortgage'}
-									Term {formatTerm(asset.details?.termYears as number, asset.details?.termMonths as number)}
+									Term {formatTerm(
+										asset.details?.termYears as number,
+										asset.details?.termMonths as number
+									)}
 									{#if asset.details?.interestOnly}
 										, interest-only until{' '}
 										{formatMonth((asset.details?.interestOnlyEnd as string) ?? '')}

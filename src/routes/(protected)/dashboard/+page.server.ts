@@ -78,4 +78,3 @@ export const load: PageServerLoad = async (event) => {
 		projectionRange
 	};
 };
-

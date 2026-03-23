@@ -22,8 +22,8 @@
 <section class="not-prose mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<h2 class="text-lg font-semibold text-slate-900">Scenario setup</h2>
 	<p class="mt-2 text-sm text-slate-600">
-		Enter the scenario assumptions and the first person asset. All rates are stored with 1
-		decimal place.
+		Enter the scenario assumptions and the first person asset. All rates are stored with 1 decimal
+		place.
 	</p>
 
 	<form method="POST" class="mt-6 grid gap-6">

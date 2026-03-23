@@ -16,7 +16,8 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 	};
 
 	const path = event.url.pathname;
-	const isPublicPath = PUBLIC_PATHS.has(path) || PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
+	const isPublicPath =
+		PUBLIC_PATHS.has(path) || PUBLIC_PREFIXES.some((prefix) => path.startsWith(prefix));
 
 	if (isPublicPath) {
 		return resolve(event);

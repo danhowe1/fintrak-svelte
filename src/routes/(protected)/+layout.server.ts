@@ -20,4 +20,3 @@ export const load: LayoutServerLoad = async (event) => {
 		scenarioCount
 	};
 };
-

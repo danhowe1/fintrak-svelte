@@ -304,9 +304,7 @@ const createAssetSchema = z
 				});
 			}
 
-			if (
-				data.mortgageInterestOnly === 'on'
-			) {
+			if (data.mortgageInterestOnly === 'on') {
 				if (
 					!data.mortgageInterestOnlyEnd ||
 					!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.mortgageInterestOnlyEnd)
@@ -474,8 +472,7 @@ export const actions: Actions = {
 			mortgageAccountOpeningBalance: formData.get('mortgageAccountOpeningBalance') ?? '',
 			mortgagePaymentSourceChoice: formData.get('mortgagePaymentSourceChoice') ?? '',
 			mortgagePaymentSourceName: formData.get('mortgagePaymentSourceName') ?? '',
-			mortgagePaymentSourceInterestRate:
-				formData.get('mortgagePaymentSourceInterestRate') ?? '',
+			mortgagePaymentSourceInterestRate: formData.get('mortgagePaymentSourceInterestRate') ?? '',
 			mortgagePaymentSourceOpeningBalance:
 				formData.get('mortgagePaymentSourceOpeningBalance') ?? '',
 			employmentIncome: formData.get('employmentIncome') ?? '',
@@ -559,9 +556,7 @@ export const actions: Actions = {
 								? {
 										type: 'new',
 										name: incomeAccountName ?? 'Income account',
-										interestRate: decimalOnePlaceSchema.parse(
-											incomeAccountInterestRate ?? '0'
-										),
+										interestRate: decimalOnePlaceSchema.parse(incomeAccountInterestRate ?? '0'),
 										openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
 									}
 								: { type: 'existing', accountId: incomeAccountChoice ?? '' }
@@ -569,9 +564,7 @@ export const actions: Actions = {
 								? {
 										type: 'new',
 										name: expenseAccountName ?? 'Expense account',
-										interestRate: decimalOnePlaceSchema.parse(
-											expenseAccountInterestRate ?? '0'
-										),
+										interestRate: decimalOnePlaceSchema.parse(expenseAccountInterestRate ?? '0'),
 										openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 									}
 								: { type: 'existing', accountId: expenseAccountChoice ?? '' }
@@ -589,9 +582,7 @@ export const actions: Actions = {
 							? {
 									type: 'new',
 									name: expenseAccountName ?? 'Expenses account',
-									interestRate: decimalOnePlaceSchema.parse(
-										expenseAccountInterestRate ?? '0'
-									),
+									interestRate: decimalOnePlaceSchema.parse(expenseAccountInterestRate ?? '0'),
 									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 								}
 							: { type: 'existing', accountId: expenseAccountChoice ?? '' }
@@ -622,9 +613,7 @@ export const actions: Actions = {
 									interestRate: decimalOnePlaceSchema.parse(
 										mortgagePaymentSourceInterestRate ?? '0'
 									),
-									openingBalance: currencySchema.parse(
-										mortgagePaymentSourceOpeningBalance ?? '0'
-									)
+									openingBalance: currencySchema.parse(mortgagePaymentSourceOpeningBalance ?? '0')
 								}
 							: {
 									type: 'existing',

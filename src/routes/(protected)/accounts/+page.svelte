@@ -18,9 +18,7 @@
 		relationships: { assetName: string; role: string }[] | undefined
 	) => {
 		if (!relationships || relationships.length === 0) return '—';
-		return relationships
-			.map((rel) => `${rel.assetName} (${formatLabel(rel.role)})`)
-			.join(', ');
+		return relationships.map((rel) => `${rel.assetName} (${formatLabel(rel.role)})`).join(', ');
 	};
 </script>
 
@@ -45,7 +43,9 @@
 	{:else}
 		<div class="mt-4 overflow-x-auto">
 			<table class="min-w-full divide-y divide-slate-200 text-xs">
-				<thead class="bg-slate-50 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+				<thead
+					class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+				>
 					<tr>
 						<th class="px-4 py-3">Type</th>
 						<th class="px-4 py-3">Name</th>

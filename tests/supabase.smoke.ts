@@ -12,7 +12,12 @@ const REQUIRED_TABLES = [
 	'asset_owners'
 ] as const;
 
-const REQUIRED_TYPES = ['asset_type', 'account_type', 'asset_account_role', 'scenario_role'] as const;
+const REQUIRED_TYPES = [
+	'asset_type',
+	'account_type',
+	'asset_account_role',
+	'scenario_role'
+] as const;
 
 function getDatabaseUrl() {
 	const connectionString =

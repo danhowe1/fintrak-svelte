@@ -58,7 +58,9 @@
 						</form>
 					</div>
 				{:else}
-					<Button onclick={() => signIn(AUTH_PROVIDER_ID, { redirectTo: DEFAULT_AUTHENTICATED_REDIRECT })}>
+					<Button
+						onclick={() => signIn(AUTH_PROVIDER_ID, { redirectTo: DEFAULT_AUTHENTICATED_REDIRECT })}
+					>
 						Log in
 					</Button>
 				{/if}
@@ -67,7 +69,7 @@
 	</header>
 
 	<main class="mx-auto max-w-6xl px-3 py-12">
-		<article class="prose prose-slate max-w-none">
+		<article class="prose max-w-none prose-slate">
 			{@render children()}
 		</article>
 	</main>

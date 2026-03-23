@@ -31,4 +31,3 @@ export const load: PageServerLoad = async (event) => {
 
 	throw redirect(303, '/scenarios');
 };
-

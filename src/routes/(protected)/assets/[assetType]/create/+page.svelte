@@ -11,8 +11,7 @@
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
 	let useSameAccount = (form?.values?.useSameAccount as string) === 'on';
-	let mortgagePaymentSourceChoice =
-		(form?.values?.mortgagePaymentSourceChoice as string) ?? '';
+	let mortgagePaymentSourceChoice = (form?.values?.mortgagePaymentSourceChoice as string) ?? '';
 	let mortgageInterestOnly = (form?.values?.mortgageInterestOnly as string) === 'on';
 
 	const now = new Date();
@@ -201,7 +200,11 @@
 				{#if useSameAccount}
 					<input type="hidden" name="expenseAccountChoice" value={incomeAccountChoice} />
 					{#if incomeAccountChoice === 'new'}
-						<input type="hidden" name="expenseAccountName" value={form?.values?.incomeAccountName ?? ''} />
+						<input
+							type="hidden"
+							name="expenseAccountName"
+							value={form?.values?.incomeAccountName ?? ''}
+						/>
 						<input
 							type="hidden"
 							name="expenseAccountInterestRate"
@@ -362,11 +365,7 @@
 						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
 						required
 					>
-						<option
-							value=""
-							disabled
-							selected={(form?.values?.mortgagePropertyId ?? '') === ''}
-						>
+						<option value="" disabled selected={(form?.values?.mortgagePropertyId ?? '') === ''}>
 							Select a property
 						</option>
 						{#each data.properties as property}

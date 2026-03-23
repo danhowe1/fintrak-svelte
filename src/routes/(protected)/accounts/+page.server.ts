@@ -1,9 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import {
-	getAccountsForScenario,
-	getScenarioForUserById
-} from '$lib/server/database';
+import { getAccountsForScenario, getScenarioForUserById } from '$lib/server/database';
 
 export const load: PageServerLoad = async (event) => {
 	const userId = event.locals.appUserId;
@@ -28,4 +25,3 @@ export const load: PageServerLoad = async (event) => {
 		accounts
 	};
 };
-

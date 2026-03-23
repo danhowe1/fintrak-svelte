@@ -1,10 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { z } from 'zod';
-import {
-	createAccount,
-	getScenarioForUserById
-} from '$lib/server/database';
+import { createAccount, getScenarioForUserById } from '$lib/server/database';
 
 const decimalOnePlaceSchema = z
 	.string()
@@ -97,4 +94,3 @@ export const actions: Actions = {
 		throw redirect(303, '/accounts');
 	}
 };
-

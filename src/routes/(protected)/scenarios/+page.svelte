@@ -3,8 +3,7 @@
 
 	export let data: PageData;
 
-	const formatNumber = (value?: number) =>
-		typeof value === 'number' ? value.toFixed(1) : '—';
+	const formatNumber = (value?: number) => (typeof value === 'number' ? value.toFixed(1) : '—');
 
 	const formatMonth = (value?: string | Date) => {
 		if (!value) return '—';

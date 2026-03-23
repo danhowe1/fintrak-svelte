@@ -20,8 +20,7 @@ const userNameSchema = z.string().trim().min(1).optional();
 let pool: Pool | undefined;
 
 function getDatabaseUrl() {
-	const connectionString =
-		env.SUPABASE_DEV_DATABASE_URL ?? env.SUPABASE_DB_URL ?? env.DATABASE_URL;
+	const connectionString = env.SUPABASE_DEV_DATABASE_URL ?? env.SUPABASE_DB_URL ?? env.DATABASE_URL;
 
 	return databaseUrlSchema.parse(connectionString);
 }
@@ -40,9 +39,11 @@ function getPool() {
 	return pool;
 }
 
-export function getAuthenticatedUser(session: {
-	user?: { id?: string | null; email?: string | null; name?: string | null };
-} | null) {
+export function getAuthenticatedUser(
+	session: {
+		user?: { id?: string | null; email?: string | null; name?: string | null };
+	} | null
+) {
 	return {
 		id: userIdSchema.parse(session?.user?.id),
 		email: userEmailSchema.parse(session?.user?.email ?? undefined),
@@ -50,9 +51,11 @@ export function getAuthenticatedUser(session: {
 	};
 }
 
-export async function resolveAuthenticatedUserId(session: {
-	user?: { id?: string | null; email?: string | null; name?: string | null };
-} | null) {
+export async function resolveAuthenticatedUserId(
+	session: {
+		user?: { id?: string | null; email?: string | null; name?: string | null };
+	} | null
+) {
 	const { id, email, name } = getAuthenticatedUser(session);
 	const provider = 'auth0';
 
@@ -347,13 +350,7 @@ export async function createAsset(input: CreateAssetInput, client?: Pool['protot
 			values ($1::uuid, $2::asset_type, $3::text, $4::jsonb, $5::uuid)
 			returning id
 		`,
-		[
-			input.scenarioId,
-			input.assetType,
-			input.name,
-			input.details,
-			input.propertyId ?? null
-		]
+		[input.scenarioId, input.assetType, input.name, input.details, input.propertyId ?? null]
 	);
 
 	const assetId = result.rows[0]?.id;
@@ -577,7 +574,6 @@ async function createIdentity(provider: string, providerUserId: string, appUserI
 	);
 }
 
-
 async function insertScenario(client: Pool['prototype'], input: CreateScenarioWithPersonInput) {
 	const scenarioResult = await client.query<{ id: string }>(
 		`
@@ -593,13 +589,7 @@ async function insertScenario(client: Pool['prototype'], input: CreateScenarioWi
 			)
 			returning id
 		`,
-		[
-			input.scenarioName,
-			input.startDate,
-			input.inflationRate,
-			input.interestRateRise,
-			input.userId
-		]
+		[input.scenarioName, input.startDate, input.inflationRate, input.interestRateRise, input.userId]
 	);
 
 	const scenarioId = scenarioResult.rows[0]?.id;
@@ -610,11 +600,7 @@ async function insertScenario(client: Pool['prototype'], input: CreateScenarioWi
 	return scenarioId;
 }
 
-async function insertScenarioMember(
-	client: Pool['prototype'],
-	scenarioId: string,
-	userId: string
-) {
+async function insertScenarioMember(client: Pool['prototype'], scenarioId: string, userId: string) {
 	await client.query(
 		`
 			insert into scenario_members (scenario_id, user_id, role)
@@ -818,9 +804,7 @@ export type CreateMortgageAssetWithAccountsInput = {
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 };
 
-export async function createPersonAssetWithCashflows(
-	input: CreatePersonAssetWithCashflowsInput
-) {
+export async function createPersonAssetWithCashflows(input: CreatePersonAssetWithCashflowsInput) {
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
@@ -920,9 +904,7 @@ export async function createPersonAssetWithCashflows(
 	}
 }
 
-export async function createPropertyAssetWithExpense(
-	input: CreatePropertyAssetWithExpenseInput
-) {
+export async function createPropertyAssetWithExpense(input: CreatePropertyAssetWithExpenseInput) {
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
@@ -993,9 +975,7 @@ export async function createPropertyAssetWithExpense(
 	}
 }
 
-export async function createMortgageAssetWithAccounts(
-	input: CreateMortgageAssetWithAccountsInput
-) {
+export async function createMortgageAssetWithAccounts(input: CreateMortgageAssetWithAccountsInput) {
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
@@ -1047,9 +1027,7 @@ export async function createMortgageAssetWithAccounts(
 			);
 		};
 
-		const paymentSourceAccountId = await resolvePaymentSourceAccount(
-			input.paymentSourceAccount
-		);
+		const paymentSourceAccountId = await resolvePaymentSourceAccount(input.paymentSourceAccount);
 
 		await getOrCreateAssetAccount(client, {
 			scenarioId: input.scenarioId,
@@ -1074,4 +1052,3 @@ export async function createMortgageAssetWithAccounts(
 		client.release();
 	}
 }
-

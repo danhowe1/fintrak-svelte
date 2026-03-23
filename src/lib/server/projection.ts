@@ -103,10 +103,7 @@ const monthsBetween = (from: YearMonth, to: YearMonth) =>
 
 const monthIndex = (value: YearMonth) => value.year * 12 + (value.month - 1);
 
-const getYoungestHundredYearMonth = (
-	assets: ProjectionAsset[],
-	fallbackStart: YearMonth
-) => {
+const getYoungestHundredYearMonth = (assets: ProjectionAsset[], fallbackStart: YearMonth) => {
 	let youngestDob: YearMonth | null = null;
 	for (const asset of assets) {
 		if (asset.asset_type !== 'person') continue;
@@ -157,10 +154,8 @@ export const buildProjection = (input: {
 	assets: ProjectionAsset[];
 	assetAccounts: ProjectionAssetAccount[];
 }): ProjectionResult => {
-	const startYearMonth =
-		parseYearMonth(input.scenarioStartDate ?? undefined) ??
-		parseYearMonth(input.cashflows[0]?.start_date) ??
-		{ year: new Date().getFullYear(), month: 1 };
+	const startYearMonth = parseYearMonth(input.scenarioStartDate ?? undefined) ??
+		parseYearMonth(input.cashflows[0]?.start_date) ?? { year: new Date().getFullYear(), month: 1 };
 
 	const cappedEnd = (() => {
 		const naturalEnd = getYoungestHundredYearMonth(input.assets, startYearMonth);

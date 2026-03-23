@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { HTMLInputAttributes } from 'svelte/elements';
 
-	let { label, error, class: className = '', ...rest } = $props<
+	let {
+		label,
+		error,
+		class: className = '',
+		...rest
+	} = $props<
 		HTMLInputAttributes & {
 			label: string;
 			error?: string;
