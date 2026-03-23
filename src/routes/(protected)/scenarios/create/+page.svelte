@@ -22,8 +22,8 @@
 <section class="not-prose mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<h2 class="text-lg font-semibold text-slate-900">Scenario setup</h2>
 	<p class="mt-2 text-sm text-slate-600">
-		Enter the scenario assumptions and the first person asset. All rates are stored with 1 decimal
-		place.
+		Enter the scenario details and the first person asset. Inflation defaults to 2.0% and interest
+		rate change defaults to 0.00%.
 	</p>
 
 	<form method="POST" class="mt-6 grid gap-6">
@@ -48,29 +48,7 @@
 				required
 			/>
 
-			<div class="grid gap-4 md:grid-cols-2">
-				<FormField
-					type="number"
-					label="Inflation rate (%)"
-					name="inflationRate"
-					step="0.1"
-					placeholder="2.5"
-					value={form?.values?.inflationRate ?? ''}
-					error={form?.errors?.inflationRate?.[0]}
-					required
-				/>
-
-				<FormField
-					type="number"
-					label="Interest rate rise (%)"
-					name="interestRateRise"
-					step="0.1"
-					placeholder="0.5"
-					value={form?.values?.interestRateRise ?? ''}
-					error={form?.errors?.interestRateRise?.[0]}
-					required
-				/>
-			</div>
+			<!-- Rates defaulted server-side; no user input required. -->
 		</FormSection>
 
 		<FormSection title="Person asset">

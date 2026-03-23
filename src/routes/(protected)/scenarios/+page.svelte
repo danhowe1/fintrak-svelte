@@ -3,8 +3,6 @@
 
 	export let data: PageData;
 
-	const formatNumber = (value?: number) => (typeof value === 'number' ? value.toFixed(1) : '—');
-
 	const formatMonth = (value?: string | Date) => {
 		if (!value) return '—';
 		if (value instanceof Date) {
@@ -53,10 +51,7 @@
 						<p class="mt-1 text-sm text-slate-600">
 							Start month: {formatMonth(scenario.details?.startDate)}
 						</p>
-						<div class="mt-2 grid gap-2 text-sm text-slate-600 sm:grid-cols-2">
-							<div>Inflation rate: {formatNumber(scenario.details?.inflationRate)}%</div>
-							<div>Interest rate rise: {formatNumber(scenario.details?.interestRateRise)}%</div>
-						</div>
+						<div class="mt-2 text-sm text-slate-600"></div>
 					</div>
 
 					<a

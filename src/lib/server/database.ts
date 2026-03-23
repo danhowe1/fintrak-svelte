@@ -107,8 +107,6 @@ export type ScenarioListItem = {
 	name: string;
 	details: {
 		startDate?: string;
-		inflationRate?: number;
-		interestRateRise?: number;
 	};
 	created_at: string;
 };
@@ -435,8 +433,6 @@ export type CreateScenarioWithPersonInput = {
 	userId: string;
 	scenarioName: string;
 	startDate: string;
-	inflationRate: number;
-	interestRateRise: number;
 	personName: string;
 	personDob: string;
 	retirementAge: number;
@@ -581,15 +577,13 @@ async function insertScenario(client: Pool['prototype'], input: CreateScenarioWi
 			values (
 				$1::text,
 				jsonb_build_object(
-					'startDate', $2::text,
-					'inflationRate', $3::numeric,
-					'interestRateRise', $4::numeric
+					'startDate', $2::text
 				),
-				$5::text
+				$3::text
 			)
 			returning id
 		`,
-		[input.scenarioName, input.startDate, input.inflationRate, input.interestRateRise, input.userId]
+		[input.scenarioName, input.startDate, input.userId]
 	);
 
 	const scenarioId = scenarioResult.rows[0]?.id;

@@ -1,5 +1,5 @@
 import { redirect } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 import {
 	getCashflowsForScenario,
 	getAccountsForScenario,
@@ -11,6 +11,8 @@ import {
 import { buildProjection } from '$lib/server/projection';
 
 export const load: PageServerLoad = async (event) => {
+	event.depends('projection');
+	const parentData = await event.parent();
 	const userId = event.locals.appUserId;
 	if (!userId) {
 		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
@@ -44,14 +46,32 @@ export const load: PageServerLoad = async (event) => {
 		getAssetAccountsForScenario(scenario.id)
 	]);
 
-	const projectionRangeParam = event.url.searchParams.get('projectionRange') ?? 'all';
+	const projectionRangeParam = event.url.searchParams.get('projectionRange');
+	const projectionRangeCookie = event.cookies.get('projectionRange');
+	const projectionRangeRaw = projectionRangeParam ?? projectionRangeCookie ?? 'all';
 	const projectionRange =
-		projectionRangeParam === '1y' ||
-		projectionRangeParam === '5y' ||
-		projectionRangeParam === '10y' ||
-		projectionRangeParam === 'all'
-			? projectionRangeParam
+		projectionRangeRaw === '1y' ||
+		projectionRangeRaw === '5y' ||
+		projectionRangeRaw === '10y' ||
+		projectionRangeRaw === 'all'
+			? projectionRangeRaw
 			: 'all';
+
+	if (projectionRangeParam && projectionRangeParam !== projectionRangeCookie) {
+		event.cookies.set('projectionRange', projectionRange, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+	}
+
+	if (!projectionRangeCookie && !projectionRangeParam) {
+		event.cookies.set('projectionRange', projectionRange, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+	}
 	const projectionMonths =
 		projectionRange === '1y'
 			? 12
@@ -63,7 +83,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const projection = buildProjection({
 		scenarioStartDate: scenario.details?.startDate,
-		inflationRate: scenario.details?.inflationRate,
+		inflationRate: parentData.sessionRates.inflationRate,
 		maxMonths: projectionMonths,
 		cashflows,
 		accounts,
@@ -75,6 +95,53 @@ export const load: PageServerLoad = async (event) => {
 		scenario,
 		cashflows,
 		projection,
-		projectionRange
+		projectionRange,
+		sessionRates: parentData.sessionRates
 	};
+};
+
+export const actions: Actions = {
+	updateRates: async (event) => {
+		const formData = await event.request.formData();
+		const inflationRate = Number(formData.get('inflationRate'));
+		const interestRateChange = Number(formData.get('interestRateChange'));
+		const deltaInflation = Number(formData.get('deltaInflation') ?? 0);
+		const deltaInterest = Number(formData.get('deltaInterest') ?? 0);
+
+		const nextInflation = Number.isFinite(inflationRate)
+			? Math.round((inflationRate + deltaInflation) * 10) / 10
+			: 2.0;
+		const nextInterest = Number.isFinite(interestRateChange)
+			? Math.round((interestRateChange + deltaInterest) * 100) / 100
+			: 0.0;
+
+		event.cookies.set('inflationRate', nextInflation.toFixed(1), {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+		event.cookies.set('interestRateChange', nextInterest.toFixed(2), {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+
+		return { success: true };
+	},
+	updateRange: async (event) => {
+		const formData = await event.request.formData();
+		const nextRange = String(formData.get('projectionRange') ?? 'all');
+		const projectionRange =
+			nextRange === '1y' || nextRange === '5y' || nextRange === '10y' || nextRange === 'all'
+				? nextRange
+				: 'all';
+
+		event.cookies.set('projectionRange', projectionRange, {
+			path: '/',
+			httpOnly: true,
+			sameSite: 'lax'
+		});
+
+		return { success: true };
+	}
 };

@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { goto } from '$app/navigation';
-	import { navigating } from '$app/stores';
-	import { onDestroy } from 'svelte';
+	import { invalidate } from '$app/navigation';
+	import { afterUpdate, onDestroy } from 'svelte';
 	import Chart from 'chart.js/auto';
 
 	export let data: PageData;
@@ -36,20 +35,38 @@
 		return value < 0 ? `-${formatted}` : formatted;
 	};
 
+const formatRate = (value: number, decimals: number) =>
+	Number.isFinite(value) ? value.toFixed(decimals) : '0';
+
+const updateRates = async (deltaInflation: number, deltaInterest: number) => {
+	if (isUpdating) return;
+	isUpdating = true;
+	const formData = new FormData();
+	formData.set('inflationRate', String(data.sessionRates.inflationRate));
+	formData.set('interestRateChange', String(data.sessionRates.interestRateChange));
+	formData.set('deltaInflation', String(deltaInflation));
+	formData.set('deltaInterest', String(deltaInterest));
+	await fetch('?/updateRates', { method: 'POST', body: formData });
+	await invalidate('projection');
+	isUpdating = false;
+};
+
 	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 
-	let projectionView: 'balances' | 'transactions' = 'balances';
-	let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
+let projectionView: 'balances' | 'transactions' = 'balances';
+let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
+let isUpdating = false;
 
-	const updateProjectionRange = async (range: typeof projectionRange) => {
-		projectionRange = range;
-		const url = new URL(window.location.href);
-		url.searchParams.set('projectionRange', range);
-		await goto(`${url.pathname}?${url.searchParams.toString()}`, {
-			replaceState: true,
-			noScroll: true
-		});
-	};
+const updateProjectionRange = async (range: typeof projectionRange) => {
+	if (isUpdating) return;
+	isUpdating = true;
+	projectionRange = range;
+	const formData = new FormData();
+	formData.set('projectionRange', range);
+	await fetch('?/updateRange', { method: 'POST', body: formData });
+	await invalidate('projection');
+	isUpdating = false;
+};
 
 	const parseYearMonth = (value: unknown) => {
 		if (!value) return null;
@@ -267,13 +284,20 @@
 		chart = null;
 	});
 
-	$: if (chartCanvas && !chart) {
+	const initChart = () => {
+		if (projectionView !== 'balances') return;
+		if (!chartCanvas || chart) return;
 		chart = new Chart(chartCanvas, {
 			type: 'line',
 			data: buildChartData(),
 			options: buildChartOptions(),
 			plugins: [zeroLinePlugin]
 		});
+	};
+
+	$: if (projectionView !== 'balances' && chart) {
+		chart.destroy();
+		chart = null;
 	}
 
 	$: if (chart && data.projectionRange !== chartRangeKey) {
@@ -282,16 +306,15 @@
 		chartRangeKey = data.projectionRange;
 	}
 
-	$: if (!chartCanvas && chart) {
-		chart.destroy();
-		chart = null;
-	}
-
 	$: if (chart) {
 		chart.data = buildChartData();
 		chart.options = buildChartOptions();
 		chart.update();
 	}
+
+	afterUpdate(() => {
+		initChart();
+	});
 </script>
 
 <h1>Dashboard</h1>
@@ -328,7 +351,7 @@
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
 					type="button"
-					disabled={$navigating}
+					disabled={isUpdating}
 					class={`rounded-full px-3 py-1 transition ${
 						projectionRange === '1y'
 							? 'bg-slate-900 text-white'
@@ -340,7 +363,7 @@
 				</button>
 				<button
 					type="button"
-					disabled={$navigating}
+					disabled={isUpdating}
 					class={`rounded-full px-3 py-1 transition ${
 						projectionRange === '5y'
 							? 'bg-slate-900 text-white'
@@ -352,7 +375,7 @@
 				</button>
 				<button
 					type="button"
-					disabled={$navigating}
+					disabled={isUpdating}
 					class={`rounded-full px-3 py-1 transition ${
 						projectionRange === '10y'
 							? 'bg-slate-900 text-white'
@@ -364,7 +387,7 @@
 				</button>
 				<button
 					type="button"
-					disabled={$navigating}
+					disabled={isUpdating}
 					class={`rounded-full px-3 py-1 transition ${
 						projectionRange === 'all'
 							? 'bg-slate-900 text-white'
@@ -377,6 +400,60 @@
 			</div>
 		</div>
 	</div>
+	<div class="mt-4 flex flex-wrap items-center gap-6 text-sm text-slate-700">
+		<div class="flex items-center gap-3">
+			<span class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+				Inflation rate
+			</span>
+			<span class="text-sm font-semibold text-slate-900">
+				{formatRate(data.sessionRates.inflationRate, 1)}%
+			</span>
+			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+				<button
+					type="button"
+					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+					disabled={isUpdating}
+					on:click={() => updateRates(-0.5, 0)}
+				>
+					-
+				</button>
+				<button
+					type="button"
+					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+					disabled={isUpdating}
+					on:click={() => updateRates(0.5, 0)}
+				>
+					+
+				</button>
+			</div>
+		</div>
+		<div class="flex items-center gap-3">
+			<span class="text-xs font-semibold uppercase tracking-wide text-slate-500">
+				Interest rate change
+			</span>
+			<span class="text-sm font-semibold text-slate-900">
+				{formatRate(data.sessionRates.interestRateChange, 2)}%
+			</span>
+			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+				<button
+					type="button"
+					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+					disabled={isUpdating}
+					on:click={() => updateRates(0, -0.25)}
+				>
+					-
+				</button>
+				<button
+					type="button"
+					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+					disabled={isUpdating}
+					on:click={() => updateRates(0, 0.25)}
+				>
+					+
+				</button>
+			</div>
+		</div>
+	</div>
 
 	{#if projectionView === 'balances'}
 		{#if chartProjection.accounts.length === 0}
@@ -384,7 +461,7 @@
 		{:else}
 			<div class="relative mt-4 h-72">
 				<canvas bind:this={chartCanvas} class="h-full w-full"></canvas>
-				{#if $navigating}
+				{#if isUpdating}
 					<div class="absolute inset-0 grid place-items-center rounded-xl bg-white/70">
 						<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
 							<span

@@ -6,7 +6,7 @@ import { createScenarioWithPerson } from '$lib/server/database';
 const decimalOnePlaceSchema = z
 	.string()
 	.trim()
-	.regex(/^-?\d+(\.\d)?$/, { message: 'Must be a number with 1 decimal place' })
+	.regex(/^-?\d+\.\d$/, { message: 'Must be a number with 1 decimal place' })
 	.transform((value) => Number(value));
 
 const currencySchema = z
@@ -25,8 +25,6 @@ const createScenarioSchema = z.object({
 		.string()
 		.trim()
 		.regex(/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/, { message: 'Start month is required' }),
-	inflationRate: decimalOnePlaceSchema,
-	interestRateRise: decimalOnePlaceSchema,
 	personName: z.string().trim().min(1, 'Person name is required'),
 	personDob: z
 		.string()
@@ -56,8 +54,6 @@ export const actions: Actions = {
 		const payload = {
 			scenarioName: formData.get('scenarioName'),
 			startDate: formData.get('startDate'),
-			inflationRate: formData.get('inflationRate'),
-			interestRateRise: formData.get('interestRateRise'),
 			personName: formData.get('personName'),
 			personDob: formData.get('personDob'),
 			retirementAge: formData.get('retirementAge'),
@@ -77,8 +73,6 @@ export const actions: Actions = {
 		const {
 			scenarioName,
 			startDate,
-			inflationRate,
-			interestRateRise,
 			personName,
 			personDob,
 			retirementAge,
@@ -100,8 +94,6 @@ export const actions: Actions = {
 			userId,
 			scenarioName,
 			startDate: normalizeMonth(startDate),
-			inflationRate,
-			interestRateRise,
 			personName,
 			personDob: normalizeMonth(personDob),
 			retirementAge,
