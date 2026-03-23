@@ -1,0 +1,328 @@
+type YearMonth = {
+	year: number;
+	month: number;
+};
+
+export type ProjectionTransaction = {
+	cashflowId: string;
+	cashflowType: 'expense' | 'income' | 'transfer';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	accountId: string;
+	accountName: string;
+	amount: number;
+	date: string;
+	monthLabel: string;
+};
+
+export type AccountBalancePoint = {
+	date: string;
+	monthLabel: string;
+	balance: number;
+};
+
+export type AccountBalanceSeries = {
+	accountId: string;
+	accountName: string;
+	points: AccountBalancePoint[];
+};
+
+export type ProjectionResult = {
+	startDate: string;
+	endDate: string;
+	transactions: ProjectionTransaction[];
+	accounts: AccountBalanceSeries[];
+};
+
+type ProjectionCashflow = {
+	id: string;
+	cashflow_type: 'expense' | 'income' | 'transfer';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
+	amount: number;
+	inflation_affected: boolean;
+	start_date: string;
+	end_date: string | null;
+	source_account_id: string | null;
+	destination_account_id: string | null;
+};
+
+type ProjectionAccount = {
+	id: string;
+	name: string;
+	details: Record<string, unknown>;
+};
+
+type ProjectionAsset = {
+	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation';
+	details: Record<string, unknown>;
+	id?: string;
+};
+
+type ProjectionAssetAccount = {
+	asset_id: string;
+	account_id: string;
+	relationship_role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+};
+
+const parseYearMonth = (value?: unknown): YearMonth | null => {
+	if (!value) return null;
+	const normalized =
+		value instanceof Date
+			? value.toISOString().slice(0, 10)
+			: typeof value === 'string'
+				? value
+				: null;
+	if (!normalized) return null;
+	const match = normalized.match(/^(\d{4})-(\d{2})/);
+	if (!match) return null;
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+		return null;
+	}
+	return { year, month };
+};
+
+const formatYearMonth = (value: YearMonth) => {
+	const month = String(value.month).padStart(2, '0');
+	return `${value.year}-${month}-01`;
+};
+
+const formatMonthLabel = (value: YearMonth) =>
+	`${String(value.month).padStart(2, '0')} ${value.year}`;
+
+const addMonths = (value: YearMonth, monthsToAdd: number): YearMonth => {
+	const total = value.year * 12 + (value.month - 1) + monthsToAdd;
+	const year = Math.floor(total / 12);
+	const month = (total % 12) + 1;
+	return { year, month };
+};
+
+const monthsBetween = (from: YearMonth, to: YearMonth) =>
+	(to.year - from.year) * 12 + (to.month - from.month);
+
+const monthIndex = (value: YearMonth) => value.year * 12 + (value.month - 1);
+
+const getYoungestHundredYearMonth = (
+	assets: ProjectionAsset[],
+	fallbackStart: YearMonth
+) => {
+	let youngestDob: YearMonth | null = null;
+	for (const asset of assets) {
+		if (asset.asset_type !== 'person') continue;
+		const dobValue = asset.details?.dob;
+		if (typeof dobValue !== 'string') continue;
+		const dob = parseYearMonth(dobValue);
+		if (!dob) continue;
+		if (!youngestDob || monthsBetween(youngestDob, dob) > 0) {
+			youngestDob = dob;
+		}
+	}
+
+	const base = youngestDob ?? fallbackStart;
+	return { year: base.year + 100, month: base.month };
+};
+
+const getOpeningBalance = (details: Record<string, unknown>) => {
+	const value = details?.openingBalance;
+	if (typeof value === 'number' && Number.isFinite(value)) return value;
+	if (typeof value === 'string') {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : 0;
+	}
+	return 0;
+};
+
+const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
+	switch (frequency) {
+		case 'monthly':
+			return 1;
+		case 'quarterly':
+			return 3;
+		case 'annually':
+			return 12;
+		case 'one_time':
+			return 0;
+		default:
+			return 1;
+	}
+};
+
+export const buildProjection = (input: {
+	scenarioStartDate?: string | null;
+	inflationRate?: number | null;
+	maxMonths?: number | null;
+	cashflows: ProjectionCashflow[];
+	accounts: ProjectionAccount[];
+	assets: ProjectionAsset[];
+	assetAccounts: ProjectionAssetAccount[];
+}): ProjectionResult => {
+	const startYearMonth =
+		parseYearMonth(input.scenarioStartDate ?? undefined) ??
+		parseYearMonth(input.cashflows[0]?.start_date) ??
+		{ year: new Date().getFullYear(), month: 1 };
+
+	const cappedEnd = (() => {
+		const naturalEnd = getYoungestHundredYearMonth(input.assets, startYearMonth);
+		if (!input.maxMonths || input.maxMonths <= 0) {
+			return naturalEnd;
+		}
+		const capped = addMonths(startYearMonth, input.maxMonths - 1);
+		const naturalIndex = naturalEnd.year * 12 + (naturalEnd.month - 1);
+		const cappedIndex = capped.year * 12 + (capped.month - 1);
+		return cappedIndex < naturalIndex ? capped : naturalEnd;
+	})();
+	const endYearMonth = cappedEnd;
+	const totalMonths = Math.max(0, monthsBetween(startYearMonth, endYearMonth));
+	const inflationRate = input.inflationRate ?? 0;
+
+	const accountMap = new Map(
+		input.accounts.map((account) => [
+			account.id,
+			{
+				name: account.name,
+				balance: getOpeningBalance(account.details)
+			}
+		])
+	);
+
+	const transactions: ProjectionTransaction[] = [];
+	const accountSeries: AccountBalanceSeries[] = input.accounts.map((account) => ({
+		accountId: account.id,
+		accountName: account.name,
+		points: []
+	}));
+
+	const cashflowMeta = input.cashflows.map((cashflow) => {
+		const start = parseYearMonth(cashflow.start_date);
+		const end = parseYearMonth(cashflow.end_date ?? undefined);
+		const interval = getFrequencyInterval(cashflow.frequency);
+		return { cashflow, start, end, interval };
+	});
+
+	const personAssets = new Map<string, { retirementDate: YearMonth; hundredDate: YearMonth }>();
+	for (const asset of input.assets) {
+		if (asset.asset_type !== 'person') continue;
+		const dobValue = asset.details?.dob;
+		const retirementAgeValue = asset.details?.retirementAge;
+		const dob = typeof dobValue === 'string' ? parseYearMonth(dobValue) : null;
+		const retirementAge =
+			typeof retirementAgeValue === 'number'
+				? retirementAgeValue
+				: typeof retirementAgeValue === 'string'
+					? Number(retirementAgeValue)
+					: null;
+		if (!dob || retirementAge === null || !Number.isFinite(retirementAge)) continue;
+		const retirementDate = { year: dob.year + retirementAge, month: dob.month };
+		const hundredDate = { year: dob.year + 100, month: dob.month };
+		if (asset.id) {
+			personAssets.set(asset.id, { retirementDate, hundredDate });
+		}
+	}
+
+	const accountToPerson = new Map<string, { retirementDate: YearMonth }>();
+	for (const link of input.assetAccounts) {
+		const person = personAssets.get(link.asset_id);
+		if (!person) continue;
+		if (!accountToPerson.has(link.account_id)) {
+			accountToPerson.set(link.account_id, person);
+		}
+	}
+
+	for (let i = 0; i <= totalMonths; i += 1) {
+		const current = addMonths(startYearMonth, i);
+		const monthLabel = formatMonthLabel(current);
+		const currentDate = formatYearMonth(current);
+		const yearDiff = current.year - startYearMonth.year;
+		const inflationFactor = Math.pow(1 + inflationRate / 100, yearDiff);
+
+		for (const meta of cashflowMeta) {
+			const { cashflow, start, end, interval } = meta;
+			if (!start) continue;
+			const monthDiff = monthsBetween(start, current);
+			if (monthDiff < 0) continue;
+			if (end && monthsBetween(current, end) > 0) continue;
+
+			if (interval === 0) {
+				if (monthDiff !== 0) continue;
+			} else if (monthDiff % interval !== 0) {
+				continue;
+			}
+
+			const cashflowAccountId =
+				cashflow.destination_account_id ?? cashflow.source_account_id ?? null;
+			if (cashflowAccountId) {
+				const person = accountToPerson.get(cashflowAccountId);
+				if (person) {
+					const startIndex = monthIndex(start);
+					const currentIndex = monthIndex(current);
+					if (cashflow.category === 'employment_income') {
+						const retirementIndex = monthIndex(person.retirementDate);
+						if (startIndex <= retirementIndex && currentIndex >= retirementIndex) {
+							continue;
+						}
+					}
+					if (cashflow.category === 'living_expenses') {
+						const hundredIndex = monthIndex(person.hundredDate);
+						if (startIndex <= hundredIndex && currentIndex >= hundredIndex) {
+							continue;
+						}
+					}
+				}
+			}
+
+			const rawAmount = cashflow.inflation_affected
+				? cashflow.amount * inflationFactor
+				: cashflow.amount;
+
+			const pushTransaction = (accountId: string, signedAmount: number) => {
+				const accountInfo = accountMap.get(accountId);
+				if (!accountInfo) return;
+				accountInfo.balance += signedAmount;
+				transactions.push({
+					cashflowId: cashflow.id,
+					cashflowType: cashflow.cashflow_type,
+					category: cashflow.category,
+					accountId,
+					accountName: accountInfo.name,
+					amount: signedAmount,
+					date: currentDate,
+					monthLabel
+				});
+			};
+
+			if (cashflow.cashflow_type === 'income') {
+				if (cashflow.destination_account_id) {
+					pushTransaction(cashflow.destination_account_id, rawAmount);
+				}
+			} else if (cashflow.cashflow_type === 'expense') {
+				if (cashflow.source_account_id) {
+					pushTransaction(cashflow.source_account_id, -rawAmount);
+				}
+			} else {
+				if (cashflow.source_account_id) {
+					pushTransaction(cashflow.source_account_id, -rawAmount);
+				}
+				if (cashflow.destination_account_id) {
+					pushTransaction(cashflow.destination_account_id, rawAmount);
+				}
+			}
+		}
+
+		for (const series of accountSeries) {
+			const accountInfo = accountMap.get(series.accountId);
+			series.points.push({
+				date: currentDate,
+				monthLabel,
+				balance: accountInfo?.balance ?? 0
+			});
+		}
+	}
+
+	return {
+		startDate: formatYearMonth(startYearMonth),
+		endDate: formatYearMonth(endYearMonth),
+		transactions,
+		accounts: accountSeries
+	};
+};

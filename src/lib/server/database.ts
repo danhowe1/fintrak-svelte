@@ -259,6 +259,25 @@ export async function getAccountsForScenario(scenarioId: string) {
 	return result.rows;
 }
 
+export type AssetAccountLink = {
+	asset_id: string;
+	account_id: string;
+	relationship_role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+};
+
+export async function getAssetAccountsForScenario(scenarioId: string) {
+	const result = await getPool().query<AssetAccountLink>(
+		`
+			select asset_id, account_id, relationship_role
+			from asset_accounts
+			where scenario_id = $1::uuid
+		`,
+		[scenarioId]
+	);
+
+	return result.rows;
+}
+
 export type CashflowSummary = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
@@ -269,6 +288,8 @@ export type CashflowSummary = {
 	start_date: string;
 	end_date: string | null;
 	description: string | null;
+	source_account_id: string | null;
+	destination_account_id: string | null;
 	source_asset_name: string | null;
 	destination_asset_name: string | null;
 	source_account_name: string | null;
@@ -288,6 +309,8 @@ export async function getCashflowsForScenario(scenarioId: string) {
 				c.start_date,
 				c.end_date,
 				c.description,
+				saa.account_id as source_account_id,
+				daa.account_id as destination_account_id,
 				sasset.name as source_asset_name,
 				dasset.name as destination_asset_name,
 				sacc.name as source_account_name,
