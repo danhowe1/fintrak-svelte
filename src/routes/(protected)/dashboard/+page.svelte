@@ -45,6 +45,7 @@
 						<th class="px-4 py-3">Category</th>
 						<th class="px-4 py-3">Frequency</th>
 						<th class="px-4 py-3">Amount</th>
+						<th class="px-4 py-3">Inflation?</th>
 						<th class="px-4 py-3">Start</th>
 						<th class="px-4 py-3">End</th>
 						<th class="px-4 py-3">Source</th>
@@ -70,6 +71,15 @@
 							<td class="px-4 py-3">{formatLabel(cashflow.frequency)}</td>
 							<td class="px-4 py-3 font-medium">
 								{formatCurrency(cashflow.amount)}
+							</td>
+							<td class="px-4 py-3">
+								<input
+									type="checkbox"
+									checked={cashflow.inflation_affected}
+									disabled
+									aria-label="Inflation affected"
+									class="h-4 w-4 accent-slate-600"
+								/>
 							</td>
 							<td class="px-4 py-3">{formatMonth(cashflow.start_date)}</td>
 							<td class="px-4 py-3">{formatMonth(cashflow.end_date)}</td>

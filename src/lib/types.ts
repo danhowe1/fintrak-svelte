@@ -39,6 +39,7 @@ export type Cashflow = {
 	category: CashflowCategory;
 	frequency: CashflowFrequency;
 	amount: number;
+	inflationAffected: boolean;
 	startDate: string;
 	endDate?: string | null;
 	sourceAssetAccountId?: string | null;

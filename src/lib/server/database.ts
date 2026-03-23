@@ -265,6 +265,7 @@ export type CashflowSummary = {
 	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
+	inflation_affected: boolean;
 	start_date: string;
 	end_date: string | null;
 	description: string | null;
@@ -283,6 +284,7 @@ export async function getCashflowsForScenario(scenarioId: string) {
 				c.category,
 				c.frequency,
 				c.amount,
+				c.inflation_affected,
 				c.start_date,
 				c.end_date,
 				c.description,
@@ -694,6 +696,7 @@ type InsertCashflowInput = {
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
 	amount: number;
+	inflationAffected?: boolean;
 	startDate: string;
 	endDate?: string | null;
 	sourceAssetAccountId?: string | null;
@@ -711,6 +714,7 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 				frequency,
 				category,
 				amount,
+				inflation_affected,
 				start_date,
 				end_date,
 				source_asset_account_id,
@@ -724,12 +728,13 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 				$3::cashflow_frequency,
 				$4::cashflow_category,
 				$5::numeric,
-				$6::date,
+				$6::boolean,
 				$7::date,
-				$8::uuid,
+				$8::date,
 				$9::uuid,
-				$10::text,
-				$11::text
+				$10::uuid,
+				$11::text,
+				$12::text
 			)
 		`,
 		[
@@ -738,6 +743,7 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 			input.frequency,
 			input.category,
 			input.amount,
+			input.inflationAffected ?? true,
 			input.startDate,
 			input.endDate ?? null,
 			input.sourceAssetAccountId ?? null,
