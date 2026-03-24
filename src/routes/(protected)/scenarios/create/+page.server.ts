@@ -3,10 +3,10 @@ import type { Actions } from './$types';
 import { z } from 'zod';
 import { createScenarioWithPerson } from '$lib/server/database';
 
-const decimalOnePlaceSchema = z
+const decimalUpToTwoPlacesSchema = z
 	.string()
 	.trim()
-	.regex(/^-?\d+\.\d$/, { message: 'Must be a number with 1 decimal place' })
+	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a number with up to 2 decimal places' })
 	.transform((value) => Number(value));
 
 const currencySchema = z
@@ -14,6 +14,14 @@ const currencySchema = z
 	.trim()
 	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a valid amount' })
 	.transform((value) => Number(value));
+
+const optionalCurrencySchema = z
+	.string()
+	.trim()
+	.refine((value) => value === '' || /^-?\d+(\.\d{1,2})?$/.test(value), {
+		message: 'Must be a valid amount'
+	})
+	.transform((value) => (value === '' ? 0 : Number(value)));
 
 const positiveCurrencySchema = currencySchema.refine((value) => value > 0, {
 	message: 'Must be greater than 0'
@@ -35,10 +43,12 @@ const createScenarioSchema = z.object({
 		.trim()
 		.regex(/^\d+$/, { message: 'Retirement age must be a whole number' })
 		.transform((value) => Number(value)),
-	monthlyNetIncome: positiveCurrencySchema,
+	monthlyNetIncome: optionalCurrencySchema.refine((value) => value >= 0, {
+		message: 'Must be 0 or greater'
+	}),
 	monthlyEssentialExpenses: positiveCurrencySchema,
 	accountName: z.string().trim().min(1, 'Account name is required'),
-	accountInterestRate: decimalOnePlaceSchema,
+	accountInterestRate: decimalUpToTwoPlacesSchema,
 	openingBalance: currencySchema
 });
 

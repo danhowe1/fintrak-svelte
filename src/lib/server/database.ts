@@ -780,6 +780,7 @@ export type CreatePropertyAssetWithExpenseInput = {
 	name: string;
 	startDate: string;
 	marketValue: number;
+	saleDate?: string;
 	ownershipExpense: number;
 	expenseAccount:
 		| { type: 'existing'; accountId: string }
@@ -794,6 +795,10 @@ export type CreateMortgageAssetWithAccountsInput = {
 	details: Record<string, unknown>;
 	mortgageAccount: { name: string; interestRate: number; openingBalance: number };
 	paymentSourceAccount:
+		| { type: 'existing'; accountId: string }
+		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
+	offsetAccount?:
+		| { type: 'none' }
 		| { type: 'existing'; accountId: string }
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 };
@@ -910,7 +915,8 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 				name: input.name,
 				details: {
 					startDate: input.startDate,
-					marketValue: input.marketValue
+					marketValue: input.marketValue,
+					...(input.saleDate ? { saleDate: input.saleDate } : {})
 				}
 			},
 			client
@@ -1021,7 +1027,34 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 			);
 		};
 
+		const resolveOffsetAccount = async (
+			account:
+				| { type: 'none' }
+				| { type: 'existing'; accountId: string }
+				| { type: 'new'; name: string; interestRate: number; openingBalance: number }
+		) => {
+			if (account.type === 'none') {
+				return null;
+			}
+			if (account.type === 'existing') {
+				return account.accountId;
+			}
+			return await createAccount(
+				{
+					scenarioId: input.scenarioId,
+					accountType: 'current_account',
+					name: account.name,
+					details: {
+						interestRate: account.interestRate,
+						openingBalance: account.openingBalance
+					}
+				},
+				client
+			);
+		};
+
 		const paymentSourceAccountId = await resolvePaymentSourceAccount(input.paymentSourceAccount);
+		const offsetAccountId = await resolveOffsetAccount(input.offsetAccount ?? { type: 'none' });
 
 		await getOrCreateAssetAccount(client, {
 			scenarioId: input.scenarioId,
@@ -1036,6 +1069,15 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 			accountId: paymentSourceAccountId,
 			role: 'funding_source'
 		});
+
+		if (offsetAccountId) {
+			await getOrCreateAssetAccount(client, {
+				scenarioId: input.scenarioId,
+				assetId,
+				accountId: offsetAccountId,
+				role: 'offsets'
+			});
+		}
 
 		await client.query('commit');
 		return assetId;

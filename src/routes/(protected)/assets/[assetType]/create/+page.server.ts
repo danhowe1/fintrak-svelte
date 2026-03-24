@@ -39,6 +39,7 @@ const createAssetSchema = z
 		personDob: z.string().trim().optional(),
 		retirementAge: z.string().trim().optional(),
 		propertyMarketValue: z.string().trim().optional(),
+		propertySaleDate: z.string().trim().optional(),
 		propertyOwnershipExpense: z.string().trim().optional(),
 		mortgagePropertyId: z.string().trim().optional(),
 		mortgageTermYears: z.string().trim().optional(),
@@ -52,6 +53,10 @@ const createAssetSchema = z
 		mortgagePaymentSourceName: z.string().trim().optional(),
 		mortgagePaymentSourceInterestRate: z.string().trim().optional(),
 		mortgagePaymentSourceOpeningBalance: z.string().trim().optional(),
+		mortgageOffsetChoice: z.string().trim().optional(),
+		mortgageOffsetName: z.string().trim().optional(),
+		mortgageOffsetInterestRate: z.string().trim().optional(),
+		mortgageOffsetOpeningBalance: z.string().trim().optional(),
 		employmentIncome: z.string().trim().optional(),
 		essentialExpenses: z.string().trim().optional(),
 		incomeAccountChoice: z.string().trim().optional(),
@@ -199,6 +204,13 @@ const createAssetSchema = z
 					code: z.ZodIssueCode.custom,
 					message: 'Market value is required',
 					path: ['propertyMarketValue']
+				});
+			}
+			if (data.propertySaleDate && !/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.propertySaleDate)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Sale date must be MM YYYY',
+					path: ['propertySaleDate']
 				});
 			}
 			if (
@@ -389,6 +401,47 @@ const createAssetSchema = z
 					});
 				}
 			}
+
+			if (data.mortgageOffsetChoice && data.mortgageOffsetChoice !== 'none') {
+				if (data.mortgageOffsetChoice === 'new') {
+					if (!data.mortgageOffsetName) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							message: 'Offset account name is required',
+							path: ['mortgageOffsetName']
+						});
+					}
+					if (
+						!data.mortgageOffsetInterestRate ||
+						!/^-?\d+(\.\d)?$/.test(data.mortgageOffsetInterestRate)
+					) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							message: 'Offset account interest rate is required',
+							path: ['mortgageOffsetInterestRate']
+						});
+					}
+					if (
+						!data.mortgageOffsetOpeningBalance ||
+						!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageOffsetOpeningBalance)
+					) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							message: 'Offset account opening balance is required',
+							path: ['mortgageOffsetOpeningBalance']
+						});
+					}
+				} else {
+					const parsed = uuidSchema.safeParse(data.mortgageOffsetChoice);
+					if (!parsed.success) {
+						ctx.addIssue({
+							code: z.ZodIssueCode.custom,
+							message: 'Offset account selection is invalid',
+							path: ['mortgageOffsetChoice']
+						});
+					}
+				}
+			}
 		}
 	});
 
@@ -461,6 +514,7 @@ export const actions: Actions = {
 			personDob: formData.get('personDob') ?? '',
 			retirementAge: formData.get('retirementAge') ?? '',
 			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
+			propertySaleDate: formData.get('propertySaleDate') ?? '',
 			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
 			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
 			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
@@ -475,6 +529,10 @@ export const actions: Actions = {
 			mortgagePaymentSourceInterestRate: formData.get('mortgagePaymentSourceInterestRate') ?? '',
 			mortgagePaymentSourceOpeningBalance:
 				formData.get('mortgagePaymentSourceOpeningBalance') ?? '',
+			mortgageOffsetChoice: formData.get('mortgageOffsetChoice') ?? 'none',
+			mortgageOffsetName: formData.get('mortgageOffsetName') ?? '',
+			mortgageOffsetInterestRate: formData.get('mortgageOffsetInterestRate') ?? '',
+			mortgageOffsetOpeningBalance: formData.get('mortgageOffsetOpeningBalance') ?? '',
 			employmentIncome: formData.get('employmentIncome') ?? '',
 			essentialExpenses: formData.get('essentialExpenses') ?? '',
 			incomeAccountChoice: formData.get('incomeAccountChoice') ?? '',
@@ -500,6 +558,7 @@ export const actions: Actions = {
 			personDob,
 			retirementAge,
 			propertyMarketValue,
+			propertySaleDate,
 			propertyOwnershipExpense,
 			mortgagePropertyId,
 			mortgageTermYears,
@@ -513,6 +572,10 @@ export const actions: Actions = {
 			mortgagePaymentSourceName,
 			mortgagePaymentSourceInterestRate,
 			mortgagePaymentSourceOpeningBalance,
+			mortgageOffsetChoice,
+			mortgageOffsetName,
+			mortgageOffsetInterestRate,
+			mortgageOffsetOpeningBalance,
 			employmentIncome,
 			essentialExpenses,
 			incomeAccountChoice,
@@ -576,6 +639,7 @@ export const actions: Actions = {
 					name,
 					startDate: details.startDate as string,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
+					saleDate: propertySaleDate ? normalizeMonth(propertySaleDate) : undefined,
 					ownershipExpense: currencySchema.parse(propertyOwnershipExpense ?? ''),
 					expenseAccount:
 						expenseAccountChoice === 'new'
@@ -618,7 +682,25 @@ export const actions: Actions = {
 							: {
 									type: 'existing',
 									accountId: mortgagePaymentSourceChoice ?? ''
-								}
+								},
+					offsetAccount:
+						mortgageOffsetChoice === 'none'
+							? { type: 'none' }
+							: mortgageOffsetChoice === 'new'
+								? {
+										type: 'new',
+										name: mortgageOffsetName ?? 'Offset account',
+										interestRate: decimalOnePlaceSchema.parse(
+											mortgageOffsetInterestRate ?? '0'
+										),
+										openingBalance: currencySchema.parse(
+											mortgageOffsetOpeningBalance ?? '0'
+										)
+									}
+								: {
+										type: 'existing',
+										accountId: mortgageOffsetChoice ?? ''
+									}
 				});
 			} else {
 				await createAsset({

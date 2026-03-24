@@ -20,6 +20,16 @@
 <p>Create your first scenario here to start modelling accounts, assets, and ownership.</p>
 
 <section class="not-prose mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+	<style>
+		.no-spin::-webkit-outer-spin-button,
+		.no-spin::-webkit-inner-spin-button {
+			-webkit-appearance: none;
+			margin: 0;
+		}
+		.no-spin {
+			-moz-appearance: textfield;
+		}
+	</style>
 	<h2 class="text-lg font-semibold text-slate-900">Scenario setup</h2>
 	<p class="mt-2 text-sm text-slate-600">
 		Enter the scenario details and the first person asset. Inflation defaults to 2.0% and interest
@@ -28,45 +38,44 @@
 
 	<form method="POST" class="mt-6 grid gap-6">
 		<FormSection title="Scenario details">
-			<FormField
-				label="Scenario name"
-				name="scenarioName"
-				placeholder="Base case"
-				value={form?.values?.scenarioName ?? ''}
-				error={form?.errors?.scenarioName?.[0]}
-				required
-			/>
+			<div class="grid gap-4 md:grid-cols-2">
+				<FormField
+					type="text"
+					label="Start month"
+					name="startDate"
+					inputmode="numeric"
+					value={form?.values?.startDate ?? defaultStartMonth}
+					error={form?.errors?.startDate?.[0]}
+					required
+				/>
 
-			<FormField
-				type="text"
-				label="Start month"
-				name="startDate"
-				placeholder="MM YYYY"
-				inputmode="numeric"
-				value={form?.values?.startDate ?? defaultStartMonth}
-				error={form?.errors?.startDate?.[0]}
-				required
-			/>
+				<FormField
+					label="Scenario name"
+					name="scenarioName"
+					value={form?.values?.scenarioName ?? ''}
+					error={form?.errors?.scenarioName?.[0]}
+					required
+					autofocus
+				/>
+			</div>
 
 			<!-- Rates defaulted server-side; no user input required. -->
 		</FormSection>
 
-		<FormSection title="Person asset">
-			<FormField
-				label="Name"
-				name="personName"
-				placeholder="Alex Johnson"
-				value={form?.values?.personName ?? ''}
-				error={form?.errors?.personName?.[0]}
-				required
-			/>
+		<FormSection title="First family member">
+			<div class="grid gap-4 md:grid-cols-3">
+				<FormField
+					label="Name"
+					name="personName"
+					value={form?.values?.personName ?? ''}
+					error={form?.errors?.personName?.[0]}
+					required
+				/>
 
-			<div class="grid gap-4 md:grid-cols-2">
 				<FormField
 					type="text"
 					label="Date of birth (MM YYYY)"
 					name="personDob"
-					placeholder="MM YYYY"
 					inputmode="numeric"
 					value={form?.values?.personDob ?? ''}
 					error={form?.errors?.personDob?.[0]}
@@ -79,10 +88,10 @@
 					name="retirementAge"
 					min="0"
 					step="1"
-					placeholder="65"
 					value={form?.values?.retirementAge ?? ''}
 					error={form?.errors?.retirementAge?.[0]}
 					required
+					class="no-spin"
 				/>
 			</div>
 
@@ -92,10 +101,9 @@
 					label="Monthly net income"
 					name="monthlyNetIncome"
 					step="0.01"
-					placeholder="5000"
 					value={form?.values?.monthlyNetIncome ?? ''}
 					error={form?.errors?.monthlyNetIncome?.[0]}
-					required
+					class="no-spin"
 				/>
 
 				<FormField
@@ -103,34 +111,33 @@
 					label="Monthly essential living expenses"
 					name="monthlyEssentialExpenses"
 					step="0.01"
-					placeholder="2500"
 					value={form?.values?.monthlyEssentialExpenses ?? ''}
 					error={form?.errors?.monthlyEssentialExpenses?.[0]}
 					required
+					class="no-spin"
 				/>
 			</div>
 		</FormSection>
 
 		<FormSection title="Default current account">
-			<FormField
-				label="Account name"
-				name="accountName"
-				placeholder="Everyday Account"
-				value={form?.values?.accountName ?? ''}
-				error={form?.errors?.accountName?.[0]}
-				required
-			/>
+			<div class="grid gap-4 md:grid-cols-3">
+				<FormField
+					label="Account name"
+					name="accountName"
+					value={form?.values?.accountName ?? ''}
+					error={form?.errors?.accountName?.[0]}
+					required
+				/>
 
-			<div class="grid gap-4 md:grid-cols-2">
 				<FormField
 					type="number"
 					label="Interest rate (%)"
 					name="accountInterestRate"
-					step="0.1"
-					placeholder="1.5"
+					step="0.01"
 					value={form?.values?.accountInterestRate ?? ''}
 					error={form?.errors?.accountInterestRate?.[0]}
 					required
+					class="no-spin"
 				/>
 
 				<FormField
@@ -138,10 +145,10 @@
 					label="Opening balance"
 					name="openingBalance"
 					step="0.01"
-					placeholder="10000"
 					value={form?.values?.openingBalance ?? ''}
 					error={form?.errors?.openingBalance?.[0]}
 					required
+					class="no-spin"
 				/>
 			</div>
 		</FormSection>

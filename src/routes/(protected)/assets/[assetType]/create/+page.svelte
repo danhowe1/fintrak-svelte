@@ -8,10 +8,12 @@
 	export let form: ActionData;
 
 	const selectedType = (form?.values?.assetType as string) ?? data.assetType;
+	const assetTypeLabel = selectedType.replace(/_/g, ' ').toUpperCase();
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
 	let useSameAccount = (form?.values?.useSameAccount as string) === 'on';
 	let mortgagePaymentSourceChoice = (form?.values?.mortgagePaymentSourceChoice as string) ?? '';
+	let mortgageOffsetChoice = (form?.values?.mortgageOffsetChoice as string) ?? 'none';
 	let mortgageInterestOnly = (form?.values?.mortgageInterestOnly as string) === 'on';
 
 	const now = new Date();
@@ -27,6 +29,16 @@
 <p class="text-sm text-slate-600">Scenario: {data.scenario.name}</p>
 
 <section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+	<style>
+		.no-spin::-webkit-outer-spin-button,
+		.no-spin::-webkit-inner-spin-button {
+			-webkit-appearance: none;
+			margin: 0;
+		}
+		.no-spin {
+			-moz-appearance: textfield;
+		}
+	</style>
 	{#if form?.formError}
 		<div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
 			{form.formError}
@@ -49,37 +61,29 @@
 		{/if}
 	{/if}
 	<form method="POST" class="grid gap-6">
-		<FormSection title="Asset details">
-			<div class="grid gap-2 text-sm font-medium text-slate-700">
-				Type
-				<div class="rounded-lg border border-slate-200 px-3 py-2 text-slate-900">
-					{selectedType.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
-				</div>
-				<input type="hidden" name="assetType" value={selectedType} />
-				{#if form?.errors?.assetType?.[0]}
-					<span class="text-xs text-rose-600">{form.errors.assetType[0]}</span>
-				{/if}
+		<FormSection title={`${assetTypeLabel} DETAILS`}>
+			<input type="hidden" name="assetType" value={selectedType} />
+
+			<div class="grid gap-4 md:grid-cols-2">
+				<FormField
+					type="text"
+					label="Start month"
+					name="startMonth"
+					inputmode="numeric"
+					value={form?.values?.startMonth ?? defaultMonth}
+					error={form?.errors?.startMonth?.[0]}
+					required
+				/>
+
+				<FormField
+					label="Name"
+					name="name"
+					value={form?.values?.name ?? ''}
+					error={form?.errors?.name?.[0]}
+					required
+					autofocus
+				/>
 			</div>
-
-			<FormField
-				label="Name"
-				name="name"
-				placeholder="Primary residence"
-				value={form?.values?.name ?? ''}
-				error={form?.errors?.name?.[0]}
-				required
-			/>
-
-			<FormField
-				type="text"
-				label="Start month"
-				name="startMonth"
-				placeholder="MM YYYY"
-				inputmode="numeric"
-				value={form?.values?.startMonth ?? defaultMonth}
-				error={form?.errors?.startMonth?.[0]}
-				required
-			/>
 		</FormSection>
 
 		{#if selectedType === 'person'}
@@ -88,7 +92,6 @@
 					type="text"
 					label="Date of birth (MM YYYY)"
 					name="personDob"
-					placeholder="MM YYYY"
 					inputmode="numeric"
 					value={form?.values?.personDob ?? ''}
 					error={form?.errors?.personDob?.[0]}
@@ -97,11 +100,11 @@
 
 				<FormField
 					type="number"
+					class="no-spin"
 					label="Retirement age"
 					name="retirementAge"
 					min="0"
 					step="1"
-					placeholder="65"
 					value={form?.values?.retirementAge ?? ''}
 					error={form?.errors?.retirementAge?.[0]}
 					required
@@ -111,10 +114,10 @@
 			<FormSection title="Employment income">
 				<FormField
 					type="number"
+					class="no-spin"
 					label="Monthly employment income"
 					name="employmentIncome"
 					step="0.01"
-					placeholder="5000"
 					value={form?.values?.employmentIncome ?? ''}
 					error={form?.errors?.employmentIncome?.[0]}
 					required
@@ -146,27 +149,26 @@
 						<FormField
 							label="Account name"
 							name="incomeAccountName"
-							placeholder="Income account"
 							value={form?.values?.incomeAccountName ?? ''}
 							error={form?.errors?.incomeAccountName?.[0]}
 							required
 						/>
 						<FormField
 							type="number"
+							class="no-spin"
 							label="Interest rate (%)"
 							name="incomeAccountInterestRate"
 							step="0.1"
-							placeholder="1.5"
 							value={form?.values?.incomeAccountInterestRate ?? ''}
 							error={form?.errors?.incomeAccountInterestRate?.[0]}
 							required
 						/>
 						<FormField
 							type="number"
+							class="no-spin"
 							label="Opening balance"
 							name="incomeAccountOpeningBalance"
 							step="0.01"
-							placeholder="0"
 							value={form?.values?.incomeAccountOpeningBalance ?? ''}
 							error={form?.errors?.incomeAccountOpeningBalance?.[0]}
 							required
@@ -178,10 +180,10 @@
 			<FormSection title="Essential living expenses">
 				<FormField
 					type="number"
+					class="no-spin"
 					label="Monthly essential expenses"
 					name="essentialExpenses"
 					step="0.01"
-					placeholder="2500"
 					value={form?.values?.essentialExpenses ?? ''}
 					error={form?.errors?.essentialExpenses?.[0]}
 					required
@@ -245,27 +247,26 @@
 							<FormField
 								label="Account name"
 								name="expenseAccountName"
-								placeholder="Expenses account"
 								value={form?.values?.expenseAccountName ?? ''}
 								error={form?.errors?.expenseAccountName?.[0]}
 								required
 							/>
 							<FormField
 								type="number"
+								class="no-spin"
 								label="Interest rate (%)"
 								name="expenseAccountInterestRate"
 								step="0.1"
-								placeholder="1.5"
 								value={form?.values?.expenseAccountInterestRate ?? ''}
 								error={form?.errors?.expenseAccountInterestRate?.[0]}
 								required
 							/>
 							<FormField
 								type="number"
+								class="no-spin"
 								label="Opening balance"
 								name="expenseAccountOpeningBalance"
 								step="0.01"
-								placeholder="0"
 								value={form?.values?.expenseAccountOpeningBalance ?? ''}
 								error={form?.errors?.expenseAccountOpeningBalance?.[0]}
 								required
@@ -277,28 +278,39 @@
 		{/if}
 
 		{#if selectedType === 'property'}
-			<FormSection title="Property details">
-				<FormField
-					type="number"
-					label="Market value"
-					name="propertyMarketValue"
-					step="0.01"
-					placeholder="850000"
-					value={form?.values?.propertyMarketValue ?? ''}
-					error={form?.errors?.propertyMarketValue?.[0]}
-					required
-				/>
+			<div class="grid gap-4">
+				<div class="grid gap-4 md:grid-cols-3">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Market value"
+						name="propertyMarketValue"
+						step="0.01"
+						value={form?.values?.propertyMarketValue ?? ''}
+						error={form?.errors?.propertyMarketValue?.[0]}
+						required
+					/>
 
-				<FormField
-					type="number"
-					label="Monthly ownership expense"
-					name="propertyOwnershipExpense"
-					step="0.01"
-					placeholder="400"
-					value={form?.values?.propertyOwnershipExpense ?? ''}
-					error={form?.errors?.propertyOwnershipExpense?.[0]}
-					required
-				/>
+					<FormField
+						type="text"
+						label="Sale date (MM YYYY)"
+						name="propertySaleDate"
+						inputmode="numeric"
+						value={form?.values?.propertySaleDate ?? ''}
+						error={form?.errors?.propertySaleDate?.[0]}
+					/>
+
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Monthly ownership expense"
+						name="propertyOwnershipExpense"
+						step="0.01"
+						value={form?.values?.propertyOwnershipExpense ?? ''}
+						error={form?.errors?.propertyOwnershipExpense?.[0]}
+						required
+					/>
+				</div>
 
 				<label class="grid gap-2 text-sm font-medium text-slate-700">
 					Expenses account
@@ -326,34 +338,33 @@
 						<FormField
 							label="Account name"
 							name="expenseAccountName"
-							placeholder="Expenses account"
 							value={form?.values?.expenseAccountName ?? ''}
 							error={form?.errors?.expenseAccountName?.[0]}
 							required
 						/>
 						<FormField
 							type="number"
+							class="no-spin"
 							label="Interest rate (%)"
 							name="expenseAccountInterestRate"
 							step="0.1"
-							placeholder="1.5"
 							value={form?.values?.expenseAccountInterestRate ?? ''}
 							error={form?.errors?.expenseAccountInterestRate?.[0]}
 							required
 						/>
 						<FormField
 							type="number"
+							class="no-spin"
 							label="Opening balance"
 							name="expenseAccountOpeningBalance"
 							step="0.01"
-							placeholder="0"
 							value={form?.values?.expenseAccountOpeningBalance ?? ''}
 							error={form?.errors?.expenseAccountOpeningBalance?.[0]}
 							required
 						/>
 					</div>
 				{/if}
-			</FormSection>
+			</div>
 		{/if}
 
 		{#if selectedType === 'mortgage'}
@@ -385,23 +396,23 @@
 				<div class="grid gap-4 md:grid-cols-2">
 					<FormField
 						type="number"
+						class="no-spin"
 						label="Term remaining (years)"
 						name="mortgageTermYears"
 						min="0"
 						step="1"
-						placeholder="25"
 						value={form?.values?.mortgageTermYears ?? ''}
 						error={form?.errors?.mortgageTermYears?.[0]}
 						required
 					/>
 					<FormField
 						type="number"
+						class="no-spin"
 						label="Term remaining (months)"
 						name="mortgageTermMonths"
 						min="0"
 						max="11"
 						step="1"
-						placeholder="0"
 						value={form?.values?.mortgageTermMonths ?? ''}
 						error={form?.errors?.mortgageTermMonths?.[0]}
 						required
@@ -423,7 +434,6 @@
 						type="text"
 						label="Interest-only ends (MM YYYY)"
 						name="mortgageInterestOnlyEnd"
-						placeholder="MM YYYY"
 						inputmode="numeric"
 						value={form?.values?.mortgageInterestOnlyEnd ?? ''}
 						error={form?.errors?.mortgageInterestOnlyEnd?.[0]}
@@ -436,7 +446,6 @@
 				<FormField
 					label="Account name"
 					name="mortgageAccountName"
-					placeholder="Mortgage account"
 					value={form?.values?.mortgageAccountName ?? ''}
 					error={form?.errors?.mortgageAccountName?.[0]}
 					required
@@ -445,20 +454,20 @@
 				<div class="grid gap-4 md:grid-cols-2">
 					<FormField
 						type="number"
+						class="no-spin"
 						label="Interest rate (%)"
 						name="mortgageAccountInterestRate"
 						step="0.1"
-						placeholder="6.2"
 						value={form?.values?.mortgageAccountInterestRate ?? ''}
 						error={form?.errors?.mortgageAccountInterestRate?.[0]}
 						required
 					/>
 					<FormField
 						type="number"
+						class="no-spin"
 						label="Opening balance"
 						name="mortgageAccountOpeningBalance"
 						step="0.01"
-						placeholder="500000"
 						value={form?.values?.mortgageAccountOpeningBalance ?? ''}
 						error={form?.errors?.mortgageAccountOpeningBalance?.[0]}
 						required
@@ -495,29 +504,82 @@
 						<FormField
 							label="Account name"
 							name="mortgagePaymentSourceName"
-							placeholder="Payment account"
 							value={form?.values?.mortgagePaymentSourceName ?? ''}
 							error={form?.errors?.mortgagePaymentSourceName?.[0]}
 							required
 						/>
 						<FormField
 							type="number"
+							class="no-spin"
 							label="Interest rate (%)"
 							name="mortgagePaymentSourceInterestRate"
 							step="0.1"
-							placeholder="1.5"
 							value={form?.values?.mortgagePaymentSourceInterestRate ?? ''}
 							error={form?.errors?.mortgagePaymentSourceInterestRate?.[0]}
 							required
 						/>
 						<FormField
 							type="number"
+							class="no-spin"
 							label="Opening balance"
 							name="mortgagePaymentSourceOpeningBalance"
 							step="0.01"
-							placeholder="0"
 							value={form?.values?.mortgagePaymentSourceOpeningBalance ?? ''}
 							error={form?.errors?.mortgagePaymentSourceOpeningBalance?.[0]}
+							required
+						/>
+					</div>
+				{/if}
+			</FormSection>
+
+			<FormSection title="Offset account (optional)">
+				<label class="grid gap-2 text-sm font-medium text-slate-700">
+					Offset account
+					<select
+						name="mortgageOffsetChoice"
+						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+						bind:value={mortgageOffsetChoice}
+					>
+						<option value="none">None</option>
+						<option value="new">Create new current account</option>
+						{#each data.currentAccounts as account}
+							<option value={account.id}>{account.name}</option>
+						{/each}
+					</select>
+					{#if form?.errors?.mortgageOffsetChoice?.[0]}
+						<span class="text-xs text-rose-600">
+							{form.errors.mortgageOffsetChoice[0]}
+						</span>
+					{/if}
+				</label>
+
+				{#if mortgageOffsetChoice === 'new'}
+					<div class="grid gap-4 md:grid-cols-3">
+						<FormField
+							label="Account name"
+							name="mortgageOffsetName"
+							value={form?.values?.mortgageOffsetName ?? ''}
+							error={form?.errors?.mortgageOffsetName?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							class="no-spin"
+							label="Interest rate (%)"
+							name="mortgageOffsetInterestRate"
+							step="0.1"
+							value={form?.values?.mortgageOffsetInterestRate ?? ''}
+							error={form?.errors?.mortgageOffsetInterestRate?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							class="no-spin"
+							label="Opening balance"
+							name="mortgageOffsetOpeningBalance"
+							step="0.01"
+							value={form?.values?.mortgageOffsetOpeningBalance ?? ''}
+							error={form?.errors?.mortgageOffsetOpeningBalance?.[0]}
 							required
 						/>
 					</div>

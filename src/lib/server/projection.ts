@@ -241,12 +241,32 @@ export const buildProjection = (input: {
 		}
 	}
 
-	const accountToPerson = new Map<string, { retirementDate: YearMonth }>();
+	const propertySaleDates = new Map<string, YearMonth>();
+	for (const asset of input.assets) {
+		if (asset.asset_type !== 'property') continue;
+		const saleDateValue = asset.details?.saleDate;
+		const saleDate = typeof saleDateValue === 'string' ? parseYearMonth(saleDateValue) : null;
+		if (!saleDate) continue;
+		if (asset.id) {
+			propertySaleDates.set(asset.id, saleDate);
+		}
+	}
+
+	const accountToPerson = new Map<string, { retirementDate: YearMonth; hundredDate: YearMonth }>();
 	for (const link of input.assetAccounts) {
 		const person = personAssets.get(link.asset_id);
 		if (!person) continue;
 		if (!accountToPerson.has(link.account_id)) {
 			accountToPerson.set(link.account_id, person);
+		}
+	}
+
+	const accountToPropertySale = new Map<string, YearMonth>();
+	for (const link of input.assetAccounts) {
+		const saleDate = propertySaleDates.get(link.asset_id);
+		if (!saleDate) continue;
+		if (!accountToPropertySale.has(link.account_id)) {
+			accountToPropertySale.set(link.account_id, saleDate);
 		}
 	}
 
@@ -288,6 +308,16 @@ export const buildProjection = (input: {
 						if (startIndex <= hundredIndex && currentIndex >= hundredIndex) {
 							continue;
 						}
+					}
+				}
+
+				const propertySaleDate = accountToPropertySale.get(cashflowAccountId);
+				if (propertySaleDate && cashflow.category === 'asset_ownership') {
+					const startIndex = monthIndex(start);
+					const currentIndex = monthIndex(current);
+					const saleIndex = monthIndex(propertySaleDate);
+					if (startIndex <= saleIndex && currentIndex >= saleIndex) {
+						continue;
 					}
 				}
 			}
