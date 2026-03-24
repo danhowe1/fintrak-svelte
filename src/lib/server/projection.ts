@@ -309,6 +309,8 @@ export const buildProjection = (input: {
 			saleDate: YearMonth;
 			marketValue: number;
 			marketGrowthRate: number;
+			fixedSellingCosts: number;
+			variableSellingCosts: number;
 			assetName: string;
 		}
 	>();
@@ -321,8 +323,10 @@ export const buildProjection = (input: {
 		if (!startDate || !saleDate) continue;
 		const marketValue = getNumberDetail(asset.details ?? {}, 'marketValue');
 		if (marketValue === null) continue;
-		const marketGrowthRate =
-			getNumberDetail(asset.details ?? {}, 'marketGrowthRate') ?? 5;
+		const marketGrowthRate = getNumberDetail(asset.details ?? {}, 'marketGrowthRate') ?? 5;
+		const fixedSellingCosts = getNumberDetail(asset.details ?? {}, 'fixedSellingCosts') ?? 10000;
+		const variableSellingCosts =
+			getNumberDetail(asset.details ?? {}, 'variableSellingCosts') ?? 1.65;
 
 		let accountId: string | null = null;
 		for (const link of input.assetAccounts) {
@@ -340,6 +344,8 @@ export const buildProjection = (input: {
 			saleDate,
 			marketValue,
 			marketGrowthRate,
+			fixedSellingCosts,
+			variableSellingCosts,
 			assetName: asset.name ?? 'Property'
 		});
 	}
@@ -543,6 +549,36 @@ export const buildProjection = (input: {
 				'Asset sale',
 				property.assetName
 			);
+
+			const inflationFactor = Math.pow(1 + inflationRate / 100, yearsHeld);
+			const inflatedFixedCosts = property.fixedSellingCosts * inflationFactor;
+			const variableCosts = (property.variableSellingCosts / 100) * saleAmount;
+			const totalFixedCosts = inflatedFixedCosts > 0 ? inflatedFixedCosts : 0;
+			const totalVariableCosts = variableCosts > 0 ? variableCosts : 0;
+
+			if (totalFixedCosts > 0) {
+				pushTransaction(
+					property.accountId,
+					-totalFixedCosts,
+					'expense',
+					'asset_ownership',
+					`property_sale_fixed_${assetId}`,
+					'Fixed selling costs',
+					property.assetName
+				);
+			}
+
+			if (totalVariableCosts > 0) {
+				pushTransaction(
+					property.accountId,
+					-totalVariableCosts,
+					'expense',
+					'asset_ownership',
+					`property_sale_variable_${assetId}`,
+					'Variable selling costs',
+					property.assetName
+				);
+			}
 		}
 
 		for (const [assetId, state] of mortgageStates.entries()) {

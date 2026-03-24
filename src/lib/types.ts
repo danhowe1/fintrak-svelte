@@ -21,6 +21,8 @@ export type PropertyDetails = {
 	marketValue: number;
 	startDate: string;
 	marketGrowthRate: number;
+	fixedSellingCosts: number;
+	variableSellingCosts: number;
 };
 
 export type Asset = PersonDetails | PropertyDetails;

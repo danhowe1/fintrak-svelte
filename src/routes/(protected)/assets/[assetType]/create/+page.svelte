@@ -323,6 +323,26 @@
 						error={form?.errors?.propertyMarketGrowthRate?.[0]}
 						required
 					/>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Fixed selling costs"
+						name="propertyFixedSellingCosts"
+						step="0.01"
+						value={form?.values?.propertyFixedSellingCosts ?? '10000'}
+						error={form?.errors?.propertyFixedSellingCosts?.[0]}
+						required
+					/>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Variable selling costs (%)"
+						name="propertyVariableSellingCosts"
+						step="0.01"
+						value={form?.values?.propertyVariableSellingCosts ?? '1.65'}
+						error={form?.errors?.propertyVariableSellingCosts?.[0]}
+						required
+					/>
 				</div>
 
 				<label class="grid gap-2 text-sm font-medium text-slate-700">

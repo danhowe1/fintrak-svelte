@@ -49,6 +49,8 @@ const createAssetSchema = z
 		propertyMarketValue: z.string().trim().optional(),
 		propertySaleDate: z.string().trim().optional(),
 		propertyMarketGrowthRate: z.string().trim().optional(),
+		propertyFixedSellingCosts: z.string().trim().optional(),
+		propertyVariableSellingCosts: z.string().trim().optional(),
 		propertyOwnershipExpense: z.string().trim().optional(),
 		mortgagePropertyId: z.string().trim().optional(),
 		mortgageTermYears: z.string().trim().optional(),
@@ -230,6 +232,26 @@ const createAssetSchema = z
 					code: z.ZodIssueCode.custom,
 					message: 'Market growth rate is required',
 					path: ['propertyMarketGrowthRate']
+				});
+			}
+			if (
+				!data.propertyFixedSellingCosts ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyFixedSellingCosts)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Fixed selling costs are required',
+					path: ['propertyFixedSellingCosts']
+				});
+			}
+			if (
+				!data.propertyVariableSellingCosts ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyVariableSellingCosts)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Variable selling costs are required',
+					path: ['propertyVariableSellingCosts']
 				});
 			}
 			if (
@@ -535,6 +557,8 @@ export const actions: Actions = {
 			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
 			propertySaleDate: formData.get('propertySaleDate') ?? '',
 			propertyMarketGrowthRate: formData.get('propertyMarketGrowthRate') ?? '5',
+			propertyFixedSellingCosts: formData.get('propertyFixedSellingCosts') ?? '10000',
+			propertyVariableSellingCosts: formData.get('propertyVariableSellingCosts') ?? '1.65',
 			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
 			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
 			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
@@ -580,6 +604,8 @@ export const actions: Actions = {
 			propertyMarketValue,
 			propertySaleDate,
 			propertyMarketGrowthRate,
+			propertyFixedSellingCosts,
+			propertyVariableSellingCosts,
 			propertyOwnershipExpense,
 			mortgagePropertyId,
 			mortgageTermYears,
@@ -667,6 +693,10 @@ export const actions: Actions = {
 					startDate: details.startDate as string,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
 					marketGrowthRate: decimalUpToTwoPlacesSchema.parse(propertyMarketGrowthRate ?? '5'),
+					fixedSellingCosts: currencySchema.parse(propertyFixedSellingCosts ?? '10000'),
+					variableSellingCosts: decimalUpToTwoPlacesSchema.parse(
+						propertyVariableSellingCosts ?? '1.65'
+					),
 					saleDate: propertySaleDate ? normalizeMonth(propertySaleDate) : undefined,
 					ownershipExpense: currencySchema.parse(propertyOwnershipExpense ?? ''),
 					expenseAccount:
