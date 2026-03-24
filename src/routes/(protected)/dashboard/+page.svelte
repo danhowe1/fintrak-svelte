@@ -44,7 +44,7 @@
 
 	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 
-let projectionView: 'balances' | 'transactions' = 'balances';
+let projectionView: 'balances' | 'transactions' | 'balance_sheet' = 'balances';
 let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
 let isUpdating = false;
 
@@ -175,6 +175,26 @@ let isUpdating = false;
 					? point.date.slice(0, 4)
 					: point.monthLabel
 		})) ?? [];
+
+	$: balanceSheetHeaders = chartAxisPoints.map((point) => point.monthLabel);
+	$: balanceSheetRows = (() => {
+		const accounts = chartProjection.accounts ?? [];
+		if (accounts.length === 0) return [];
+		const rows = [];
+		if (totalSeries) {
+			rows.push({
+				name: 'Total',
+				values: totalSeries.points.map((point) => point.balance)
+			});
+		}
+		for (const account of accounts) {
+			rows.push({
+				name: account.accountName,
+				values: account.points.map((point) => point.balance)
+			});
+		}
+		return rows;
+	})();
 
 	const formatAxisCurrency = (value: number) =>
 		new Intl.NumberFormat('en-AU', {
@@ -362,6 +382,17 @@ let isUpdating = false;
 				<button
 					type="button"
 					class={`rounded-full px-3 py-1 transition ${
+						projectionView === 'balance_sheet'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-600 hover:text-slate-900'
+					}`}
+					on:click={() => (projectionView = 'balance_sheet')}
+				>
+					Balance sheet
+				</button>
+				<button
+					type="button"
+					class={`rounded-full px-3 py-1 transition ${
 						projectionView === 'transactions'
 							? 'bg-slate-900 text-white'
 							: 'text-slate-600 hover:text-slate-900'
@@ -491,6 +522,61 @@ let isUpdating = false;
 				<canvas bind:this={chartCanvas} class="h-full w-full"></canvas>
 				{#if isUpdating}
 					<div class="absolute inset-0 grid place-items-center rounded-xl bg-white/70">
+						<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
+							<span
+								class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
+							></span>
+							<span>Updating projection…</span>
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	{:else if projectionView === 'balance_sheet'}
+		{#if chartProjection.accounts.length === 0}
+			<p class="mt-3 text-sm text-slate-600">No accounts available for projection.</p>
+		{:else}
+			<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
+				<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
+					<thead
+						class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+					>
+						<tr>
+							<th class="sticky left-0 z-10 bg-slate-50 px-4 py-3">Account</th>
+							{#each balanceSheetHeaders as header}
+								<th class="px-4 py-3 text-right">{header}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-100 text-slate-700">
+						{#each balanceSheetRows as row, rowIndex}
+							<tr
+								class={`whitespace-nowrap ${
+									rowIndex === 0 ? 'font-semibold text-slate-900' : ''
+								}`}
+							>
+								<td
+									class={`sticky left-0 z-10 px-4 py-3 ${
+										rowIndex === 0 ? 'bg-white text-slate-900' : 'bg-white'
+									}`}
+								>
+									{row.name}
+								</td>
+								{#each row.values as value}
+									<td
+										class={`px-4 py-3 text-right ${
+											value >= 0 ? 'text-emerald-600' : 'text-rose-600'
+										}`}
+									>
+										{formatCurrency(value)}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				{#if isUpdating}
+					<div class="absolute inset-0 grid place-items-center bg-white/70">
 						<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
 							<span
 								class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
