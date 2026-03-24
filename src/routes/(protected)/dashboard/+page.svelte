@@ -55,6 +55,17 @@
 let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
 let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
 let isUpdating = false;
+let expandedPnlNodes = new Set<string>();
+
+	const togglePnlNode = (id: string) => {
+		const next = new Set(expandedPnlNodes);
+		if (next.has(id)) {
+			next.delete(id);
+		} else {
+			next.add(id);
+		}
+		expandedPnlNodes = next;
+	};
 
 	const refreshProjection = async () => {
 		const url = new URL('/dashboard/projection', window.location.origin);
@@ -204,20 +215,34 @@ let isUpdating = false;
 		return rows;
 	})();
 
-	$: profitLossRows = (() => {
+	type PnlNode = {
+		id: string;
+		label: string;
+		level: number;
+		values: number[];
+		children?: PnlNode[];
+	};
+
+	const sumArrays = (arrays: number[][], length: number) => {
+		const totals = Array(length).fill(0);
+		for (const arr of arrays) {
+			arr.forEach((value, idx) => {
+				totals[idx] += value;
+			});
+		}
+		return totals;
+	};
+
+	$: profitLossTree = (() => {
 		if (projectionData.transactions.length === 0) return [];
 		const headers = chartAxisPoints.map((point) => point.monthLabel);
 		const indexByLabel = new Map<string, number>();
 		headers.forEach((label, index) => indexByLabel.set(label, index));
 
-		const byAccount = new Map<
-			string,
-			{
-				name: string;
-				income: number[];
-				expenses: number[];
-			}
-		>();
+		const buildMaps = () =>
+			new Map<string, Map<string, Map<string, number[]>>>();
+		const incomeMap = buildMaps();
+		const expenseMap = buildMaps();
 
 		for (const transaction of projectionData.transactions) {
 			if (transaction.cashflowType === 'transfer') continue;
@@ -228,49 +253,122 @@ let isUpdating = false;
 			const idx = indexByLabel.get(label);
 			if (idx === undefined) continue;
 
-			const accountKey = transaction.accountId;
-			const existing = byAccount.get(accountKey) ?? {
-				name: transaction.accountName,
-				income: Array(headers.length).fill(0),
-				expenses: Array(headers.length).fill(0)
-			};
+			const targetMap = transaction.cashflowType === 'income' ? incomeMap : expenseMap;
+			const accountName = transaction.accountName;
+			const category = formatLabel(transaction.category);
+			const description = transaction.description ?? '—';
 
-			if (transaction.cashflowType === 'income') {
-				existing.income[idx] += transaction.amount;
-			} else if (transaction.cashflowType === 'expense') {
-				existing.expenses[idx] += transaction.amount;
+			const categoryMap =
+				targetMap.get(accountName) ?? new Map<string, Map<string, number[]>>();
+			const descMap = categoryMap.get(category) ?? new Map<string, number[]>();
+			const values = descMap.get(description) ?? Array(headers.length).fill(0);
+
+			values[idx] += transaction.amount;
+			descMap.set(description, values);
+			categoryMap.set(category, descMap);
+			targetMap.set(accountName, categoryMap);
+		}
+
+		const buildAccountNodes = (map: Map<string, Map<string, Map<string, number[]>>>) => {
+			const nodes: PnlNode[] = [];
+			const sortedAccounts = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+			for (const accountName of sortedAccounts) {
+				const categoryMap = map.get(accountName)!;
+				const categoryNodes: PnlNode[] = [];
+				const categoryTotals: number[][] = [];
+
+				for (const category of Array.from(categoryMap.keys()).sort((a, b) =>
+					a.localeCompare(b)
+				)) {
+					const descMap = categoryMap.get(category)!;
+					const descNodes: PnlNode[] = [];
+					const descTotals: number[][] = [];
+
+					for (const description of Array.from(descMap.keys()).sort((a, b) =>
+						a.localeCompare(b)
+					)) {
+						const values = descMap.get(description)!;
+						descTotals.push(values);
+						descNodes.push({
+							id: `${accountName}|${category}|${description}`,
+							label: description,
+							level: 3,
+							values
+						});
+					}
+
+					const categoryValues = sumArrays(descTotals, headers.length);
+					categoryTotals.push(categoryValues);
+					categoryNodes.push({
+						id: `${accountName}|${category}`,
+						label: category,
+						level: 2,
+						values: categoryValues,
+						children: descNodes
+					});
+				}
+
+				const accountValues = sumArrays(categoryTotals, headers.length);
+				nodes.push({
+					id: accountName,
+					label: accountName,
+					level: 1,
+					values: accountValues,
+					children: categoryNodes
+				});
 			}
+			return nodes;
+		};
 
-			byAccount.set(accountKey, existing);
-		}
+		const incomeAccounts = buildAccountNodes(incomeMap);
+		const expenseAccounts = buildAccountNodes(expenseMap);
 
-		const totalsIncome = Array(headers.length).fill(0);
-		const totalsExpenses = Array(headers.length).fill(0);
-
-		const rows = [];
-		for (const account of Array.from(byAccount.values()).sort((a, b) =>
-			a.name.localeCompare(b.name)
-		)) {
-			rows.push({ name: `${account.name} - Income`, values: account.income });
-			rows.push({ name: `${account.name} - Expenses`, values: account.expenses });
-
-			account.income.forEach((value, idx) => {
-				totalsIncome[idx] += value;
-			});
-			account.expenses.forEach((value, idx) => {
-				totalsExpenses[idx] += value;
-			});
-		}
-
-		const net = totalsIncome.map((value, idx) => value + totalsExpenses[idx]);
+		const incomeTotals = sumArrays(
+			incomeAccounts.map((node) => node.values),
+			headers.length
+		);
+		const expenseTotals = sumArrays(
+			expenseAccounts.map((node) => node.values),
+			headers.length
+		);
+		const netTotals = incomeTotals.map((value, idx) => value + expenseTotals[idx]);
 
 		return [
-			{ name: 'Total income', values: totalsIncome },
-			{ name: 'Total expenses', values: totalsExpenses },
-			{ name: 'Net', values: net },
-			...rows
-		];
+			{
+				id: 'income',
+				label: 'Income',
+				level: 0,
+				values: incomeTotals,
+				children: incomeAccounts
+			},
+			{
+				id: 'expenses',
+				label: 'Expenses',
+				level: 0,
+				values: expenseTotals,
+				children: expenseAccounts
+			},
+			{
+				id: 'net',
+				label: 'Net',
+				level: 0,
+				values: netTotals
+			}
+		] as PnlNode[];
 	})();
+
+	const flattenPnl = (nodes: PnlNode[], expanded: Set<string>) => {
+		const rows: PnlNode[] = [];
+		for (const node of nodes) {
+			rows.push(node);
+			if (node.children && expanded.has(node.id)) {
+				rows.push(...flattenPnl(node.children, expanded));
+			}
+		}
+		return rows;
+	};
+
+	$: profitLossRows = flattenPnl(profitLossTree, expandedPnlNodes);
 
 	const formatAxisCurrency = (value: number) =>
 		new Intl.NumberFormat('en-AU', {
@@ -629,9 +727,9 @@ let isUpdating = false;
 						class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
 					>
 						<tr>
-							<th class="sticky left-0 z-10 bg-slate-50 px-4 py-3">Account</th>
+							<th class="sticky left-0 top-0 z-20 bg-slate-50 px-4 py-3">Account</th>
 							{#each balanceSheetHeaders as header}
-								<th class="px-4 py-3 text-right">{header}</th>
+								<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
 							{/each}
 						</tr>
 					</thead>
@@ -684,9 +782,9 @@ let isUpdating = false;
 						class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
 					>
 						<tr>
-							<th class="sticky left-0 z-10 bg-slate-50 px-4 py-3">Item</th>
+							<th class="sticky left-0 top-0 z-20 bg-slate-50 px-4 py-3">Item</th>
 							{#each balanceSheetHeaders as header}
-								<th class="px-4 py-3 text-right">{header}</th>
+								<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
 							{/each}
 						</tr>
 					</thead>
@@ -694,15 +792,29 @@ let isUpdating = false;
 						{#each profitLossRows as row, rowIndex}
 							<tr
 								class={`whitespace-nowrap ${
-									rowIndex < 3 ? 'font-semibold text-slate-900' : ''
+									row.level === 0 ? 'font-semibold text-slate-900' : ''
 								}`}
 							>
 								<td
 									class={`sticky left-0 z-10 px-4 py-3 ${
-										rowIndex < 3 ? 'bg-white text-slate-900' : 'bg-white'
+										row.level === 0 ? 'bg-white text-slate-900' : 'bg-white'
 									}`}
 								>
-									{row.name}
+									<div class="flex items-center gap-2" style={`padding-left: ${row.level * 14}px`}>
+										{#if row.children?.length}
+											<button
+												type="button"
+												class="text-slate-500 hover:text-slate-900"
+												on:click={() => togglePnlNode(row.id)}
+												aria-label="Toggle P&L row"
+											>
+												{expandedPnlNodes.has(row.id) ? '▾' : '▸'}
+											</button>
+										{:else}
+											<span class="w-3 text-slate-400">•</span>
+										{/if}
+										<span>{row.label}</span>
+									</div>
 								</td>
 								{#each row.values as value}
 									<td
