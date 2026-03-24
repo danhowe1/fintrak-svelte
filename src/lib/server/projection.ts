@@ -292,6 +292,7 @@ export const buildProjection = (input: {
 		{
 			mortgageAccountId: string;
 			fundingSourceAccountId: string;
+			offsetAccountId: string | null;
 			termRemainingMonths: number;
 			startDate: YearMonth | null;
 		}
@@ -303,6 +304,7 @@ export const buildProjection = (input: {
 		const startDate = typeof startDateValue === 'string' ? parseYearMonth(startDateValue) : null;
 		let mortgageAccountId: string | null = null;
 		let fundingSourceAccountId: string | null = null;
+		let offsetAccountId: string | null = null;
 
 		for (const link of input.assetAccounts) {
 			if (link.asset_id !== asset.id) continue;
@@ -310,6 +312,8 @@ export const buildProjection = (input: {
 				mortgageAccountId = link.account_id;
 			} else if (link.relationship_role === 'funding_source') {
 				fundingSourceAccountId = link.account_id;
+			} else if (link.relationship_role === 'offsets') {
+				offsetAccountId = link.account_id;
 			}
 		}
 
@@ -317,6 +321,7 @@ export const buildProjection = (input: {
 			mortgageStates.set(asset.id, {
 				mortgageAccountId,
 				fundingSourceAccountId,
+				offsetAccountId,
 				termRemainingMonths: termMonths,
 				startDate
 			});
@@ -457,6 +462,12 @@ export const buildProjection = (input: {
 				continue;
 			}
 
+			const offsetBalance =
+				state.offsetAccountId && accountMap.has(state.offsetAccountId)
+					? Math.max(0, accountMap.get(state.offsetAccountId)?.balance ?? 0)
+					: 0;
+			const interestPrincipal = Math.max(0, principal - offsetBalance);
+
 			const baseRate =
 				typeof mortgageAccount.interestRate === 'number' &&
 				Number.isFinite(mortgageAccount.interestRate)
@@ -469,7 +480,7 @@ export const buildProjection = (input: {
 				monthlyRate === 0
 					? principal / remaining
 					: (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -remaining));
-			const interestAmount = principal * monthlyRate;
+			const interestAmount = interestPrincipal * monthlyRate;
 
 			if (payment > 0) {
 				pushTransaction(
