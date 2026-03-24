@@ -158,7 +158,7 @@
 							class="no-spin"
 							label="Interest rate (%)"
 							name="incomeAccountInterestRate"
-							step="0.1"
+							step="0.01"
 							value={form?.values?.incomeAccountInterestRate ?? ''}
 							error={form?.errors?.incomeAccountInterestRate?.[0]}
 							required
@@ -256,7 +256,7 @@
 								class="no-spin"
 								label="Interest rate (%)"
 								name="expenseAccountInterestRate"
-								step="0.1"
+								step="0.01"
 								value={form?.values?.expenseAccountInterestRate ?? ''}
 								error={form?.errors?.expenseAccountInterestRate?.[0]}
 								required
@@ -347,7 +347,7 @@
 							class="no-spin"
 							label="Interest rate (%)"
 							name="expenseAccountInterestRate"
-							step="0.1"
+							step="0.01"
 							value={form?.values?.expenseAccountInterestRate ?? ''}
 							error={form?.errors?.expenseAccountInterestRate?.[0]}
 							required
@@ -457,7 +457,7 @@
 						class="no-spin"
 						label="Interest rate (%)"
 						name="mortgageAccountInterestRate"
-						step="0.1"
+						step="0.01"
 						value={form?.values?.mortgageAccountInterestRate ?? ''}
 						error={form?.errors?.mortgageAccountInterestRate?.[0]}
 						required
@@ -513,7 +513,7 @@
 							class="no-spin"
 							label="Interest rate (%)"
 							name="mortgagePaymentSourceInterestRate"
-							step="0.1"
+							step="0.01"
 							value={form?.values?.mortgagePaymentSourceInterestRate ?? ''}
 							error={form?.errors?.mortgagePaymentSourceInterestRate?.[0]}
 							required
@@ -567,7 +567,7 @@
 							class="no-spin"
 							label="Interest rate (%)"
 							name="mortgageOffsetInterestRate"
-							step="0.1"
+							step="0.01"
 							value={form?.values?.mortgageOffsetInterestRate ?? ''}
 							error={form?.errors?.mortgageOffsetInterestRate?.[0]}
 							required
@@ -597,3 +597,4 @@
 		</div>
 	</form>
 </section>
+

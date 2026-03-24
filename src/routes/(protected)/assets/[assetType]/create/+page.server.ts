@@ -28,6 +28,14 @@ const decimalOnePlaceSchema = z
 	.regex(/^-?\d+(\.\d)?$/, { message: 'Must be a number with 1 decimal place' })
 	.transform((value) => Number(value));
 
+const decimalUpToTwoPlacesSchema = z
+	.string()
+	.trim()
+	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a number with up to 2 decimal places' })
+	.transform((value) => Number(value));
+
+const roundToTwo = (value: number) => Number(value.toFixed(2));
+
 const uuidSchema = z.string().uuid();
 const assetTypeSchema = z.enum(['person', 'property', 'mortgage', 'superannuation']);
 
@@ -129,7 +137,7 @@ const createAssetSchema = z
 				}
 				if (
 					!data.incomeAccountInterestRate ||
-					!/^-?\d+(\.\d)?$/.test(data.incomeAccountInterestRate)
+					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountInterestRate)
 				) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
@@ -168,7 +176,7 @@ const createAssetSchema = z
 				}
 				if (
 					!data.expenseAccountInterestRate ||
-					!/^-?\d+(\.\d)?$/.test(data.expenseAccountInterestRate)
+					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountInterestRate)
 				) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
@@ -239,7 +247,7 @@ const createAssetSchema = z
 				}
 				if (
 					!data.expenseAccountInterestRate ||
-					!/^-?\d+(\.\d)?$/.test(data.expenseAccountInterestRate)
+					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountInterestRate)
 				) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
@@ -338,7 +346,7 @@ const createAssetSchema = z
 			}
 			if (
 				!data.mortgageAccountInterestRate ||
-				!/^-?\d+(\.\d)?$/.test(data.mortgageAccountInterestRate)
+				!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageAccountInterestRate)
 			) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -373,7 +381,7 @@ const createAssetSchema = z
 				}
 				if (
 					!data.mortgagePaymentSourceInterestRate ||
-					!/^-?\d+(\.\d)?$/.test(data.mortgagePaymentSourceInterestRate)
+					!/^-?\d+(\.\d{1,2})?$/.test(data.mortgagePaymentSourceInterestRate)
 				) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
@@ -413,7 +421,7 @@ const createAssetSchema = z
 					}
 					if (
 						!data.mortgageOffsetInterestRate ||
-						!/^-?\d+(\.\d)?$/.test(data.mortgageOffsetInterestRate)
+						!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageOffsetInterestRate)
 					) {
 						ctx.addIssue({
 							code: z.ZodIssueCode.custom,
@@ -609,7 +617,9 @@ export const actions: Actions = {
 							? {
 									type: 'new',
 									name: incomeAccountName ?? 'Income account',
-									interestRate: decimalOnePlaceSchema.parse(incomeAccountInterestRate ?? '0'),
+									interestRate: roundToTwo(
+										decimalUpToTwoPlacesSchema.parse(incomeAccountInterestRate ?? '0')
+									),
 									openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
 								}
 							: { type: 'existing', accountId: incomeAccountChoice ?? '' },
@@ -619,7 +629,9 @@ export const actions: Actions = {
 								? {
 										type: 'new',
 										name: incomeAccountName ?? 'Income account',
-										interestRate: decimalOnePlaceSchema.parse(incomeAccountInterestRate ?? '0'),
+										interestRate: roundToTwo(
+											decimalUpToTwoPlacesSchema.parse(incomeAccountInterestRate ?? '0')
+										),
 										openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
 									}
 								: { type: 'existing', accountId: incomeAccountChoice ?? '' }
@@ -627,7 +639,9 @@ export const actions: Actions = {
 								? {
 										type: 'new',
 										name: expenseAccountName ?? 'Expense account',
-										interestRate: decimalOnePlaceSchema.parse(expenseAccountInterestRate ?? '0'),
+										interestRate: roundToTwo(
+											decimalUpToTwoPlacesSchema.parse(expenseAccountInterestRate ?? '0')
+										),
 										openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 									}
 								: { type: 'existing', accountId: expenseAccountChoice ?? '' }
@@ -646,7 +660,9 @@ export const actions: Actions = {
 							? {
 									type: 'new',
 									name: expenseAccountName ?? 'Expenses account',
-									interestRate: decimalOnePlaceSchema.parse(expenseAccountInterestRate ?? '0'),
+									interestRate: roundToTwo(
+										decimalUpToTwoPlacesSchema.parse(expenseAccountInterestRate ?? '0')
+									),
 									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 								}
 							: { type: 'existing', accountId: expenseAccountChoice ?? '' }
@@ -666,7 +682,9 @@ export const actions: Actions = {
 					details,
 					mortgageAccount: {
 						name: mortgageAccountName ?? 'Mortgage account',
-						interestRate: decimalOnePlaceSchema.parse(mortgageAccountInterestRate ?? '0'),
+						interestRate: roundToTwo(
+							decimalUpToTwoPlacesSchema.parse(mortgageAccountInterestRate ?? '0')
+						),
 						openingBalance: currencySchema.parse(mortgageAccountOpeningBalance ?? '0')
 					},
 					paymentSourceAccount:
@@ -674,8 +692,10 @@ export const actions: Actions = {
 							? {
 									type: 'new',
 									name: mortgagePaymentSourceName ?? 'Payment source account',
-									interestRate: decimalOnePlaceSchema.parse(
-										mortgagePaymentSourceInterestRate ?? '0'
+									interestRate: roundToTwo(
+										decimalUpToTwoPlacesSchema.parse(
+											mortgagePaymentSourceInterestRate ?? '0'
+										)
 									),
 									openingBalance: currencySchema.parse(mortgagePaymentSourceOpeningBalance ?? '0')
 								}
@@ -690,8 +710,10 @@ export const actions: Actions = {
 								? {
 										type: 'new',
 										name: mortgageOffsetName ?? 'Offset account',
-										interestRate: decimalOnePlaceSchema.parse(
-											mortgageOffsetInterestRate ?? '0'
+										interestRate: roundToTwo(
+											decimalUpToTwoPlacesSchema.parse(
+												mortgageOffsetInterestRate ?? '0'
+											)
 										),
 										openingBalance: currencySchema.parse(
 											mortgageOffsetOpeningBalance ?? '0'
