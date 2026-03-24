@@ -596,10 +596,12 @@ let isUpdating = false;
 					class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
 				>
 					<tr>
-						<th class="px-4 py-3">Month</th>
-						<th class="px-4 py-3">Account</th>
+						<th class="px-4 py-3">Date</th>
 						<th class="px-4 py-3">Type</th>
+						<th class="px-4 py-3">Asset</th>
 						<th class="px-4 py-3">Category</th>
+						<th class="px-4 py-3">Description</th>
+						<th class="px-4 py-3">Account</th>
 						<th class="px-4 py-3 text-right">Amount</th>
 					</tr>
 				</thead>
@@ -611,9 +613,11 @@ let isUpdating = false;
 							}`}
 						>
 							<td class="px-4 py-3">{transaction.monthLabel}</td>
-							<td class="px-4 py-3">{transaction.accountName}</td>
 							<td class="px-4 py-3">{formatLabel(transaction.cashflowType)}</td>
+							<td class="px-4 py-3">{transaction.assetName ?? ''}</td>
 							<td class="px-4 py-3">{formatLabel(transaction.category)}</td>
+							<td class="px-4 py-3">{transaction.description ?? ''}</td>
+							<td class="px-4 py-3">{transaction.accountName}</td>
 							<td class="px-4 py-3 text-right font-medium">
 								{formatSignedCurrency(transaction.amount)}
 							</td>
@@ -647,18 +651,17 @@ let isUpdating = false;
 					class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
 				>
 					<tr>
-						<th class="px-4 py-3">Type</th>
-						<th class="px-4 py-3">Category</th>
-						<th class="px-4 py-3">Frequency</th>
-						<th class="px-4 py-3">Amount</th>
-						<th class="px-4 py-3">Inflation?</th>
 						<th class="px-4 py-3">Start</th>
 						<th class="px-4 py-3">End</th>
-						<th class="px-4 py-3">Source</th>
-						<th class="px-4 py-3">Source account</th>
-						<th class="px-4 py-3">Destination</th>
-						<th class="px-4 py-3">Destination account</th>
+						<th class="px-4 py-3">Type</th>
+						<th class="px-4 py-3">Asset</th>
+						<th class="px-4 py-3">Category</th>
 						<th class="px-4 py-3">Description</th>
+						<th class="px-4 py-3">Frequency</th>
+						<th class="px-4 py-3">Inflation?</th>
+						<th class="px-4 py-3">Source account</th>
+						<th class="px-4 py-3">Destination account</th>
+						<th class="px-4 py-3">Amount</th>
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-slate-100 text-slate-700">
@@ -672,12 +675,19 @@ let isUpdating = false;
 										: 'text-amber-600'
 							}`}
 						>
+							<td class="px-4 py-3">{formatMonth(cashflow.start_date)}</td>
+							<td class="px-4 py-3">{formatMonth(cashflow.end_date)}</td>
 							<td class="px-4 py-3 font-semibold">{formatLabel(cashflow.cashflow_type)}</td>
-							<td class="px-4 py-3">{formatLabel(cashflow.category)}</td>
-							<td class="px-4 py-3">{formatLabel(cashflow.frequency)}</td>
-							<td class="px-4 py-3 font-medium">
-								{formatCurrency(cashflow.amount)}
+							<td class="px-4 py-3">
+								{cashflow.cashflow_type === 'expense'
+									? cashflow.source_asset_name ?? ''
+									: cashflow.cashflow_type === 'income'
+										? cashflow.destination_asset_name ?? ''
+										: ''}
 							</td>
+							<td class="px-4 py-3">{formatLabel(cashflow.category)}</td>
+							<td class="px-4 py-3">{cashflow.description}</td>
+							<td class="px-4 py-3">{formatLabel(cashflow.frequency)}</td>
 							<td class="px-4 py-3">
 								<input
 									type="checkbox"
@@ -687,13 +697,11 @@ let isUpdating = false;
 									class="h-4 w-4 accent-slate-600"
 								/>
 							</td>
-							<td class="px-4 py-3">{formatMonth(cashflow.start_date)}</td>
-							<td class="px-4 py-3">{formatMonth(cashflow.end_date)}</td>
-							<td class="px-4 py-3">{cashflow.source_asset_name ?? ''}</td>
 							<td class="px-4 py-3">{cashflow.source_account_name ?? ''}</td>
-							<td class="px-4 py-3">{cashflow.destination_asset_name ?? ''}</td>
 							<td class="px-4 py-3">{cashflow.destination_account_name ?? ''}</td>
-							<td class="px-4 py-3">{cashflow.description ?? '—'}</td>
+							<td class="px-4 py-3 font-medium">
+								{formatCurrency(cashflow.amount)}
+							</td>
 						</tr>
 					{/each}
 				</tbody>

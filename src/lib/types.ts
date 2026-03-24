@@ -28,7 +28,11 @@ export type CashflowFrequency = 'monthly' | 'quarterly' | 'annually' | 'one_time
 
 export type CashflowType = 'expense' | 'income' | 'transfer';
 
-export type CashflowCategory = 'living_expenses' | 'employment_income' | 'other';
+export type CashflowCategory =
+	| 'living_expenses'
+	| 'employment_income'
+	| 'asset_ownership'
+	| 'other';
 
 export type Cashflow = {
 	id: string;
@@ -42,7 +46,7 @@ export type Cashflow = {
 	endDate?: string | null;
 	sourceAssetAccountId?: string | null;
 	destinationAssetAccountId?: string | null;
-	description?: string | null;
+	description: string;
 	createdBy?: string;
 	createdAt?: string;
 	updatedAt?: string;

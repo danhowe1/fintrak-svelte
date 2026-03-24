@@ -13,6 +13,8 @@ export type ProjectionTransaction = {
 		| 'mortgage_repayment'
 		| 'other'
 		| 'interest';
+	assetName?: string | null;
+	description?: string | null;
 	accountId: string;
 	accountName: string;
 	amount: number;
@@ -235,7 +237,13 @@ export const buildProjection = (input: {
 		const start = parseYearMonth(cashflow.start_date);
 		const end = parseYearMonth(cashflow.end_date ?? undefined);
 		const interval = getFrequencyInterval(cashflow.frequency);
-		return { cashflow, start, end, interval };
+		const assetName =
+			cashflow.cashflow_type === 'expense'
+				? cashflow.source_asset_name ?? null
+				: cashflow.cashflow_type === 'income'
+					? cashflow.destination_asset_name ?? null
+					: null;
+		return { cashflow, start, end, interval, assetName };
 	});
 
 	const personAssets = new Map<string, { retirementDate: YearMonth; hundredDate: YearMonth }>();
@@ -340,7 +348,9 @@ export const buildProjection = (input: {
 			signedAmount: number,
 			cashflowType: ProjectionTransaction['cashflowType'],
 			category: ProjectionTransaction['category'],
-			cashflowId: string
+			cashflowId: string,
+			description?: string | null,
+			assetName?: string | null
 		) => {
 			const accountInfo = accountMap.get(accountId);
 			if (!accountInfo) return;
@@ -349,6 +359,8 @@ export const buildProjection = (input: {
 				cashflowId,
 				cashflowType,
 				category,
+				assetName: assetName ?? null,
+				description: description ?? null,
 				accountId,
 				accountName: accountInfo.name,
 				amount: signedAmount,
@@ -358,7 +370,7 @@ export const buildProjection = (input: {
 		};
 
 		for (const meta of cashflowMeta) {
-			const { cashflow, start, end, interval } = meta;
+			const { cashflow, start, end, interval, assetName } = meta;
 			if (!start) continue;
 			const monthDiff = monthsBetween(start, current);
 			if (monthDiff < 0) continue;
@@ -413,7 +425,9 @@ export const buildProjection = (input: {
 						rawAmount,
 						cashflow.cashflow_type,
 						cashflow.category,
-						cashflow.id
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
 					);
 				}
 			} else if (cashflow.cashflow_type === 'expense') {
@@ -423,7 +437,9 @@ export const buildProjection = (input: {
 						-rawAmount,
 						cashflow.cashflow_type,
 						cashflow.category,
-						cashflow.id
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
 					);
 				}
 			} else {
@@ -433,7 +449,9 @@ export const buildProjection = (input: {
 						-rawAmount,
 						cashflow.cashflow_type,
 						cashflow.category,
-						cashflow.id
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
 					);
 				}
 				if (cashflow.destination_account_id) {
@@ -442,7 +460,9 @@ export const buildProjection = (input: {
 						rawAmount,
 						cashflow.cashflow_type,
 						cashflow.category,
-						cashflow.id
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
 					);
 				}
 			}

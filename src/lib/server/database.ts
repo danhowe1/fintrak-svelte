@@ -288,7 +288,7 @@ export type CashflowSummary = {
 	inflation_affected: boolean;
 	start_date: string;
 	end_date: string | null;
-	description: string | null;
+	description: string;
 	source_account_id: string | null;
 	destination_account_id: string | null;
 	source_asset_name: string | null;
@@ -466,6 +466,7 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 				amount: input.monthlyNetIncome,
 				startDate: input.startDate,
 				destinationAssetAccountId: assetAccountId,
+				description: 'Salary',
 				createdBy: input.userId
 			});
 		}
@@ -479,6 +480,7 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 				amount: input.monthlyEssentialExpenses,
 				startDate: input.startDate,
 				sourceAssetAccountId: assetAccountId,
+				description: 'Essential',
 				createdBy: input.userId
 			});
 		}
@@ -704,7 +706,7 @@ type InsertCashflowInput = {
 	endDate?: string | null;
 	sourceAssetAccountId?: string | null;
 	destinationAssetAccountId?: string | null;
-	description?: string | null;
+	description: string;
 	createdBy: string;
 };
 
@@ -751,7 +753,7 @@ async function insertCashflow(client: Pool['prototype'], input: InsertCashflowIn
 			input.endDate ?? null,
 			input.sourceAssetAccountId ?? null,
 			input.destinationAssetAccountId ?? null,
-			input.description ?? null,
+			input.description,
 			input.createdBy
 		]
 	);
@@ -879,6 +881,7 @@ export async function createPersonAssetWithCashflows(input: CreatePersonAssetWit
 			amount: input.employmentIncome,
 			startDate: input.startDate,
 			destinationAssetAccountId: incomeAssetAccountId,
+			description: 'Salary',
 			createdBy: input.userId
 		});
 
@@ -890,6 +893,7 @@ export async function createPersonAssetWithCashflows(input: CreatePersonAssetWit
 			amount: input.essentialExpenses,
 			startDate: input.startDate,
 			sourceAssetAccountId: expenseAssetAccountId,
+			description: 'Essential',
 			createdBy: input.userId
 		});
 
@@ -962,6 +966,7 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 			amount: input.ownershipExpense,
 			startDate: input.startDate,
 			sourceAssetAccountId: expenseAssetAccountId,
+			description: 'R&M',
 			createdBy: input.userId
 		});
 
