@@ -8,6 +8,14 @@
 	const formatCurrency = (value: number) =>
 		new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(value);
 
+	const formatWholeCurrency = (value: number) =>
+		new Intl.NumberFormat('en-AU', {
+			style: 'currency',
+			currency: 'AUD',
+			maximumFractionDigits: 0,
+			minimumFractionDigits: 0
+		}).format(value);
+
 	const formatLabel = (value: string) =>
 		value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
@@ -44,7 +52,7 @@
 
 	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 
-let projectionView: 'balances' | 'transactions' | 'balance_sheet' = 'balances';
+let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
 let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
 let isUpdating = false;
 
@@ -194,6 +202,74 @@ let isUpdating = false;
 			});
 		}
 		return rows;
+	})();
+
+	$: profitLossRows = (() => {
+		if (projectionData.transactions.length === 0) return [];
+		const headers = chartAxisPoints.map((point) => point.monthLabel);
+		const indexByLabel = new Map<string, number>();
+		headers.forEach((label, index) => indexByLabel.set(label, index));
+
+		const byAccount = new Map<
+			string,
+			{
+				name: string;
+				income: number[];
+				expenses: number[];
+			}
+		>();
+
+		for (const transaction of projectionData.transactions) {
+			if (transaction.cashflowType === 'transfer') continue;
+			const label =
+				projectionRange === '10y' || projectionRange === 'all'
+					? transaction.date.slice(0, 4)
+					: transaction.monthLabel;
+			const idx = indexByLabel.get(label);
+			if (idx === undefined) continue;
+
+			const accountKey = transaction.accountId;
+			const existing = byAccount.get(accountKey) ?? {
+				name: transaction.accountName,
+				income: Array(headers.length).fill(0),
+				expenses: Array(headers.length).fill(0)
+			};
+
+			if (transaction.cashflowType === 'income') {
+				existing.income[idx] += transaction.amount;
+			} else if (transaction.cashflowType === 'expense') {
+				existing.expenses[idx] += transaction.amount;
+			}
+
+			byAccount.set(accountKey, existing);
+		}
+
+		const totalsIncome = Array(headers.length).fill(0);
+		const totalsExpenses = Array(headers.length).fill(0);
+
+		const rows = [];
+		for (const account of Array.from(byAccount.values()).sort((a, b) =>
+			a.name.localeCompare(b.name)
+		)) {
+			rows.push({ name: `${account.name} - Income`, values: account.income });
+			rows.push({ name: `${account.name} - Expenses`, values: account.expenses });
+
+			account.income.forEach((value, idx) => {
+				totalsIncome[idx] += value;
+			});
+			account.expenses.forEach((value, idx) => {
+				totalsExpenses[idx] += value;
+			});
+		}
+
+		const net = totalsIncome.map((value, idx) => value + totalsExpenses[idx]);
+
+		return [
+			{ name: 'Total income', values: totalsIncome },
+			{ name: 'Total expenses', values: totalsExpenses },
+			{ name: 'Net', values: net },
+			...rows
+		];
 	})();
 
 	const formatAxisCurrency = (value: number) =>
@@ -393,6 +469,17 @@ let isUpdating = false;
 				<button
 					type="button"
 					class={`rounded-full px-3 py-1 transition ${
+						projectionView === 'profit_loss'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-600 hover:text-slate-900'
+					}`}
+					on:click={() => (projectionView = 'profit_loss')}
+				>
+					P&amp;L
+				</button>
+				<button
+					type="button"
+					class={`rounded-full px-3 py-1 transition ${
 						projectionView === 'transactions'
 							? 'bg-slate-900 text-white'
 							: 'text-slate-600 hover:text-slate-900'
@@ -568,7 +655,62 @@ let isUpdating = false;
 											value >= 0 ? 'text-emerald-600' : 'text-rose-600'
 										}`}
 									>
-										{formatCurrency(value)}
+										{formatWholeCurrency(value)}
+									</td>
+								{/each}
+							</tr>
+						{/each}
+					</tbody>
+				</table>
+				{#if isUpdating}
+					<div class="absolute inset-0 grid place-items-center bg-white/70">
+						<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
+							<span
+								class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
+							></span>
+							<span>Updating projection…</span>
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
+	{:else if projectionView === 'profit_loss'}
+		{#if profitLossRows.length === 0}
+			<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
+		{:else}
+			<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
+				<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
+					<thead
+						class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+					>
+						<tr>
+							<th class="sticky left-0 z-10 bg-slate-50 px-4 py-3">Item</th>
+							{#each balanceSheetHeaders as header}
+								<th class="px-4 py-3 text-right">{header}</th>
+							{/each}
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-slate-100 text-slate-700">
+						{#each profitLossRows as row, rowIndex}
+							<tr
+								class={`whitespace-nowrap ${
+									rowIndex < 3 ? 'font-semibold text-slate-900' : ''
+								}`}
+							>
+								<td
+									class={`sticky left-0 z-10 px-4 py-3 ${
+										rowIndex < 3 ? 'bg-white text-slate-900' : 'bg-white'
+									}`}
+								>
+									{row.name}
+								</td>
+								{#each row.values as value}
+									<td
+										class={`px-4 py-3 text-right ${
+											value >= 0 ? 'text-emerald-600' : 'text-rose-600'
+										}`}
+									>
+										{formatWholeCurrency(value)}
 									</td>
 								{/each}
 							</tr>
