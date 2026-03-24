@@ -521,11 +521,7 @@ let isUpdating = false;
 					{#each projectionData.transactions as transaction}
 						<tr
 							class={`whitespace-nowrap ${
-								transaction.cashflowType === 'income'
-									? 'text-emerald-600'
-									: transaction.cashflowType === 'expense'
-										? 'text-rose-600'
-										: 'text-amber-600'
+								transaction.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
 							}`}
 						>
 							<td class="px-4 py-3">{transaction.monthLabel}</td>

@@ -10,6 +10,7 @@ export type ProjectionTransaction = {
 		| 'living_expenses'
 		| 'employment_income'
 		| 'asset_ownership'
+		| 'mortgage_repayment'
 		| 'other'
 		| 'interest';
 	accountId: string;
@@ -114,6 +115,22 @@ const monthsBetween = (from: YearMonth, to: YearMonth) =>
 	(to.year - from.year) * 12 + (to.month - from.month);
 
 const monthIndex = (value: YearMonth) => value.year * 12 + (value.month - 1);
+
+const getNumberDetail = (details: Record<string, unknown>, key: string) => {
+	const value = details?.[key];
+	if (typeof value === 'number' && Number.isFinite(value)) return value;
+	if (typeof value === 'string') {
+		const parsed = Number(value);
+		return Number.isFinite(parsed) ? parsed : null;
+	}
+	return null;
+};
+
+const getTermMonths = (details: Record<string, unknown>) => {
+	const years = getNumberDetail(details, 'termYears') ?? 0;
+	const months = getNumberDetail(details, 'termMonths') ?? 0;
+	return years * 12 + months;
+};
 
 const getYoungestHundredYearMonth = (assets: ProjectionAsset[], fallbackStart: YearMonth) => {
 	let youngestDob: YearMonth | null = null;
@@ -270,12 +287,70 @@ export const buildProjection = (input: {
 		}
 	}
 
+	const mortgageStates = new Map<
+		string,
+		{
+			mortgageAccountId: string;
+			fundingSourceAccountId: string;
+			termRemainingMonths: number;
+			startDate: YearMonth | null;
+		}
+	>();
+	for (const asset of input.assets) {
+		if (asset.asset_type !== 'mortgage' || !asset.id) continue;
+		const termMonths = getTermMonths(asset.details ?? {});
+		const startDateValue = asset.details?.startDate;
+		const startDate = typeof startDateValue === 'string' ? parseYearMonth(startDateValue) : null;
+		let mortgageAccountId: string | null = null;
+		let fundingSourceAccountId: string | null = null;
+
+		for (const link of input.assetAccounts) {
+			if (link.asset_id !== asset.id) continue;
+			if (link.relationship_role === 'held_in') {
+				mortgageAccountId = link.account_id;
+			} else if (link.relationship_role === 'funding_source') {
+				fundingSourceAccountId = link.account_id;
+			}
+		}
+
+		if (mortgageAccountId && fundingSourceAccountId && termMonths > 0) {
+			mortgageStates.set(asset.id, {
+				mortgageAccountId,
+				fundingSourceAccountId,
+				termRemainingMonths: termMonths,
+				startDate
+			});
+		}
+	}
+
 	for (let i = 0; i <= totalMonths; i += 1) {
 		const current = addMonths(startYearMonth, i);
 		const monthLabel = formatMonthLabel(current);
 		const currentDate = formatYearMonth(current);
 		const yearDiff = current.year - startYearMonth.year;
 		const inflationFactor = Math.pow(1 + inflationRate / 100, yearDiff);
+
+		const pushTransaction = (
+			accountId: string,
+			signedAmount: number,
+			cashflowType: ProjectionTransaction['cashflowType'],
+			category: ProjectionTransaction['category'],
+			cashflowId: string
+		) => {
+			const accountInfo = accountMap.get(accountId);
+			if (!accountInfo) return;
+			accountInfo.balance += signedAmount;
+			transactions.push({
+				cashflowId,
+				cashflowType,
+				category,
+				accountId,
+				accountName: accountInfo.name,
+				amount: signedAmount,
+				date: currentDate,
+				monthLabel
+			});
+		};
 
 		for (const meta of cashflowMeta) {
 			const { cashflow, start, end, interval } = meta;
@@ -326,28 +401,6 @@ export const buildProjection = (input: {
 				? cashflow.amount * inflationFactor
 				: cashflow.amount;
 
-			const pushTransaction = (
-				accountId: string,
-				signedAmount: number,
-				cashflowType: ProjectionTransaction['cashflowType'],
-				category: ProjectionTransaction['category'],
-				cashflowId: string
-			) => {
-				const accountInfo = accountMap.get(accountId);
-				if (!accountInfo) return;
-				accountInfo.balance += signedAmount;
-				transactions.push({
-					cashflowId,
-					cashflowType,
-					category,
-					accountId,
-					accountName: accountInfo.name,
-					amount: signedAmount,
-					date: currentDate,
-					monthLabel
-				});
-			};
-
 			if (cashflow.cashflow_type === 'income') {
 				if (cashflow.destination_account_id) {
 					pushTransaction(
@@ -388,6 +441,64 @@ export const buildProjection = (input: {
 					);
 				}
 			}
+		}
+
+		for (const [assetId, state] of mortgageStates.entries()) {
+			if (state.termRemainingMonths <= 0) continue;
+			if (state.startDate && monthsBetween(state.startDate, current) < 0) {
+				continue;
+			}
+
+			const mortgageAccount = accountMap.get(state.mortgageAccountId);
+			if (!mortgageAccount) continue;
+			const principal = Math.abs(mortgageAccount.balance);
+			if (principal === 0) {
+				state.termRemainingMonths -= 1;
+				continue;
+			}
+
+			const baseRate =
+				typeof mortgageAccount.interestRate === 'number' &&
+				Number.isFinite(mortgageAccount.interestRate)
+					? mortgageAccount.interestRate
+					: 0;
+			const effectiveRate = baseRate + interestRateChange;
+			const monthlyRate = effectiveRate / 100 / 12;
+			const remaining = state.termRemainingMonths;
+			const payment =
+				monthlyRate === 0
+					? principal / remaining
+					: (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -remaining));
+			const interestAmount = principal * monthlyRate;
+
+			if (payment > 0) {
+				pushTransaction(
+					state.fundingSourceAccountId,
+					-payment,
+					'transfer',
+					'mortgage_repayment',
+					`mortgage_payment_${assetId}`
+				);
+				pushTransaction(
+					state.mortgageAccountId,
+					payment,
+					'transfer',
+					'mortgage_repayment',
+					`mortgage_payment_${assetId}`
+				);
+			}
+
+			if (interestAmount > 0) {
+				pushTransaction(
+					state.mortgageAccountId,
+					-interestAmount,
+					'expense',
+					'interest',
+					`mortgage_interest_${assetId}`
+				);
+			}
+
+			state.termRemainingMonths -= 1;
 		}
 
 		for (const [accountId, accountInfo] of accountMap.entries()) {
