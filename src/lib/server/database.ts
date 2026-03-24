@@ -782,6 +782,7 @@ export type CreatePropertyAssetWithExpenseInput = {
 	name: string;
 	startDate: string;
 	marketValue: number;
+	marketGrowthRate: number;
 	saleDate?: string;
 	ownershipExpense: number;
 	expenseAccount:
@@ -920,6 +921,7 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 				details: {
 					startDate: input.startDate,
 					marketValue: input.marketValue,
+					marketGrowthRate: input.marketGrowthRate,
 					...(input.saleDate ? { saleDate: input.saleDate } : {})
 				}
 			},

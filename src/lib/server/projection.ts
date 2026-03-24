@@ -10,6 +10,7 @@ export type ProjectionTransaction = {
 		| 'living_expenses'
 		| 'employment_income'
 		| 'asset_ownership'
+		| 'asset_sale'
 		| 'mortgage_repayment'
 		| 'other'
 		| 'interest';
@@ -52,6 +53,9 @@ type ProjectionCashflow = {
 	end_date: string | null;
 	source_account_id: string | null;
 	destination_account_id: string | null;
+	source_asset_name?: string | null;
+	destination_asset_name?: string | null;
+	description?: string | null;
 };
 
 type ProjectionAccount = {
@@ -71,6 +75,8 @@ type ProjectionAsset = {
 	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation';
 	details: Record<string, unknown>;
 	id?: string;
+	name?: string;
+	property_id?: string | null;
 };
 
 type ProjectionAssetAccount = {
@@ -295,12 +301,56 @@ export const buildProjection = (input: {
 		}
 	}
 
+	const propertySaleStates = new Map<
+		string,
+		{
+			accountId: string;
+			startDate: YearMonth;
+			saleDate: YearMonth;
+			marketValue: number;
+			marketGrowthRate: number;
+			assetName: string;
+		}
+	>();
+	for (const asset of input.assets) {
+		if (asset.asset_type !== 'property' || !asset.id) continue;
+		const startDateValue = asset.details?.startDate;
+		const saleDateValue = asset.details?.saleDate;
+		const startDate = typeof startDateValue === 'string' ? parseYearMonth(startDateValue) : null;
+		const saleDate = typeof saleDateValue === 'string' ? parseYearMonth(saleDateValue) : null;
+		if (!startDate || !saleDate) continue;
+		const marketValue = getNumberDetail(asset.details ?? {}, 'marketValue');
+		if (marketValue === null) continue;
+		const marketGrowthRate =
+			getNumberDetail(asset.details ?? {}, 'marketGrowthRate') ?? 5;
+
+		let accountId: string | null = null;
+		for (const link of input.assetAccounts) {
+			if (link.asset_id !== asset.id) continue;
+			if (link.relationship_role === 'held_in') {
+				accountId = link.account_id;
+				break;
+			}
+		}
+		if (!accountId) continue;
+
+		propertySaleStates.set(asset.id, {
+			accountId,
+			startDate,
+			saleDate,
+			marketValue,
+			marketGrowthRate,
+			assetName: asset.name ?? 'Property'
+		});
+	}
+
 	const mortgageStates = new Map<
 		string,
 		{
 			mortgageAccountId: string;
 			fundingSourceAccountId: string;
 			offsetAccountId: string | null;
+			propertySaleDate: YearMonth | null;
 			termRemainingMonths: number;
 			startDate: YearMonth | null;
 		}
@@ -310,6 +360,10 @@ export const buildProjection = (input: {
 		const termMonths = getTermMonths(asset.details ?? {});
 		const startDateValue = asset.details?.startDate;
 		const startDate = typeof startDateValue === 'string' ? parseYearMonth(startDateValue) : null;
+		const propertySaleDate =
+			asset.property_id && propertySaleDates.has(asset.property_id)
+				? propertySaleDates.get(asset.property_id) ?? null
+				: null;
 		let mortgageAccountId: string | null = null;
 		let fundingSourceAccountId: string | null = null;
 		let offsetAccountId: string | null = null;
@@ -330,6 +384,7 @@ export const buildProjection = (input: {
 				mortgageAccountId,
 				fundingSourceAccountId,
 				offsetAccountId,
+				propertySaleDate,
 				termRemainingMonths: termMonths,
 				startDate
 			});
@@ -468,6 +523,28 @@ export const buildProjection = (input: {
 			}
 		}
 
+		for (const [assetId, property] of propertySaleStates.entries()) {
+			const currentIndex = monthIndex(current);
+			const saleIndex = monthIndex(property.saleDate);
+			if (currentIndex !== saleIndex) continue;
+
+			const monthsHeld = monthsBetween(property.startDate, property.saleDate);
+			const yearsHeld = monthsHeld / 12;
+			const growthFactor = Math.pow(1 + property.marketGrowthRate / 100, yearsHeld);
+			const saleAmount = property.marketValue * growthFactor;
+			if (saleAmount <= 0) continue;
+
+			pushTransaction(
+				property.accountId,
+				saleAmount,
+				'income',
+				'asset_sale',
+				`property_sale_${assetId}`,
+				'Asset sale',
+				property.assetName
+			);
+		}
+
 		for (const [assetId, state] of mortgageStates.entries()) {
 			if (state.termRemainingMonths <= 0) continue;
 			if (state.startDate && monthsBetween(state.startDate, current) < 0) {
@@ -480,6 +557,31 @@ export const buildProjection = (input: {
 			if (principal === 0) {
 				state.termRemainingMonths -= 1;
 				continue;
+			}
+
+			if (state.propertySaleDate) {
+				const saleIndex = monthIndex(state.propertySaleDate);
+				const currentIndex = monthIndex(current);
+				if (currentIndex === saleIndex) {
+					pushTransaction(
+						state.fundingSourceAccountId,
+						-principal,
+						'transfer',
+						'mortgage_repayment',
+						`mortgage_payoff_${assetId}`,
+						'Mortgage payoff'
+					);
+					pushTransaction(
+						state.mortgageAccountId,
+						principal,
+						'transfer',
+						'mortgage_repayment',
+						`mortgage_payoff_${assetId}`,
+						'Mortgage payoff'
+					);
+					state.termRemainingMonths = 0;
+					continue;
+				}
 			}
 
 			const offsetBalance =

@@ -312,6 +312,19 @@
 					/>
 				</div>
 
+				<div class="grid gap-4 md:grid-cols-3">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Market growth rate (%)"
+						name="propertyMarketGrowthRate"
+						step="0.01"
+						value={form?.values?.propertyMarketGrowthRate ?? '5'}
+						error={form?.errors?.propertyMarketGrowthRate?.[0]}
+						required
+					/>
+				</div>
+
 				<label class="grid gap-2 text-sm font-medium text-slate-700">
 					Expenses account
 					<select

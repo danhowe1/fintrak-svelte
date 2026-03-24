@@ -20,6 +20,7 @@ export type PropertyDetails = {
 	name: string;
 	marketValue: number;
 	startDate: string;
+	marketGrowthRate: number;
 };
 
 export type Asset = PersonDetails | PropertyDetails;

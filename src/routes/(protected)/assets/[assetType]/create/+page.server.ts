@@ -48,6 +48,7 @@ const createAssetSchema = z
 		retirementAge: z.string().trim().optional(),
 		propertyMarketValue: z.string().trim().optional(),
 		propertySaleDate: z.string().trim().optional(),
+		propertyMarketGrowthRate: z.string().trim().optional(),
 		propertyOwnershipExpense: z.string().trim().optional(),
 		mortgagePropertyId: z.string().trim().optional(),
 		mortgageTermYears: z.string().trim().optional(),
@@ -219,6 +220,16 @@ const createAssetSchema = z
 					code: z.ZodIssueCode.custom,
 					message: 'Sale date must be MM YYYY',
 					path: ['propertySaleDate']
+				});
+			}
+			if (
+				!data.propertyMarketGrowthRate ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyMarketGrowthRate)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Market growth rate is required',
+					path: ['propertyMarketGrowthRate']
 				});
 			}
 			if (
@@ -523,6 +534,7 @@ export const actions: Actions = {
 			retirementAge: formData.get('retirementAge') ?? '',
 			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
 			propertySaleDate: formData.get('propertySaleDate') ?? '',
+			propertyMarketGrowthRate: formData.get('propertyMarketGrowthRate') ?? '5',
 			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
 			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
 			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
@@ -567,6 +579,7 @@ export const actions: Actions = {
 			retirementAge,
 			propertyMarketValue,
 			propertySaleDate,
+			propertyMarketGrowthRate,
 			propertyOwnershipExpense,
 			mortgagePropertyId,
 			mortgageTermYears,
@@ -653,6 +666,7 @@ export const actions: Actions = {
 					name,
 					startDate: details.startDate as string,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
+					marketGrowthRate: decimalUpToTwoPlacesSchema.parse(propertyMarketGrowthRate ?? '5'),
 					saleDate: propertySaleDate ? normalizeMonth(propertySaleDate) : undefined,
 					ownershipExpense: currencySchema.parse(propertyOwnershipExpense ?? ''),
 					expenseAccount:
