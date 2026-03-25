@@ -260,6 +260,78 @@ export async function getAccountsForScenario(scenarioId: string) {
 	return result.rows;
 }
 
+export async function updatePersonRetirementAge(
+	scenarioId: string,
+	assetId: string,
+	retirementAge: number
+) {
+	await getPool().query(
+		`
+			update assets
+			set details = jsonb_set(
+				coalesce(details, '{}'::jsonb),
+				'{retirementAge}',
+				to_jsonb($3::int),
+				true
+			)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+			  and asset_type = 'person'
+		`,
+		[scenarioId, assetId, Math.round(retirementAge)]
+	);
+}
+
+export async function updateCashflowAmount(
+	scenarioId: string,
+	cashflowId: string,
+	amount: number
+) {
+	await getPool().query(
+		`
+			update cashflows
+			set amount = $3::numeric
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+		`,
+		[scenarioId, cashflowId, amount]
+	);
+}
+
+export async function updatePropertyDetails(
+	scenarioId: string,
+	assetId: string,
+	input: { marketGrowthRate: number; saleDate?: string | null }
+) {
+	const saleDate =
+		typeof input.saleDate === 'string' && input.saleDate.trim().length > 0
+			? input.saleDate.trim()
+			: null;
+	const normalizedSaleDate = saleDate
+		? saleDate.replace(/(\s|\/)/g, '-').replace(/^(\d{2})-(\d{4})$/, '$2-$1')
+		: null;
+	await getPool().query(
+		`
+			update assets
+			set details = jsonb_set(
+				jsonb_set(
+					coalesce(details, '{}'::jsonb),
+					'{marketGrowthRate}',
+					to_jsonb($3::numeric),
+					true
+				),
+				'{saleDate}',
+				case when $4::text is null then 'null'::jsonb else to_jsonb($4::text) end,
+				true
+			)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+			  and asset_type = 'property'
+		`,
+		[scenarioId, assetId, input.marketGrowthRate, normalizedSaleDate]
+	);
+}
+
 export type AssetAccountLink = {
 	asset_id: string;
 	account_id: string;

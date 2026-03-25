@@ -56,6 +56,135 @@ let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss
 let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
 let isUpdating = false;
 let expandedPnlNodes = new Set<string>();
+let assetsTab: 'assets' | 'accounts' = 'assets';
+let assetsList = data.assets ?? [];
+let personRetirementAges: Record<string, number> = {};
+let cashflowAmounts: Record<string, number> = {};
+let propertyDetails: Record<string, { marketGrowthRate: number; saleDate: string }> = {};
+let propertyErrors: Record<string, string> = {};
+let lastScenarioId = data.scenario.id;
+let updateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+
+const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
+	const details = asset.details ?? {};
+	const raw = details.retirementAge;
+	const value = typeof raw === 'number' ? raw : Number(raw);
+	return Number.isFinite(value) ? value : 0;
+};
+
+$: assetsList = data.assets ?? [];
+
+$: if (data.scenario.id !== lastScenarioId) {
+	personRetirementAges = {};
+	cashflowAmounts = {};
+	propertyDetails = {};
+	propertyErrors = {};
+	updateTimers = {};
+	lastScenarioId = data.scenario.id;
+}
+
+$: if (Object.keys(personRetirementAges).length === 0 && (assetsList.length ?? 0) > 0) {
+	const next: Record<string, number> = {};
+	for (const asset of assetsList) {
+		if (asset.asset_type === 'person') {
+			next[asset.id] = getRetirementAge(asset);
+		}
+	}
+	personRetirementAges = next;
+}
+
+$: if (Object.keys(cashflowAmounts).length === 0 && (data.cashflows?.length ?? 0) > 0) {
+	const next: Record<string, number> = {};
+	for (const cashflow of data.cashflows ?? []) {
+		next[cashflow.id] = cashflow.amount;
+	}
+	cashflowAmounts = next;
+}
+
+$: if (Object.keys(propertyDetails).length === 0 && (assetsList.length ?? 0) > 0) {
+	const next: Record<string, { marketGrowthRate: number; saleDate: string }> = {};
+	for (const asset of assetsList) {
+		if (asset.asset_type === 'property') {
+			const details = asset.details ?? {};
+			const rawRate = details.marketGrowthRate;
+			const rate = typeof rawRate === 'number' ? rawRate : Number(rawRate);
+			const rawSaleDate = details.saleDate;
+			const saleDate =
+				typeof rawSaleDate === 'string' ? toMonthYearInput(rawSaleDate) : '';
+			next[asset.id] = {
+				marketGrowthRate: Number.isFinite(rate) ? rate : 0,
+				saleDate
+			};
+		}
+	}
+	propertyDetails = next;
+}
+
+const setPersonRetirementAge = (id: string, value: number) => {
+	personRetirementAges = { ...personRetirementAges, [id]: value };
+};
+
+const getAssetCashflows = (assetName: string) =>
+	(data.cashflows ?? []).filter((cashflow) => {
+		if (cashflow.cashflow_type === 'expense') {
+			return cashflow.source_asset_name === assetName;
+		}
+		if (cashflow.cashflow_type === 'income') {
+			return cashflow.destination_asset_name === assetName;
+		}
+		return false;
+	});
+
+const setCashflowAmount = (id: string, value: number) => {
+	cashflowAmounts = { ...cashflowAmounts, [id]: value };
+};
+
+const setPropertyDetails = (
+	id: string,
+	value: { marketGrowthRate: number; saleDate: string }
+) => {
+	propertyDetails = { ...propertyDetails, [id]: value };
+};
+
+const setPropertyError = (id: string, message: string) => {
+	propertyErrors = { ...propertyErrors, [id]: message };
+};
+
+const isValidMonthYear = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
+const toMonthYearInput = (value: string) => {
+	const trimmed = value.trim();
+	if (!trimmed) return '';
+	const isoMatch = trimmed.match(/^(\d{4})-(\d{2})$/);
+	if (isoMatch) {
+		return `${isoMatch[2]} ${isoMatch[1]}`;
+	}
+	const altMatch = trimmed.match(/^(\d{2})(\s|\/|-)?(\d{4})$/);
+	if (altMatch) {
+		return `${altMatch[1]} ${altMatch[3]}`;
+	}
+	return trimmed;
+};
+
+const stepForValue = (value: number) => {
+	const absValue = Math.abs(value);
+	if (absValue <= 1) return 0.25;
+	if (absValue <= 100) return 1;
+	if (absValue <= 1000) return 100;
+	if (absValue <= 10000) return 500;
+	if (absValue <= 100000) return 5000;
+	if (absValue <= 1000000) return 50000;
+	return 500000;
+};
+
+const scheduleUpdate = (key: string, handler: () => void) => {
+	if (updateTimers[key]) {
+		clearTimeout(updateTimers[key]);
+	}
+	updateTimers = {
+		...updateTimers,
+		[key]: setTimeout(handler, 350)
+	};
+};
 
 	const togglePnlNode = (id: string) => {
 		const next = new Set(expandedPnlNodes);
@@ -94,10 +223,78 @@ let expandedPnlNodes = new Set<string>();
 		} catch (error) {
 			projectionError =
 				error instanceof Error ? error.message : 'Unable to refresh the projection.';
-		} finally {
-			isUpdating = false;
+	} finally {
+		isUpdating = false;
+	}
+};
+
+const updateRetirementAge = async (assetId: string, retirementAge: number) => {
+	if (isUpdating) return;
+	isUpdating = true;
+	try {
+		const formData = new FormData();
+		formData.set('scenarioId', data.scenario.id);
+		formData.set('assetId', assetId);
+		formData.set('retirementAge', String(retirementAge));
+		const response = await fetch('?/updateRetirementAge', { method: 'POST', body: formData });
+		if (!response.ok) {
+			throw new Error('Unable to update retirement age. Please try again.');
 		}
-	};
+		await refreshProjection();
+	} catch (error) {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update retirement age.';
+	} finally {
+		isUpdating = false;
+	}
+};
+
+const updateCashflowAmount = async (cashflowId: string, amount: number) => {
+	if (isUpdating) return;
+	isUpdating = true;
+	try {
+		const formData = new FormData();
+		formData.set('scenarioId', data.scenario.id);
+		formData.set('cashflowId', cashflowId);
+		formData.set('amount', String(amount));
+		const response = await fetch('?/updateCashflowAmount', { method: 'POST', body: formData });
+		if (!response.ok) {
+			throw new Error('Unable to update cashflow amount. Please try again.');
+		}
+		await refreshProjection();
+	} catch (error) {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update cashflow amount.';
+	} finally {
+		isUpdating = false;
+	}
+};
+
+const updatePropertyDetails = async (
+	assetId: string,
+	marketGrowthRate: number,
+	saleDate: string
+) => {
+	if (isUpdating) return;
+	isUpdating = true;
+	try {
+		const formData = new FormData();
+		formData.set('scenarioId', data.scenario.id);
+		formData.set('assetId', assetId);
+		formData.set('marketGrowthRate', String(marketGrowthRate));
+		formData.set('saleDate', saleDate);
+		const response = await fetch('?/updatePropertyDetails', { method: 'POST', body: formData });
+		if (!response.ok) {
+			throw new Error('Unable to update property details. Please try again.');
+		}
+		await refreshProjection();
+	} catch (error) {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update property details.';
+	} finally {
+		isUpdating = false;
+	}
+};
 
 	const updateRates = async (deltaInflation: number, deltaInterest: number) => {
 		if (isUpdating) return;
@@ -892,6 +1089,232 @@ let expandedPnlNodes = new Set<string>();
 	{/if}
 </section>
 
+<section class="not-prose mt-6">
+	<div class="inline-flex items-end gap-1">
+		<button
+			type="button"
+			class={`relative rounded-t-xl border border-b-0 px-4 py-2 text-xs font-semibold ${
+				assetsTab === 'assets'
+					? '-mb-px z-10 border-slate-200 bg-white text-slate-900 shadow-none'
+					: 'border-slate-300 bg-slate-100 text-slate-600'
+			}`}
+			on:click={() => (assetsTab = 'assets')}
+		>
+			Assets
+			{#if assetsTab === 'assets'}
+				<span class="absolute inset-x-0 -bottom-px h-px bg-white"></span>
+			{/if}
+		</button>
+		<button
+			type="button"
+			class={`relative rounded-t-xl border border-b-0 px-4 py-2 text-xs font-semibold ${
+				assetsTab === 'accounts'
+					? '-mb-px z-10 border-slate-200 bg-white text-slate-900 shadow-none'
+					: 'border-slate-300 bg-slate-100 text-slate-600'
+			}`}
+			on:click={() => (assetsTab = 'accounts')}
+		>
+			Accounts
+			{#if assetsTab === 'accounts'}
+				<span class="absolute inset-x-0 -bottom-px h-px bg-white"></span>
+			{/if}
+		</button>
+	</div>
+	<div class="rounded-2xl rounded-tl-none border border-slate-200 bg-white p-4 shadow-sm">
+		<div class="h-px w-full bg-transparent"></div>
+	{#if assetsTab === 'assets'}
+		<div class="mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
+				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+					<h3 class="text-sm font-semibold text-slate-900">{person.name}</h3>
+					<div class="mt-3 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Retirement age</span>
+						<input
+							type="number"
+							class="ml-auto w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+							value={personRetirementAges[person.id] ?? ''}
+							step={stepForValue(personRetirementAges[person.id] ?? 0)}
+							on:input={(event) => {
+								const next = Number((event.currentTarget as HTMLInputElement).value);
+								const value = Number.isFinite(next) ? next : 0;
+								setPersonRetirementAge(person.id, value);
+								scheduleUpdate(`retirement:${person.id}`, () =>
+									updateRetirementAge(person.id, value)
+								);
+							}}
+						/>
+					</div>
+					<div class="mt-3 space-y-2">
+						{#each getAssetCashflows(person.name) as cashflow}
+							<div
+								class={`grid grid-cols-[140px_1fr] items-center gap-1 text-xs ${
+									cashflow.cashflow_type === 'income'
+										? 'text-emerald-600'
+										: 'text-rose-600'
+								}`}
+							>
+								<span class="truncate">
+									{`${formatLabel(cashflow.category)} ${cashflow.description ?? ''}`.trim()}
+								</span>
+								<input
+									type="number"
+									class="ml-auto w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={cashflowAmounts[cashflow.id] ?? cashflow.amount}
+									step={Math.max(
+										stepForValue(cashflowAmounts[cashflow.id] ?? cashflow.amount),
+										0.25
+									)}
+									on:input={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const value = Number.isFinite(next) ? next : 0;
+										setCashflowAmount(cashflow.id, value);
+										scheduleUpdate(`cashflow:${cashflow.id}`, () =>
+											updateCashflowAmount(cashflow.id, value)
+										);
+									}}
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/each}
+			{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
+				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+					<h3 class="text-sm font-semibold text-slate-900">{property.name}</h3>
+					<div class="mt-3 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Market growth rate</span>
+						<input
+							type="number"
+							class="ml-auto w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+							value={formatRate(propertyDetails[property.id]?.marketGrowthRate ?? 0, 1)}
+							step="0.5"
+							on:input={(event) => {
+								const next = Number((event.currentTarget as HTMLInputElement).value);
+								const current = propertyDetails[property.id] ?? {
+									marketGrowthRate: 0,
+									saleDate: ''
+								};
+								setPropertyDetails(property.id, {
+									...current,
+									marketGrowthRate: Number.isFinite(next) ? next : 0
+								});
+							}}
+							on:change={(event) => {
+								const next = Number((event.currentTarget as HTMLInputElement).value);
+								const current = propertyDetails[property.id] ?? {
+									marketGrowthRate: 0,
+									saleDate: ''
+								};
+								const value = Number.isFinite(next) ? next : 0;
+								setPropertyDetails(property.id, { ...current, marketGrowthRate: value });
+								scheduleUpdate(`property:${property.id}`, () =>
+									updatePropertyDetails(
+										property.id,
+										value,
+										current.saleDate ?? ''
+									)
+								);
+							}}
+						/>
+					</div>
+					<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Sale date (MM YYYY)</span>
+						<div class="ml-auto flex flex-col items-end">
+							<input
+								type="text"
+								inputmode="numeric"
+								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+								class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={propertyDetails[property.id]?.saleDate ?? ''}
+								on:input={(event) => {
+									const next = (event.currentTarget as HTMLInputElement).value;
+									const current = propertyDetails[property.id] ?? {
+										marketGrowthRate: 0,
+										saleDate: ''
+									};
+									setPropertyDetails(property.id, { ...current, saleDate: next });
+									if (next.trim().length === 0 || isValidMonthYear(next)) {
+										setPropertyError(property.id, '');
+									}
+								}}
+								on:change={(event) => {
+									const next = (event.currentTarget as HTMLInputElement).value;
+									const current = propertyDetails[property.id] ?? {
+										marketGrowthRate: 0,
+										saleDate: ''
+									};
+									if (next.trim().length > 0 && !isValidMonthYear(next)) {
+										setPropertyError(property.id, 'Use MM YYYY format.');
+										return;
+									}
+									setPropertyError(property.id, '');
+									setPropertyDetails(property.id, { ...current, saleDate: next });
+									scheduleUpdate(`property:${property.id}`, () =>
+										updatePropertyDetails(
+											property.id,
+											current.marketGrowthRate ?? 0,
+											next
+										)
+									);
+								}}
+							/>
+							{#if propertyErrors[property.id]}
+								<span class="mt-1 text-[10px] text-rose-600">
+									{propertyErrors[property.id]}
+								</span>
+							{/if}
+						</div>
+					</div>
+					<div class="mt-3 space-y-2">
+						{#each getAssetCashflows(property.name) as cashflow}
+							<div
+								class={`grid grid-cols-[140px_1fr] items-center gap-1 text-xs ${
+									cashflow.cashflow_type === 'income'
+										? 'text-emerald-600'
+										: 'text-rose-600'
+								}`}
+							>
+								<span class="truncate">
+									{`${formatLabel(cashflow.category)} ${cashflow.description ?? ''}`.trim()}
+								</span>
+								<input
+									type="number"
+									class="ml-auto w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={cashflowAmounts[cashflow.id] ?? cashflow.amount}
+									step={Math.max(
+										stepForValue(cashflowAmounts[cashflow.id] ?? cashflow.amount),
+										0.25
+									)}
+									on:input={(event) => {
+										const next = Number(
+											(event.currentTarget as HTMLInputElement).value
+										);
+										const value = Number.isFinite(next) ? next : 0;
+										setCashflowAmount(cashflow.id, value);
+									}}
+									on:change={(event) => {
+										const next = Number(
+											(event.currentTarget as HTMLInputElement).value
+										);
+										const value = Number.isFinite(next) ? next : 0;
+										setCashflowAmount(cashflow.id, value);
+										scheduleUpdate(`cashflow:${cashflow.id}`, () =>
+											updateCashflowAmount(cashflow.id, value)
+										);
+									}}
+								/>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/each}
+		</div>
+	{:else}
+		<div class="mt-5 text-sm text-slate-600">No accounts to show yet.</div>
+	{/if}
+	</div>
+</section>
+
 <section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<h2 class="text-lg font-semibold text-slate-900">Cashflows</h2>
 
@@ -953,7 +1376,7 @@ let expandedPnlNodes = new Set<string>();
 							<td class="px-4 py-3">{cashflow.source_account_name ?? ''}</td>
 							<td class="px-4 py-3">{cashflow.destination_account_name ?? ''}</td>
 							<td class="px-4 py-3 font-medium">
-								{formatCurrency(cashflow.amount)}
+								{formatCurrency(cashflowAmounts[cashflow.id] ?? cashflow.amount)}
 							</td>
 						</tr>
 					{/each}

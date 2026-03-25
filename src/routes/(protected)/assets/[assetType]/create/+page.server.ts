@@ -34,6 +34,12 @@ const decimalUpToTwoPlacesSchema = z
 	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a number with up to 2 decimal places' })
 	.transform((value) => Number(value));
 
+const decimalUpToOnePlaceSchema = z
+	.string()
+	.trim()
+	.regex(/^-?\d+(\.\d)?$/, { message: 'Must be a number with up to 1 decimal place' })
+	.transform((value) => Number(value));
+
 const roundToTwo = (value: number) => Number(value.toFixed(2));
 
 const uuidSchema = z.string().uuid();
@@ -696,7 +702,7 @@ export const actions: Actions = {
 					name,
 					startDate: details.startDate as string,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
-					marketGrowthRate: decimalUpToTwoPlacesSchema.parse(propertyMarketGrowthRate ?? '5'),
+					marketGrowthRate: decimalUpToOnePlaceSchema.parse(propertyMarketGrowthRate ?? '5'),
 					fixedSellingCosts: currencySchema.parse(propertyFixedSellingCosts ?? '10000'),
 					variableSellingCosts: decimalUpToTwoPlacesSchema.parse(
 						propertyVariableSellingCosts ?? '1.65'

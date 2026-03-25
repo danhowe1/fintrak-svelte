@@ -1,4 +1,4 @@
-import { redirect } from '@sveltejs/kit';
+import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
 	getCashflowsForScenario,
@@ -6,7 +6,10 @@ import {
 	getAssetsForScenario,
 	getAssetAccountsForScenario,
 	getScenarioForUserById,
-	getSingleScenarioForUser
+	getSingleScenarioForUser,
+	updateCashflowAmount,
+	updatePersonRetirementAge,
+	updatePropertyDetails
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
 
@@ -94,6 +97,8 @@ export const load: PageServerLoad = async (event) => {
 	return {
 		scenario,
 		cashflows,
+		assets,
+		accounts,
 		projection,
 		projectionRange,
 		sessionRates: parentData.sessionRates
@@ -142,6 +147,71 @@ export const actions: Actions = {
 			sameSite: 'lax'
 		});
 
+		return { success: true };
+	},
+	updateRetirementAge: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const retirementAge = Number(formData.get('retirementAge'));
+		if (!scenarioId || !assetId || !Number.isFinite(retirementAge)) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updatePersonRetirementAge(scenarioId, assetId, retirementAge);
+		return { success: true };
+	},
+	updateCashflowAmount: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const cashflowId = String(formData.get('cashflowId') ?? '');
+		const amount = Number(formData.get('amount'));
+		if (!scenarioId || !cashflowId || !Number.isFinite(amount)) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updateCashflowAmount(scenarioId, cashflowId, amount);
+		return { success: true };
+	},
+	updatePropertyDetails: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const marketGrowthRateRaw = Number(formData.get('marketGrowthRate'));
+		const marketGrowthRate = Number.isFinite(marketGrowthRateRaw)
+			? Math.round(marketGrowthRateRaw * 10) / 10
+			: Number.NaN;
+		const saleDateRaw = String(formData.get('saleDate') ?? '').trim();
+		const saleDate = saleDateRaw.length > 0 ? saleDateRaw : null;
+		if (!scenarioId || !assetId || !Number.isFinite(marketGrowthRate)) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updatePropertyDetails(scenarioId, assetId, {
+			marketGrowthRate,
+			saleDate
+		});
 		return { success: true };
 	}
 };

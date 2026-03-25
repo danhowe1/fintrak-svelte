@@ -143,8 +143,8 @@
 						class="no-spin"
 						label="Market growth rate (%)"
 						name="propertyMarketGrowthRate"
-						step="0.01"
-						value={form?.values?.propertyMarketGrowthRate ?? '5'}
+						step="0.5"
+						value={form?.values?.propertyMarketGrowthRate ?? '5.0'}
 						error={form?.errors?.propertyMarketGrowthRate?.[0]}
 						required
 					/>
