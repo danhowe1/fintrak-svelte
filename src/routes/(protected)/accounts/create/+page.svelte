@@ -7,6 +7,9 @@
 	export let data: PageData;
 	export let form: ActionData;
 
+	const formErrors = (form?.errors ?? {}) as Record<string, string[]>;
+	const formValues = (form?.values ?? {}) as Record<string, string>;
+
 	const selectedPersonIds = Array.isArray(form?.values?.personIds)
 		? form?.values?.personIds
 		: null;
@@ -35,23 +38,23 @@
 						name="accountType"
 						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
 						required
-						value={form?.values?.accountType ?? 'current_account'}
+						value={formValues.accountType ?? 'current_account'}
 						autofocus
 					>
 						<option value="current_account">Current account</option>
 						<option value="savings_account">Savings account</option>
 						<option value="credit_card">Credit card</option>
 					</select>
-					{#if form?.errors?.accountType?.[0]}
-						<span class="text-xs text-rose-600">{form.errors.accountType[0]}</span>
+					{#if formErrors.accountType?.[0]}
+						<span class="text-xs text-rose-600">{formErrors.accountType[0]}</span>
 					{/if}
 				</label>
 
 				<FormField
 					label="Account name"
 					name="name"
-					value={form?.values?.name ?? ''}
-					error={form?.errors?.name?.[0]}
+					value={formValues.name ?? ''}
+					error={formErrors.name?.[0]}
 					required
 				/>
 
@@ -60,8 +63,8 @@
 					label="Interest rate (%)"
 					name="interestRate"
 					step="0.1"
-					value={form?.values?.interestRate ?? ''}
-					error={form?.errors?.interestRate?.[0]}
+					value={formValues.interestRate ?? ''}
+					error={formErrors.interestRate?.[0]}
 					required
 					class="no-spin"
 				/>
@@ -71,8 +74,8 @@
 					label="Opening balance"
 					name="openingBalance"
 					step="0.01"
-					value={form?.values?.openingBalance ?? ''}
-					error={form?.errors?.openingBalance?.[0]}
+					value={formValues.openingBalance ?? ''}
+					error={formErrors.openingBalance?.[0]}
 					required
 					class="no-spin"
 				/>

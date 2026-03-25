@@ -6,8 +6,8 @@ import {
 	getAssetsForScenario,
 	getAssetAccountsForScenario,
 	createCashflow,
-	getCashflowsForScenario,
 	deleteCashflow,
+	updateCashflow,
 	getScenarioForUserById,
 	getSingleScenarioForUser,
 	updateCashflowAmount,
@@ -340,6 +340,114 @@ export const actions: Actions = {
 			return fail(404, { error: 'Scenario not found.' });
 		}
 		await deleteCashflow(scenarioId, cashflowId);
+		const cashflows = await getCashflowsForScenario(scenarioId);
+		return { success: true, cashflows };
+	},
+	updateCashflow: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const cashflowId = String(formData.get('cashflowId') ?? '');
+		const type = String(formData.get('type') ?? '');
+		const category = String(formData.get('category') ?? '');
+		const frequency = String(formData.get('frequency') ?? '');
+		const amount = Number(formData.get('amount'));
+		const inflationAffected = formData.get('inflationAffected') === 'on';
+		const startMonth = String(formData.get('startDate') ?? '');
+		const endMonth = String(formData.get('endDate') ?? '');
+		const description = String(formData.get('description') ?? '').trim();
+		const assetAccountId = String(formData.get('assetAccountId') ?? '');
+
+		const isMonth = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
+		const normalizeMonth = (value: string) => {
+			const cleaned = value.replace(/\D/g, '');
+			const month = cleaned.slice(0, 2);
+			const year = cleaned.slice(2, 6);
+			return `${year}-${month}-01`;
+		};
+
+		if (
+			!scenarioId ||
+			!assetId ||
+			!cashflowId ||
+			(type !== 'income' && type !== 'expense') ||
+			(category !== 'living_expenses' &&
+				category !== 'employment_income' &&
+				category !== 'asset_ownership' &&
+				category !== 'rental_income' &&
+				category !== 'other') ||
+			(frequency !== 'monthly' &&
+				frequency !== 'quarterly' &&
+				frequency !== 'annually' &&
+				frequency !== 'one_time') ||
+			!Number.isFinite(amount) ||
+			!description ||
+			!assetAccountId ||
+			!isMonth(startMonth) ||
+			(endMonth.trim().length > 0 && !isMonth(endMonth))
+		) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+
+		const [assetAccounts, assets] = await Promise.all([
+			getAssetAccountsForScenario(scenarioId),
+			getAssetsForScenario(scenarioId)
+		]);
+		const assetAccount = assetAccounts.find(
+			(link) => link.id === assetAccountId && link.asset_id === assetId
+		);
+		if (!assetAccount) {
+			return fail(400, { error: 'Account selection is invalid.' });
+		}
+		const asset = assets.find((item) => item.id === assetId);
+		if (!asset) {
+			return fail(404, { error: 'Asset not found.' });
+		}
+		if (asset.asset_type === 'person') {
+			if (type === 'expense' && category !== 'living_expenses') {
+				return fail(400, { error: 'Invalid category for person expense.' });
+			}
+			if (
+				type === 'income' &&
+				category !== 'employment_income' &&
+				category !== 'other'
+			) {
+				return fail(400, { error: 'Invalid category for person income.' });
+			}
+		}
+		if (asset.asset_type === 'property') {
+			if (type === 'expense' && category !== 'asset_ownership') {
+				return fail(400, { error: 'Invalid category for property expense.' });
+			}
+			if (type === 'income' && category !== 'rental_income') {
+				return fail(400, { error: 'Invalid category for property income.' });
+			}
+		}
+
+		await updateCashflow({
+			scenarioId,
+			cashflowId,
+			type,
+			frequency,
+			category,
+			amount,
+			inflationAffected,
+			startDate: normalizeMonth(startMonth),
+			endDate: endMonth.trim().length > 0 ? normalizeMonth(endMonth) : null,
+			sourceAssetAccountId: type === 'expense' ? assetAccountId : null,
+			destinationAssetAccountId: type === 'income' ? assetAccountId : null,
+			description
+		});
+
 		const cashflows = await getCashflowsForScenario(scenarioId);
 		return { success: true, cashflows };
 	}

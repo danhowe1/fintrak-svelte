@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { Pool } from 'pg';
+import type { PoolClient } from 'pg';
 import { z } from 'zod';
 
 const databaseUrlSchema = z
@@ -38,6 +39,8 @@ function getPool() {
 
 	return pool;
 }
+
+type DbClient = Pool | PoolClient;
 
 export function getAuthenticatedUser(
 	session: {
@@ -100,6 +103,9 @@ export async function countScenariosForUser(userId: string) {
 export type ScenarioSummary = {
 	id: string;
 	name: string;
+	details?: {
+		startDate?: string;
+	};
 };
 
 export type ScenarioListItem = {
@@ -114,7 +120,7 @@ export type ScenarioListItem = {
 export async function getSingleScenarioForUser(userId: string) {
 	const result = await getPool().query<ScenarioSummary>(
 		`
-			select s.id, s.name
+			select s.id, s.name, s.details
 			from scenarios s
 			left join scenario_members sm
 				on sm.scenario_id = s.id
@@ -430,6 +436,58 @@ export async function deleteCashflow(scenarioId: string, cashflowId: string) {
 	);
 }
 
+export async function updateCashflow(input: {
+	scenarioId: string;
+	cashflowId: string;
+	type: 'expense' | 'income' | 'transfer';
+	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'rental_income'
+		| 'other';
+	amount: number;
+	inflationAffected: boolean;
+	startDate: string;
+	endDate?: string | null;
+	sourceAssetAccountId?: string | null;
+	destinationAssetAccountId?: string | null;
+	description: string;
+}) {
+	await getPool().query(
+		`
+			update cashflows
+			set cashflow_type = $3::cashflow_type,
+				frequency = $4::cashflow_frequency,
+				category = $5::cashflow_category,
+				amount = $6::numeric,
+				inflation_affected = $7::boolean,
+				start_date = $8::date,
+				end_date = $9::date,
+				source_asset_account_id = $10::uuid,
+				destination_asset_account_id = $11::uuid,
+				description = $12::text
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+		`,
+		[
+			input.scenarioId,
+			input.cashflowId,
+			input.type,
+			input.frequency,
+			input.category,
+			input.amount,
+			input.inflationAffected,
+			input.startDate,
+			input.endDate ?? null,
+			input.sourceAssetAccountId ?? null,
+			input.destinationAssetAccountId ?? null,
+			input.description
+		]
+	);
+}
+
 export type CashflowSummary = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
@@ -440,6 +498,8 @@ export type CashflowSummary = {
 	start_date: string;
 	end_date: string | null;
 	description: string;
+	source_asset_account_id: string | null;
+	destination_asset_account_id: string | null;
 	source_account_id: string | null;
 	destination_account_id: string | null;
 	source_asset_id: string | null;
@@ -463,6 +523,8 @@ export async function getCashflowsForScenario(scenarioId: string) {
 				c.start_date,
 				c.end_date,
 				c.description,
+				saa.id as source_asset_account_id,
+				daa.id as destination_asset_account_id,
 				saa.account_id as source_account_id,
 				daa.account_id as destination_account_id,
 				sasset.id as source_asset_id,
@@ -495,7 +557,7 @@ export type CreateAssetInput = {
 	propertyId?: string | null;
 };
 
-export async function createAsset(input: CreateAssetInput, client?: Pool['prototype']) {
+export async function createAsset(input: CreateAssetInput, client?: DbClient) {
 	const db = client ?? getPool();
 	const result = await db.query<{ id: string }>(
 		`
@@ -521,7 +583,7 @@ export type CreateAccountInput = {
 	details: Record<string, unknown>;
 };
 
-export async function createAccount(input: CreateAccountInput, client?: Pool['prototype']) {
+export async function createAccount(input: CreateAccountInput, client?: DbClient) {
 	const db = client ?? getPool();
 	const result = await db.query<{ id: string }>(
 		`
@@ -566,7 +628,7 @@ export async function createAccountWithHolders(input: CreateAccountInput & { hol
 }
 
 export async function getOrCreateAssetAccount(
-	client: Pool['prototype'],
+	client: DbClient,
 	input: {
 		scenarioId: string;
 		assetId: string;
@@ -678,7 +740,7 @@ export async function createScenarioWithPerson(input: CreateScenarioWithPersonIn
 async function ensureAppUser(
 	userId: string,
 	input?: { email?: string; name?: string },
-	client?: Pool['prototype']
+	client?: DbClient
 ) {
 	const db = client ?? getPool();
 	await db.query(
@@ -752,7 +814,7 @@ async function createIdentity(provider: string, providerUserId: string, appUserI
 	);
 }
 
-async function insertScenario(client: Pool['prototype'], input: CreateScenarioWithPersonInput) {
+async function insertScenario(client: DbClient, input: CreateScenarioWithPersonInput) {
 	const scenarioResult = await client.query<{ id: string }>(
 		`
 			insert into scenarios (name, details, created_by)
@@ -776,7 +838,7 @@ async function insertScenario(client: Pool['prototype'], input: CreateScenarioWi
 	return scenarioId;
 }
 
-async function insertScenarioMember(client: Pool['prototype'], scenarioId: string, userId: string) {
+async function insertScenarioMember(client: DbClient, scenarioId: string, userId: string) {
 	await client.query(
 		`
 			insert into scenario_members (scenario_id, user_id, role)
@@ -787,7 +849,7 @@ async function insertScenarioMember(client: Pool['prototype'], scenarioId: strin
 }
 
 async function insertPersonAsset(
-	client: Pool['prototype'],
+	client: DbClient,
 	scenarioId: string,
 	input: CreateScenarioWithPersonInput
 ) {
@@ -818,7 +880,7 @@ async function insertPersonAsset(
 }
 
 async function insertDefaultAccount(
-	client: Pool['prototype'],
+	client: DbClient,
 	scenarioId: string,
 	input: CreateScenarioWithPersonInput
 ) {
@@ -848,7 +910,7 @@ async function insertDefaultAccount(
 }
 
 async function insertAssetAccount(
-	client: Pool['prototype'],
+	client: DbClient,
 	scenarioId: string,
 	assetId: string,
 	accountId: string
@@ -890,7 +952,7 @@ type InsertCashflowInput = {
 	createdBy: string;
 };
 
-async function insertCashflow(client: Pool['prototype'], input: InsertCashflowInput) {
+async function insertCashflow(client: DbClient, input: InsertCashflowInput) {
 	await client.query(
 		`
 			insert into cashflows (

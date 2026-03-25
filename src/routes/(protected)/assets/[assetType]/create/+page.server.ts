@@ -22,12 +22,6 @@ const currencySchema = z
 	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a valid amount' })
 	.transform((value) => Number(value));
 
-const decimalOnePlaceSchema = z
-	.string()
-	.trim()
-	.regex(/^-?\d+(\.\d)?$/, { message: 'Must be a number with 1 decimal place' })
-	.transform((value) => Number(value));
-
 const decimalUpToTwoPlacesSchema = z
 	.string()
 	.trim()

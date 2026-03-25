@@ -9,6 +9,7 @@ export type ProjectionTransaction = {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'rental_income'
 		| 'asset_ownership'
 		| 'asset_sale'
 		| 'mortgage_repayment'

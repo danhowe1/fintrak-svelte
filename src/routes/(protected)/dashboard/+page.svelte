@@ -19,24 +19,6 @@
 	const formatLabel = (value: string) =>
 		value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 
-	const formatMonth = (value?: string | Date | null) => {
-		if (!value) return '—';
-		if (value instanceof Date) {
-			if (Number.isNaN(value.getTime())) return '—';
-			const month = String(value.getMonth() + 1).padStart(2, '0');
-			const year = value.getFullYear();
-			return `${month} ${year}`;
-		}
-
-		const normalized =
-			value.length === 7 ? `${value}-01` : value.length >= 10 ? value.slice(0, 10) : value;
-		const date = new Date(value.length >= 10 ? value : `${normalized}T00:00:00`);
-		if (Number.isNaN(date.getTime())) return '—';
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const year = date.getFullYear();
-		return `${month} ${year}`;
-	};
-
 	const formatSignedCurrency = (value: number) => {
 		const formatted = formatCurrency(Math.abs(value));
 		return value < 0 ? `-${formatted}` : formatted;
@@ -76,8 +58,32 @@ const cashflowFrequencyOptions = [
 	{ value: 'one_time', label: 'One time' }
 ];
 
+type ProjectionRange = '1y' | '5y' | '10y' | 'all';
+type CashflowDraft = {
+	type: 'income' | 'expense';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'rental_income'
+		| 'other';
+	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
+	amount: string;
+	description: string;
+	startDate: string;
+	endDate: string;
+	inflationAffected: boolean;
+	assetAccountId: string;
+	cashflowId?: string;
+};
+
+const normalizeProjectionRange = (value: unknown): ProjectionRange => {
+	if (value === '1y' || value === '5y' || value === '10y' || value === 'all') return value;
+	return 'all';
+};
+
 let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
-let projectionRange: '1y' | '5y' | '10y' | 'all' = data.projectionRange ?? 'all';
+let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionRange);
 let isUpdating = false;
 let updateLocks = new Set<string>();
 let expandedPnlNodes = new Set<string>();
@@ -92,26 +98,9 @@ let propertyErrors: Record<string, string> = {};
 let cashflowFormErrors: Record<string, string> = {};
 let lastScenarioId = data.scenario.id;
 let updateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
-let activeCashflowForm: { assetId: string; type: 'income' | 'expense' } | null = null;
-let cashflowDrafts: Record<
-	string,
-	{
-		type: 'income' | 'expense';
-		category:
-			| 'living_expenses'
-			| 'employment_income'
-			| 'asset_ownership'
-			| 'rental_income'
-			| 'other';
-		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
-		amount: string;
-		description: string;
-		startDate: string;
-		endDate: string;
-		inflationAffected: boolean;
-		assetAccountId: string;
-	}
-> = {};
+let activeCashflowForm: { assetId: string; type: 'income' | 'expense'; cashflowId?: string } | null =
+	null;
+let cashflowDrafts: Record<string, CashflowDraft> = {};
 let cashflowsByAssetId: Record<string, typeof cashflows> = {};
 let editingCashflowIds = new Set<string>();
 let deleteConfirmId: string | null = null;
@@ -205,15 +194,7 @@ const setCashflowAmount = (id: string, value: number) => {
 
 const monthLabelFromDate = (value?: string | null) => {
 	if (!value) return '';
-	const cleaned = value.replace(/\D/g, '');
-	if (cleaned.length >= 6) {
-		const month = cleaned.slice(4, 6);
-		const year = cleaned.slice(0, 4);
-		if (Number(month) >= 1 && Number(month) <= 12) {
-			return `${month} ${year}`;
-		}
-	}
-	return formatMonth(value);
+	return toMonthYearInput(value);
 };
 
 const getAssetAccountOptions = (assetId: string) => {
@@ -252,15 +233,16 @@ const syncCashflowAmounts = (nextCashflows: typeof cashflows) => {
 	cashflowAmounts = next;
 };
 
-const getDraftKey = (assetId: string, type: 'income' | 'expense') => `${assetId}:${type}`;
+const getDraftKey = (assetId: string, type: 'income' | 'expense', cashflowId?: string) =>
+	cashflowId ? `edit:${cashflowId}` : `new:${assetId}:${type}`;
 
 const getDefaultDraft = (
 	assetId: string,
 	type: 'income' | 'expense',
 	assetType: string
-) => {
+): CashflowDraft => {
 	const options = getAssetAccountOptions(assetId);
-	const defaultCategory =
+	const defaultCategory: CashflowDraft['category'] =
 		assetType === 'person'
 			? type === 'expense'
 				? 'living_expenses'
@@ -315,22 +297,46 @@ const openCashflowForm = (assetId: string, type: 'income' | 'expense') => {
 	}
 };
 
+const openCashflowFormForEdit = (assetId: string, cashflow: (typeof cashflows)[number]) => {
+	const type = cashflow.cashflow_type as 'income' | 'expense';
+	const key = getDraftKey(assetId, type, cashflow.id);
+	activeCashflowForm = { assetId, type, cashflowId: cashflow.id };
+	const assetType = getAssetType(assetId);
+	const draft = {
+		type,
+		category: cashflow.category,
+		frequency: cashflow.frequency,
+		amount: String(cashflow.amount ?? ''),
+		description: cashflow.description ?? '',
+		startDate: toMonthYearInput(String(cashflow.start_date ?? '')),
+		endDate: cashflow.end_date ? toMonthYearInput(String(cashflow.end_date)) : '',
+		inflationAffected: cashflow.inflation_affected,
+		assetAccountId:
+			type === 'expense'
+				? cashflow.source_asset_account_id ?? ''
+				: cashflow.destination_asset_account_id ?? '',
+		cashflowId: cashflow.id
+	};
+	let coercedDraft = draft;
+	if (assetType === 'person') {
+		if (type === 'expense') {
+			coercedDraft = { ...draft, category: 'living_expenses' };
+		}
+	}
+	if (assetType === 'property') {
+		const forcedCategory = type === 'income' ? 'rental_income' : 'asset_ownership';
+		coercedDraft = { ...draft, category: forcedCategory };
+	}
+	cashflowDrafts = { ...cashflowDrafts, [key]: coercedDraft };
+};
+
 const closeCashflowForm = () => {
 	activeCashflowForm = null;
 };
 
 const setCashflowDraft = (
 	key: string,
-	updates: Partial<{
-		category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
-		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
-		amount: string;
-		description: string;
-		startDate: string;
-		endDate: string;
-		inflationAffected: boolean;
-		assetAccountId: string;
-	}>
+	updates: Partial<CashflowDraft>
 ) => {
 	cashflowDrafts = {
 		...cashflowDrafts,
@@ -350,16 +356,27 @@ const setPropertyError = (id: string, message: string) => {
 };
 
 const isValidMonthYear = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
-const toMonthYearInput = (value: string) => {
+const toMonthYearInput = (value: string | Date) => {
+	if (value instanceof Date) {
+		const month = String(value.getMonth() + 1).padStart(2, '0');
+		const year = value.getFullYear();
+		return `${month} ${year}`;
+	}
 	const trimmed = value.trim();
 	if (!trimmed) return '';
-	const isoMatch = trimmed.match(/^(\d{4})-(\d{2})$/);
+	const isoMatch = trimmed.match(/^(\d{4})-(\d{2})/);
 	if (isoMatch) {
 		return `${isoMatch[2]} ${isoMatch[1]}`;
 	}
 	const altMatch = trimmed.match(/^(\d{2})(\s|\/|-)?(\d{4})$/);
 	if (altMatch) {
 		return `${altMatch[1]} ${altMatch[3]}`;
+	}
+	const parsed = new Date(trimmed);
+	if (!Number.isNaN(parsed.getTime())) {
+		const month = String(parsed.getMonth() + 1).padStart(2, '0');
+		const year = parsed.getFullYear();
+		return `${month} ${year}`;
 	}
 	return trimmed;
 };
@@ -488,20 +505,7 @@ const updateCashflowAmount = async (cashflowId: string, amount: number) => {
 	});
 };
 
-const createAssetCashflow = async (
-	assetId: string,
-	draft: {
-		type: 'income' | 'expense';
-		category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
-		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
-		amount: string;
-		description: string;
-		startDate: string;
-		endDate: string;
-		inflationAffected: boolean;
-		assetAccountId: string;
-	}
-) => {
+const createAssetCashflow = async (assetId: string, draft: CashflowDraft) => {
 	await withLock(
 		`createCashflow:${assetId}`,
 		async () => {
@@ -551,6 +555,59 @@ const createAssetCashflow = async (
 		};
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to create cashflow.';
+	});
+};
+
+const updateAssetCashflow = async (
+	assetId: string,
+	cashflowId: string,
+	draft: CashflowDraft
+) => {
+	await withLock(
+		`updateCashflow:${cashflowId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('assetId', assetId);
+			formData.set('cashflowId', cashflowId);
+			formData.set('type', draft.type);
+			formData.set('category', draft.category);
+			formData.set('frequency', draft.frequency);
+			formData.set('amount', draft.amount);
+			formData.set('description', draft.description);
+			formData.set('startDate', draft.startDate);
+			formData.set('endDate', draft.endDate);
+			if (draft.inflationAffected) {
+				formData.set('inflationAffected', 'on');
+			}
+			formData.set('assetAccountId', draft.assetAccountId);
+			const response = await fetch('?/updateCashflow', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				throw new Error('Unable to update cashflow. Please try again.');
+			}
+			const payload = await response.json();
+			const nextCashflows = payload?.cashflows ?? payload?.data?.cashflows;
+			if (nextCashflows) {
+				cashflows = [...nextCashflows];
+				syncCashflowAmounts(nextCashflows);
+			} else {
+				await refreshProjection({ includeCashflows: true });
+			}
+			cashflowFormErrors = { ...cashflowFormErrors, [assetId]: '' };
+			activeCashflowForm = null;
+		},
+		true
+	).catch((error) => {
+		cashflowFormErrors = {
+			...cashflowFormErrors,
+			[assetId]: error instanceof Error ? error.message : 'Unable to update cashflow.'
+		};
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update cashflow.';
 	});
 };
 
@@ -957,20 +1014,24 @@ const updatePropertyDetails = async (
 		plugins: {
 			legend: {
 				display: true,
-				position: 'bottom',
+				position: 'bottom' as const,
 				labels: {
 					usePointStyle: true,
 					boxWidth: 8,
 					boxHeight: 8,
 					color: '#64748b',
-					font: { size: 11, weight: '600' }
+					font: { size: 11, weight: 600 }
 				}
 			},
 			tooltip: {
 				enabled: true,
 				callbacks: {
-					label: (context: { dataset: { label?: string }; parsed: { y: number } }) =>
-						`${context.dataset.label ?? ''}: ${formatAxisCurrency(context.parsed.y)}`
+					label: (context: any) => {
+						const label = context?.dataset?.label ?? '';
+						const yValue =
+							typeof context?.parsed?.y === 'number' ? context.parsed.y : 0;
+						return `${label}: ${formatAxisCurrency(yValue)}`;
+					}
 				}
 			},
 			zeroLine: {}
@@ -1458,11 +1519,11 @@ const updatePropertyDetails = async (
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">{person.name}</h3>
-					<div class="mt-3 grid grid-cols-[140px_128px_16px] items-center gap-1 text-xs text-slate-600">
+					<div class="mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Retirement age</span>
 						<input
 							type="number"
-							class="justify-self-end w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+							class="justify-self-end w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
 							value={personRetirementAges[person.id] ?? ''}
 							step={stepForValue(personRetirementAges[person.id] ?? 0)}
 							on:input={(event) => {
@@ -1479,7 +1540,7 @@ const updatePropertyDetails = async (
 					<div class="mt-3 space-y-2">
 						{#each cashflowsByAssetId[person.id] ?? [] as cashflow}
 							<div
-								class={`grid grid-cols-[140px_128px_16px] items-center gap-1 text-xs ${
+								class={`grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs ${
 									cashflow.cashflow_type === 'income'
 										? 'text-emerald-600'
 										: 'text-rose-600'
@@ -1513,29 +1574,51 @@ const updatePropertyDetails = async (
 										);
 									}}
 								/>
-								<button
-									type="button"
-									class="justify-self-end text-rose-500 hover:text-rose-600"
-									aria-label="Delete cashflow"
-									title="Delete cashflow"
-									on:click={() => requestDeleteCashflow(cashflow.id)}
-								>
-									<svg
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										class="h-4 w-4"
+								<div class="flex items-center justify-end gap-1">
+									<button
+										type="button"
+										class="text-amber-500 hover:text-amber-600"
+										aria-label="Edit cashflow"
+										title="Edit cashflow"
+										on:click={() => openCashflowFormForEdit(person.id, cashflow)}
 									>
-										<path d="M3 6h18" />
-										<path d="M8 6V4h8v2" />
-										<path d="M6 6l1 14h10l1-14" />
-										<path d="M10 11v6" />
-										<path d="M14 11v6" />
-									</svg>
-								</button>
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="h-4 w-4"
+										>
+											<path d="M12 20h9" />
+											<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+										</svg>
+									</button>
+									<button
+										type="button"
+										class="text-rose-500 hover:text-rose-600"
+										aria-label="Delete cashflow"
+										title="Delete cashflow"
+										on:click={() => requestDeleteCashflow(cashflow.id)}
+									>
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="h-4 w-4"
+										>
+											<path d="M3 6h18" />
+											<path d="M8 6V4h8v2" />
+											<path d="M6 6l1 14h10l1-14" />
+											<path d="M10 11v6" />
+											<path d="M14 11v6" />
+										</svg>
+									</button>
+								</div>
 							</div>
 						{/each}
 					</div>
@@ -1556,31 +1639,36 @@ const updatePropertyDetails = async (
 						</button>
 					</div>
 					{#if activeCashflowForm && activeCashflowForm.assetId === person.id}
-						{@const draftKey = getDraftKey(person.id, activeCashflowForm.type)}
+						{@const draftKey = getDraftKey(
+							person.id,
+							activeCashflowForm.type,
+							activeCashflowForm.cashflowId
+						)}
 						{@const draft = cashflowDrafts[draftKey]}
 						{#if draft}
 							<div class="mt-3 rounded-lg border border-slate-200 bg-white p-3">
 								<div class="text-xs font-semibold text-slate-700">
-									New {draft.type === 'income' ? 'Income' : 'Expense'}
+									{activeCashflowForm.cashflowId ? 'Edit' : 'New'}{' '}
+									{draft.type === 'income' ? 'Income' : 'Expense'}
 								</div>
 								{#each [getCategoryOptionsFor(person.id, draft.type)] as options}
-									<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
-										<span class="truncate text-slate-500">Category</span>
-										<select
-											class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-											value={draft.category}
-											disabled={options.length === 1}
-											on:change={(event) =>
-												setCashflowDraft(draftKey, {
-													category: (event.currentTarget as HTMLSelectElement)
-														.value as typeof draft.category
-												})}
-										>
-											{#each options as option}
-												<option value={option.value}>{option.label}</option>
-											{/each}
-										</select>
-									</div>
+								<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
+									<span class="truncate text-slate-500">Category</span>
+									<select
+										class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={draft.category}
+										disabled={options.length === 1}
+										on:change={(event) =>
+											setCashflowDraft(draftKey, {
+												category: (event.currentTarget as HTMLSelectElement)
+													.value as typeof draft.category
+											})}
+									>
+										{#each options as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
 								{/each}
 								<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
 									<span class="truncate text-slate-500">Description</span>
@@ -1614,7 +1702,7 @@ const updatePropertyDetails = async (
 										inputmode="numeric"
 										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 										class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-										value={draft.startDate}
+										value={toMonthYearInput(draft.startDate)}
 										on:input={(event) =>
 											setCashflowDraft(draftKey, {
 												startDate: (event.currentTarget as HTMLInputElement).value
@@ -1628,7 +1716,7 @@ const updatePropertyDetails = async (
 										inputmode="numeric"
 										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 										class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-										value={draft.endDate}
+										value={toMonthYearInput(draft.endDate)}
 										on:input={(event) =>
 											setCashflowDraft(draftKey, {
 												endDate: (event.currentTarget as HTMLInputElement).value
@@ -1696,9 +1784,16 @@ const updatePropertyDetails = async (
 										type="button"
 										class="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
 										disabled={!draft.assetAccountId}
-										on:click={() => createAssetCashflow(person.id, draft)}
+										on:click={() =>
+											activeCashflowForm?.cashflowId
+												? updateAssetCashflow(
+														person.id,
+														activeCashflowForm.cashflowId,
+														draft
+													)
+												: createAssetCashflow(person.id, draft)}
 									>
-										Add
+										{activeCashflowForm.cashflowId ? 'Save' : 'Add'}
 									</button>
 								</div>
 							</div>
@@ -1709,7 +1804,7 @@ const updatePropertyDetails = async (
 			{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">{property.name}</h3>
-					<div class="mt-3 grid grid-cols-[140px_128px_16px] items-center gap-1 text-xs text-slate-600">
+					<div class="mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Market growth rate</span>
 						<input
 							type="number"
@@ -1746,14 +1841,14 @@ const updatePropertyDetails = async (
 						/>
 						<span></span>
 					</div>
-					<div class="mt-2 grid grid-cols-[140px_128px_16px] items-center gap-1 text-xs text-slate-600">
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Sale date (MM YYYY)</span>
-						<div class="flex flex-col items-end">
+						<div class="justify-self-end flex flex-col items-end">
 							<input
 								type="text"
 								inputmode="numeric"
 								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-								class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
 								value={propertyDetails[property.id]?.saleDate ?? ''}
 								on:input={(event) => {
 									const next = (event.currentTarget as HTMLInputElement).value;
@@ -1798,7 +1893,7 @@ const updatePropertyDetails = async (
 					<div class="mt-3 space-y-2">
 						{#each cashflowsByAssetId[property.id] ?? [] as cashflow}
 							<div
-								class={`grid grid-cols-[140px_128px_16px] items-center gap-1 text-xs ${
+								class={`grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs ${
 									cashflow.cashflow_type === 'income'
 										? 'text-emerald-600'
 										: 'text-rose-600'
@@ -1841,29 +1936,51 @@ const updatePropertyDetails = async (
 										);
 									}}
 								/>
-								<button
-									type="button"
-									class="justify-self-end text-rose-500 hover:text-rose-600"
-									aria-label="Delete cashflow"
-									title="Delete cashflow"
-									on:click={() => requestDeleteCashflow(cashflow.id)}
-								>
-									<svg
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-										class="h-4 w-4"
+								<div class="flex items-center justify-end gap-1">
+									<button
+										type="button"
+										class="text-amber-500 hover:text-amber-600"
+										aria-label="Edit cashflow"
+										title="Edit cashflow"
+										on:click={() => openCashflowFormForEdit(property.id, cashflow)}
 									>
-										<path d="M3 6h18" />
-										<path d="M8 6V4h8v2" />
-										<path d="M6 6l1 14h10l1-14" />
-										<path d="M10 11v6" />
-										<path d="M14 11v6" />
-									</svg>
-								</button>
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="h-4 w-4"
+										>
+											<path d="M12 20h9" />
+											<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+										</svg>
+									</button>
+									<button
+										type="button"
+										class="text-rose-500 hover:text-rose-600"
+										aria-label="Delete cashflow"
+										title="Delete cashflow"
+										on:click={() => requestDeleteCashflow(cashflow.id)}
+									>
+										<svg
+											viewBox="0 0 24 24"
+											fill="none"
+											stroke="currentColor"
+											stroke-width="2"
+											stroke-linecap="round"
+											stroke-linejoin="round"
+											class="h-4 w-4"
+										>
+											<path d="M3 6h18" />
+											<path d="M8 6V4h8v2" />
+											<path d="M6 6l1 14h10l1-14" />
+											<path d="M10 11v6" />
+											<path d="M14 11v6" />
+										</svg>
+									</button>
+								</div>
 							</div>
 						{/each}
 					</div>
@@ -1884,31 +2001,36 @@ const updatePropertyDetails = async (
 						</button>
 					</div>
 					{#if activeCashflowForm && activeCashflowForm.assetId === property.id}
-						{@const draftKey = getDraftKey(property.id, activeCashflowForm.type)}
+						{@const draftKey = getDraftKey(
+							property.id,
+							activeCashflowForm.type,
+							activeCashflowForm.cashflowId
+						)}
 						{@const draft = cashflowDrafts[draftKey]}
 						{#if draft}
 							<div class="mt-3 rounded-lg border border-slate-200 bg-white p-3">
 								<div class="text-xs font-semibold text-slate-700">
-									New {draft.type === 'income' ? 'Income' : 'Expense'}
+									{activeCashflowForm.cashflowId ? 'Edit' : 'New'}{' '}
+									{draft.type === 'income' ? 'Income' : 'Expense'}
 								</div>
 								{#each [getCategoryOptionsFor(property.id, draft.type)] as options}
-									<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
-										<span class="truncate text-slate-500">Category</span>
-										<select
-											class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-											value={draft.category}
-											disabled={options.length === 1}
-											on:change={(event) =>
-												setCashflowDraft(draftKey, {
-													category: (event.currentTarget as HTMLSelectElement)
-														.value as typeof draft.category
-												})}
-										>
-											{#each options as option}
-												<option value={option.value}>{option.label}</option>
-											{/each}
-										</select>
-									</div>
+								<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
+									<span class="truncate text-slate-500">Category</span>
+									<select
+										class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={draft.category}
+										disabled={options.length === 1}
+										on:change={(event) =>
+											setCashflowDraft(draftKey, {
+												category: (event.currentTarget as HTMLSelectElement)
+													.value as typeof draft.category
+											})}
+									>
+										{#each options as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</div>
 								{/each}
 								<div class="mt-2 grid grid-cols-[140px_1fr] items-center gap-1 text-xs text-slate-600">
 									<span class="truncate text-slate-500">Description</span>
@@ -1942,7 +2064,7 @@ const updatePropertyDetails = async (
 										inputmode="numeric"
 										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 										class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-										value={draft.startDate}
+										value={toMonthYearInput(draft.startDate)}
 										on:input={(event) =>
 											setCashflowDraft(draftKey, {
 												startDate: (event.currentTarget as HTMLInputElement).value
@@ -1956,7 +2078,7 @@ const updatePropertyDetails = async (
 										inputmode="numeric"
 										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 										class="ml-auto w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-										value={draft.endDate}
+										value={toMonthYearInput(draft.endDate)}
 										on:input={(event) =>
 											setCashflowDraft(draftKey, {
 												endDate: (event.currentTarget as HTMLInputElement).value
@@ -2024,9 +2146,16 @@ const updatePropertyDetails = async (
 										type="button"
 										class="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
 										disabled={!draft.assetAccountId}
-										on:click={() => createAssetCashflow(property.id, draft)}
+										on:click={() =>
+											activeCashflowForm?.cashflowId
+												? updateAssetCashflow(
+														property.id,
+														activeCashflowForm.cashflowId,
+														draft
+													)
+												: createAssetCashflow(property.id, draft)}
 									>
-										Add
+										{activeCashflowForm.cashflowId ? 'Save' : 'Add'}
 									</button>
 								</div>
 							</div>
@@ -2067,74 +2196,3 @@ const updatePropertyDetails = async (
 		</div>
 	</div>
 {/if}
-
-<section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-	<h2 class="text-lg font-semibold text-slate-900">Cashflows</h2>
-
-	{#if cashflows.length === 0}
-		<p class="mt-3 text-sm text-slate-600">No cashflows found for this scenario.</p>
-	{:else}
-		<div class="mt-4 overflow-x-auto">
-			<table class="min-w-full divide-y divide-slate-200 text-xs">
-				<thead
-					class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-				>
-					<tr>
-						<th class="px-4 py-3">Start</th>
-						<th class="px-4 py-3">End</th>
-						<th class="px-4 py-3">Type</th>
-						<th class="px-4 py-3">Asset</th>
-						<th class="px-4 py-3">Category</th>
-						<th class="px-4 py-3">Description</th>
-						<th class="px-4 py-3">Frequency</th>
-						<th class="px-4 py-3">Inflation?</th>
-						<th class="px-4 py-3">Source account</th>
-						<th class="px-4 py-3">Destination account</th>
-						<th class="px-4 py-3">Amount</th>
-					</tr>
-				</thead>
-				<tbody class="divide-y divide-slate-100 text-slate-700">
-					{#each cashflows as cashflow}
-						<tr
-							class={`whitespace-nowrap ${
-								cashflow.cashflow_type === 'income'
-									? 'text-emerald-600'
-									: cashflow.cashflow_type === 'expense'
-										? 'text-rose-600'
-										: 'text-amber-600'
-							}`}
-						>
-							<td class="px-4 py-3">{formatMonth(cashflow.start_date)}</td>
-							<td class="px-4 py-3">{formatMonth(cashflow.end_date)}</td>
-							<td class="px-4 py-3 font-semibold">{formatLabel(cashflow.cashflow_type)}</td>
-							<td class="px-4 py-3">
-								{cashflow.cashflow_type === 'expense'
-									? cashflow.source_asset_name ?? ''
-									: cashflow.cashflow_type === 'income'
-										? cashflow.destination_asset_name ?? ''
-										: ''}
-							</td>
-							<td class="px-4 py-3">{formatLabel(cashflow.category)}</td>
-							<td class="px-4 py-3">{cashflow.description}</td>
-							<td class="px-4 py-3">{formatLabel(cashflow.frequency)}</td>
-							<td class="px-4 py-3">
-								<input
-									type="checkbox"
-									checked={cashflow.inflation_affected}
-									disabled
-									aria-label="Inflation affected"
-									class="h-4 w-4 accent-slate-600"
-								/>
-							</td>
-							<td class="px-4 py-3">{cashflow.source_account_name ?? ''}</td>
-							<td class="px-4 py-3">{cashflow.destination_account_name ?? ''}</td>
-							<td class="px-4 py-3 font-medium">
-								{formatCurrency(cashflowAmounts[cashflow.id] ?? cashflow.amount)}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		</div>
-	{/if}
-</section>
