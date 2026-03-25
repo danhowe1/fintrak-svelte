@@ -356,7 +356,12 @@ export async function createCashflow(input: {
 	scenarioId: string;
 	type: 'expense' | 'income' | 'transfer';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'rental_income'
+		| 'other';
 	amount: number;
 	inflationAffected: boolean;
 	startDate: string;
@@ -428,7 +433,7 @@ export async function deleteCashflow(scenarioId: string, cashflowId: string) {
 export type CashflowSummary = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'rental_income' | 'other';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	inflation_affected: boolean;

@@ -754,7 +754,8 @@ const updatePropertyDetails = async (
 		const totals = Array(length).fill(0);
 		for (const arr of arrays) {
 			arr.forEach((value, idx) => {
-				totals[idx] += value;
+				const safeValue = Number.isFinite(value) ? value : 0;
+				totals[idx] += safeValue;
 			});
 		}
 		return totals;

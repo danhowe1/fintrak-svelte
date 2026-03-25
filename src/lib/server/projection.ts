@@ -87,12 +87,15 @@ type ProjectionAssetAccount = {
 
 const parseYearMonth = (value?: unknown): YearMonth | null => {
 	if (!value) return null;
-	const normalized =
-		value instanceof Date
-			? value.toISOString().slice(0, 10)
-			: typeof value === 'string'
-				? value
-				: null;
+	if (value instanceof Date) {
+		const year = value.getFullYear();
+		const month = value.getMonth() + 1;
+		if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+			return null;
+		}
+		return { year, month };
+	}
+	const normalized = typeof value === 'string' ? value : null;
 	if (!normalized) return null;
 	const match = normalized.match(/^(\d{4})-(\d{2})/);
 	if (!match) return null;
@@ -435,7 +438,11 @@ export const buildProjection = (input: {
 			if (!start) continue;
 			const monthDiff = monthsBetween(start, current);
 			if (monthDiff < 0) continue;
-			if (end && monthsBetween(current, end) > 0) continue;
+			if (end) {
+				const endDiff = monthsBetween(start, end);
+				if (endDiff < 0) continue;
+				if (monthDiff > endDiff) continue;
+			}
 
 			if (interval === 0) {
 				if (monthDiff !== 0) continue;
@@ -475,9 +482,13 @@ export const buildProjection = (input: {
 				}
 			}
 
+			const baseAmount = Number(cashflow.amount);
+			if (!Number.isFinite(baseAmount)) {
+				continue;
+			}
 			const rawAmount = cashflow.inflation_affected
-				? cashflow.amount * inflationFactor
-				: cashflow.amount;
+				? baseAmount * inflationFactor
+				: baseAmount;
 
 			if (cashflow.cashflow_type === 'income') {
 				if (cashflow.destination_account_id) {
