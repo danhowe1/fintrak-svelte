@@ -1,7 +1,11 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { z } from 'zod';
-import { createAccount, getScenarioForUserById } from '$lib/server/database';
+import {
+	createAccountWithHolders,
+	getAssetsForScenario,
+	getScenarioForUserById
+} from '$lib/server/database';
 
 const decimalOnePlaceSchema = z
 	.string()
@@ -16,17 +20,11 @@ const currencySchema = z
 	.transform((value) => Number(value));
 
 const createAccountSchema = z.object({
-	accountType: z.enum([
-		'current_account',
-		'mortgage_account',
-		'savings_account',
-		'credit_card',
-		'brokerage',
-		'super_account'
-	]),
+	accountType: z.enum(['current_account', 'savings_account', 'credit_card']),
 	name: z.string().trim().min(1, 'Account name is required'),
 	interestRate: decimalOnePlaceSchema,
-	openingBalance: currencySchema
+	openingBalance: currencySchema,
+	personIds: z.array(z.string()).min(1, 'Select at least one account holder')
 });
 
 export const load: PageServerLoad = async (event) => {
@@ -45,7 +43,10 @@ export const load: PageServerLoad = async (event) => {
 		throw redirect(303, '/scenarios');
 	}
 
-	return { scenario };
+	const assets = await getAssetsForScenario(scenario.id);
+	const people = assets.filter((asset) => asset.asset_type === 'person');
+
+	return { scenario, people };
 };
 
 export const actions: Actions = {
@@ -70,7 +71,8 @@ export const actions: Actions = {
 			accountType: formData.get('accountType'),
 			name: formData.get('name'),
 			interestRate: formData.get('interestRate'),
-			openingBalance: formData.get('openingBalance')
+			openingBalance: formData.get('openingBalance'),
+			personIds: formData.getAll('personIds')
 		};
 
 		const parsed = createAccountSchema.safeParse(payload);
@@ -79,16 +81,30 @@ export const actions: Actions = {
 			return fail(400, { errors, values: payload });
 		}
 
-		const { accountType, name, interestRate, openingBalance } = parsed.data;
+		const { accountType, name, interestRate, openingBalance, personIds } = parsed.data;
 
-		await createAccount({
+		const assets = await getAssetsForScenario(scenario.id);
+		const validPeople = new Set(
+			assets.filter((asset) => asset.asset_type === 'person').map((asset) => asset.id)
+		);
+		const holderAssetIds = personIds.filter((id) => validPeople.has(id));
+
+		if (holderAssetIds.length === 0) {
+			return fail(400, {
+				errors: { personIds: ['Select at least one account holder'] },
+				values: payload
+			});
+		}
+
+		await createAccountWithHolders({
 			scenarioId: scenario.id,
 			accountType,
 			name,
 			details: {
 				interestRate,
 				openingBalance
-			}
+			},
+			holderAssetIds
 		});
 
 		throw redirect(303, '/accounts');

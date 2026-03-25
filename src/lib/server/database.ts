@@ -385,6 +385,31 @@ export async function createAccount(input: CreateAccountInput, client?: Pool['pr
 	return accountId;
 }
 
+export async function createAccountWithHolders(input: CreateAccountInput & { holderAssetIds: string[] }) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+		const accountId = await createAccount(input, client);
+
+		for (const assetId of input.holderAssetIds) {
+			await getOrCreateAssetAccount(client, {
+				scenarioId: input.scenarioId,
+				assetId,
+				accountId,
+				role: 'held_in'
+			});
+		}
+
+		await client.query('commit');
+		return accountId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
 export async function getOrCreateAssetAccount(
 	client: Pool['prototype'],
 	input: {
@@ -804,6 +829,7 @@ export type CreateMortgageAssetWithAccountsInput = {
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 	offsetAccount?:
 		| { type: 'none' }
+		| { type: 'same_as_payment_source' }
 		| { type: 'existing'; accountId: string }
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 };
@@ -876,17 +902,19 @@ export async function createPersonAssetWithCashflows(input: CreatePersonAssetWit
 			role: 'held_in'
 		});
 
-		await insertCashflow(client, {
-			scenarioId: input.scenarioId,
-			type: 'income',
-			frequency: 'monthly',
-			category: 'employment_income',
-			amount: input.employmentIncome,
-			startDate: input.startDate,
-			destinationAssetAccountId: incomeAssetAccountId,
-			description: 'Salary',
-			createdBy: input.userId
-		});
+		if (input.employmentIncome > 0) {
+			await insertCashflow(client, {
+				scenarioId: input.scenarioId,
+				type: 'income',
+				frequency: 'monthly',
+				category: 'employment_income',
+				amount: input.employmentIncome,
+				startDate: input.startDate,
+				destinationAssetAccountId: incomeAssetAccountId,
+				description: 'Salary',
+				createdBy: input.userId
+			});
+		}
 
 		await insertCashflow(client, {
 			scenarioId: input.scenarioId,
@@ -1041,11 +1069,15 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 		const resolveOffsetAccount = async (
 			account:
 				| { type: 'none' }
+				| { type: 'same_as_payment_source' }
 				| { type: 'existing'; accountId: string }
 				| { type: 'new'; name: string; interestRate: number; openingBalance: number }
 		) => {
 			if (account.type === 'none') {
 				return null;
+			}
+			if (account.type === 'same_as_payment_source') {
+				return paymentSourceAccountId;
 			}
 			if (account.type === 'existing') {
 				return account.accountId;

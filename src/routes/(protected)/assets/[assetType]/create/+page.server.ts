@@ -98,10 +98,10 @@ const createAssetSchema = z
 				});
 			}
 
-			if (!data.employmentIncome || !/^-?\d+(\.\d{1,2})?$/.test(data.employmentIncome)) {
+			if (data.employmentIncome && !/^-?\d+(\.\d{1,2})?$/.test(data.employmentIncome)) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
-					message: 'Employment income is required',
+					message: 'Employment income must be a valid amount',
 					path: ['employmentIncome']
 				});
 			}
@@ -114,15 +114,7 @@ const createAssetSchema = z
 				});
 			}
 
-			if (!data.incomeAccountChoice) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select an income account option',
-					path: ['incomeAccountChoice']
-				});
-			}
-
-			if (!useSame && !data.expenseAccountChoice) {
+			if (!data.expenseAccountChoice) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					message: 'Select an expenses account option',
@@ -130,46 +122,15 @@ const createAssetSchema = z
 				});
 			}
 
-			if (data.incomeAccountChoice === 'new') {
-				if (!data.incomeAccountName) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account name is required',
-						path: ['incomeAccountName']
-					});
-				}
-				if (
-					!data.incomeAccountInterestRate ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountInterestRate)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account interest rate is required',
-						path: ['incomeAccountInterestRate']
-					});
-				}
-				if (
-					!data.incomeAccountOpeningBalance ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountOpeningBalance)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account opening balance is required',
-						path: ['incomeAccountOpeningBalance']
-					});
-				}
-			} else if (data.incomeAccountChoice && data.incomeAccountChoice !== 'new') {
-				const parsed = uuidSchema.safeParse(data.incomeAccountChoice);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account selection is invalid',
-						path: ['incomeAccountChoice']
-					});
-				}
+			if (!useSame && !data.incomeAccountChoice) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select an income account option',
+					path: ['incomeAccountChoice']
+				});
 			}
 
-			if (!useSame && data.expenseAccountChoice === 'new') {
+			if (data.expenseAccountChoice === 'new') {
 				if (!data.expenseAccountName) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
@@ -197,13 +158,52 @@ const createAssetSchema = z
 						path: ['expenseAccountOpeningBalance']
 					});
 				}
-			} else if (!useSame && data.expenseAccountChoice && data.expenseAccountChoice !== 'new') {
+			} else if (data.expenseAccountChoice && data.expenseAccountChoice !== 'new') {
 				const parsed = uuidSchema.safeParse(data.expenseAccountChoice);
 				if (!parsed.success) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
 						message: 'Expense account selection is invalid',
 						path: ['expenseAccountChoice']
+					});
+				}
+			}
+
+			if (!useSame && data.incomeAccountChoice === 'new') {
+				if (!data.incomeAccountName) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Income account name is required',
+						path: ['incomeAccountName']
+					});
+				}
+				if (
+					!data.incomeAccountInterestRate ||
+					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountInterestRate)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Income account interest rate is required',
+						path: ['incomeAccountInterestRate']
+					});
+				}
+				if (
+					!data.incomeAccountOpeningBalance ||
+					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountOpeningBalance)
+				) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Income account opening balance is required',
+						path: ['incomeAccountOpeningBalance']
+					});
+				}
+			} else if (!useSame && data.incomeAccountChoice && data.incomeAccountChoice !== 'new') {
+				const parsed = uuidSchema.safeParse(data.incomeAccountChoice);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Income account selection is invalid',
+						path: ['incomeAccountChoice']
 					});
 				}
 			}
@@ -443,7 +443,11 @@ const createAssetSchema = z
 				}
 			}
 
-			if (data.mortgageOffsetChoice && data.mortgageOffsetChoice !== 'none') {
+			if (
+				data.mortgageOffsetChoice &&
+				data.mortgageOffsetChoice !== 'none' &&
+				data.mortgageOffsetChoice !== 'same_as_payment_source'
+			) {
 				if (data.mortgageOffsetChoice === 'new') {
 					if (!data.mortgageOffsetName) {
 						ctx.addIssue({
@@ -649,32 +653,22 @@ export const actions: Actions = {
 					dob: normalizeMonth(personDob ?? ''),
 					retirementAge: Number(retirementAge),
 					startDate: details.startDate as string,
-					employmentIncome: currencySchema.parse(employmentIncome ?? ''),
+					employmentIncome: employmentIncome ? currencySchema.parse(employmentIncome) : 0,
 					essentialExpenses: currencySchema.parse(essentialExpenses ?? ''),
-					incomeAccount:
-						incomeAccountChoice === 'new'
+					expenseAccount:
+						expenseAccountChoice === 'new'
 							? {
 									type: 'new',
-									name: incomeAccountName ?? 'Income account',
+									name: expenseAccountName ?? 'Expense account',
 									interestRate: roundToTwo(
-										decimalUpToTwoPlacesSchema.parse(incomeAccountInterestRate ?? '0')
+										decimalUpToTwoPlacesSchema.parse(expenseAccountInterestRate ?? '0')
 									),
-									openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
+									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 								}
-							: { type: 'existing', accountId: incomeAccountChoice ?? '' },
-					expenseAccount:
+							: { type: 'existing', accountId: expenseAccountChoice ?? '' },
+					incomeAccount:
 						useSameAccount === 'on'
-							? incomeAccountChoice === 'new'
-								? {
-										type: 'new',
-										name: incomeAccountName ?? 'Income account',
-										interestRate: roundToTwo(
-											decimalUpToTwoPlacesSchema.parse(incomeAccountInterestRate ?? '0')
-										),
-										openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
-									}
-								: { type: 'existing', accountId: incomeAccountChoice ?? '' }
-							: expenseAccountChoice === 'new'
+							? expenseAccountChoice === 'new'
 								? {
 										type: 'new',
 										name: expenseAccountName ?? 'Expense account',
@@ -684,6 +678,16 @@ export const actions: Actions = {
 										openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
 									}
 								: { type: 'existing', accountId: expenseAccountChoice ?? '' }
+							: incomeAccountChoice === 'new'
+								? {
+										type: 'new',
+										name: incomeAccountName ?? 'Income account',
+										interestRate: roundToTwo(
+											decimalUpToTwoPlacesSchema.parse(incomeAccountInterestRate ?? '0')
+										),
+										openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
+									}
+								: { type: 'existing', accountId: incomeAccountChoice ?? '' }
 				});
 			} else if (assetType.data === 'property') {
 				await createPropertyAssetWithExpense({
@@ -750,6 +754,8 @@ export const actions: Actions = {
 					offsetAccount:
 						mortgageOffsetChoice === 'none'
 							? { type: 'none' }
+							: mortgageOffsetChoice === 'same_as_payment_source'
+								? { type: 'same_as_payment_source' }
 							: mortgageOffsetChoice === 'new'
 								? {
 										type: 'new',

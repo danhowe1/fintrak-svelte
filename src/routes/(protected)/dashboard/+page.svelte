@@ -534,12 +534,11 @@ let expandedPnlNodes = new Set<string>();
 	});
 </script>
 
-<h1>Dashboard</h1>
-<p class="text-sm text-slate-600">Scenario: {data.scenario.name}</p>
-
 <section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<h2 class="text-lg font-semibold text-slate-900">Projections</h2>
+		<h2 class="text-lg font-semibold text-slate-900">
+			Projections for {data.scenario.name}
+		</h2>
 		<div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button

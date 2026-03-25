@@ -11,7 +11,8 @@
 	const assetTypeLabel = selectedType.replace(/_/g, ' ').toUpperCase();
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
-	let useSameAccount = (form?.values?.useSameAccount as string) === 'on';
+	let useSameAccount =
+		(form?.values?.useSameAccount as string) === 'on' || form?.values?.useSameAccount == null;
 	let mortgagePaymentSourceChoice = (form?.values?.mortgagePaymentSourceChoice as string) ?? '';
 	let mortgageOffsetChoice = (form?.values?.mortgageOffsetChoice as string) ?? 'none';
 	let mortgageInterestOnly = (form?.values?.mortgageInterestOnly as string) === 'on';
@@ -61,7 +62,7 @@
 		{/if}
 	{/if}
 	<form method="POST" class="grid gap-6">
-		<FormSection title={`${assetTypeLabel} DETAILS`}>
+		<FormSection title="Overview">
 			<input type="hidden" name="assetType" value={selectedType} />
 
 			<div class="grid gap-4 md:grid-cols-2">
@@ -87,198 +88,35 @@
 		</FormSection>
 
 		{#if selectedType === 'person'}
-			<FormSection title="Person details">
-				<FormField
-					type="text"
-					label="Date of birth (MM YYYY)"
-					name="personDob"
-					inputmode="numeric"
-					value={form?.values?.personDob ?? ''}
-					error={form?.errors?.personDob?.[0]}
-					required
-				/>
-
-				<FormField
-					type="number"
-					class="no-spin"
-					label="Retirement age"
-					name="retirementAge"
-					min="0"
-					step="1"
-					value={form?.values?.retirementAge ?? ''}
-					error={form?.errors?.retirementAge?.[0]}
-					required
-				/>
-			</FormSection>
-
-			<FormSection title="Employment income">
-				<FormField
-					type="number"
-					class="no-spin"
-					label="Monthly employment income"
-					name="employmentIncome"
-					step="0.01"
-					value={form?.values?.employmentIncome ?? ''}
-					error={form?.errors?.employmentIncome?.[0]}
-					required
-				/>
-
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
-					Income account
-					<select
-						name="incomeAccountChoice"
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+			<FormSection title={`${assetTypeLabel} DETAILS`}>
+				<div class="grid gap-4 md:grid-cols-2">
+					<FormField
+						type="text"
+						label="Date of birth (MM YYYY)"
+						name="personDob"
+						inputmode="numeric"
+						value={form?.values?.personDob ?? ''}
+						error={form?.errors?.personDob?.[0]}
 						required
-						bind:value={incomeAccountChoice}
-					>
-						<option value="" disabled selected={incomeAccountChoice === ''}>
-							Select an account
-						</option>
-						<option value="new">Create new account</option>
-						{#each data.accounts as account}
-							<option value={account.id}>{account.name}</option>
-						{/each}
-					</select>
-					{#if form?.errors?.incomeAccountChoice?.[0]}
-						<span class="text-xs text-rose-600">{form.errors.incomeAccountChoice[0]}</span>
-					{/if}
-				</label>
-
-				{#if incomeAccountChoice === 'new'}
-					<div class="grid gap-4 md:grid-cols-3">
-						<FormField
-							label="Account name"
-							name="incomeAccountName"
-							value={form?.values?.incomeAccountName ?? ''}
-							error={form?.errors?.incomeAccountName?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Interest rate (%)"
-							name="incomeAccountInterestRate"
-							step="0.01"
-							value={form?.values?.incomeAccountInterestRate ?? ''}
-							error={form?.errors?.incomeAccountInterestRate?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Opening balance"
-							name="incomeAccountOpeningBalance"
-							step="0.01"
-							value={form?.values?.incomeAccountOpeningBalance ?? ''}
-							error={form?.errors?.incomeAccountOpeningBalance?.[0]}
-							required
-						/>
-					</div>
-				{/if}
-			</FormSection>
-
-			<FormSection title="Essential living expenses">
-				<FormField
-					type="number"
-					class="no-spin"
-					label="Monthly essential expenses"
-					name="essentialExpenses"
-					step="0.01"
-					value={form?.values?.essentialExpenses ?? ''}
-					error={form?.errors?.essentialExpenses?.[0]}
-					required
-				/>
-
-				<label class="flex items-center gap-2 text-sm font-medium text-slate-700">
-					<input
-						type="checkbox"
-						name="useSameAccount"
-						bind:checked={useSameAccount}
-						class="h-4 w-4 rounded border-slate-300 text-slate-900"
 					/>
-					Use same account as income
-				</label>
 
-				{#if useSameAccount}
-					<input type="hidden" name="expenseAccountChoice" value={incomeAccountChoice} />
-					{#if incomeAccountChoice === 'new'}
-						<input
-							type="hidden"
-							name="expenseAccountName"
-							value={form?.values?.incomeAccountName ?? ''}
-						/>
-						<input
-							type="hidden"
-							name="expenseAccountInterestRate"
-							value={form?.values?.incomeAccountInterestRate ?? ''}
-						/>
-						<input
-							type="hidden"
-							name="expenseAccountOpeningBalance"
-							value={form?.values?.incomeAccountOpeningBalance ?? ''}
-						/>
-					{/if}
-				{:else}
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
-						Expenses account
-						<select
-							name="expenseAccountChoice"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-							required
-							bind:value={expenseAccountChoice}
-						>
-							<option value="" disabled selected={expenseAccountChoice === ''}>
-								Select an account
-							</option>
-							<option value="new">Create new account</option>
-							{#each data.accounts as account}
-								<option value={account.id}>{account.name}</option>
-							{/each}
-						</select>
-						{#if form?.errors?.expenseAccountChoice?.[0]}
-							<span class="text-xs text-rose-600">
-								{form.errors.expenseAccountChoice[0]}
-							</span>
-						{/if}
-					</label>
-
-					{#if expenseAccountChoice === 'new'}
-						<div class="grid gap-4 md:grid-cols-3">
-							<FormField
-								label="Account name"
-								name="expenseAccountName"
-								value={form?.values?.expenseAccountName ?? ''}
-								error={form?.errors?.expenseAccountName?.[0]}
-								required
-							/>
-							<FormField
-								type="number"
-								class="no-spin"
-								label="Interest rate (%)"
-								name="expenseAccountInterestRate"
-								step="0.01"
-								value={form?.values?.expenseAccountInterestRate ?? ''}
-								error={form?.errors?.expenseAccountInterestRate?.[0]}
-								required
-							/>
-							<FormField
-								type="number"
-								class="no-spin"
-								label="Opening balance"
-								name="expenseAccountOpeningBalance"
-								step="0.01"
-								value={form?.values?.expenseAccountOpeningBalance ?? ''}
-								error={form?.errors?.expenseAccountOpeningBalance?.[0]}
-								required
-							/>
-						</div>
-					{/if}
-				{/if}
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Retirement age"
+						name="retirementAge"
+						min="0"
+						step="1"
+						value={form?.values?.retirementAge ?? ''}
+						error={form?.errors?.retirementAge?.[0]}
+						required
+					/>
+				</div>
 			</FormSection>
 		{/if}
 
 		{#if selectedType === 'property'}
-			<div class="grid gap-4">
+			<FormSection title={`${assetTypeLabel} DETAILS`}>
 				<div class="grid gap-4 md:grid-cols-3">
 					<FormField
 						type="number"
@@ -303,19 +141,6 @@
 					<FormField
 						type="number"
 						class="no-spin"
-						label="Monthly ownership expense"
-						name="propertyOwnershipExpense"
-						step="0.01"
-						value={form?.values?.propertyOwnershipExpense ?? ''}
-						error={form?.errors?.propertyOwnershipExpense?.[0]}
-						required
-					/>
-				</div>
-
-				<div class="grid gap-4 md:grid-cols-3">
-					<FormField
-						type="number"
-						class="no-spin"
 						label="Market growth rate (%)"
 						name="propertyMarketGrowthRate"
 						step="0.01"
@@ -323,6 +148,9 @@
 						error={form?.errors?.propertyMarketGrowthRate?.[0]}
 						required
 					/>
+				</div>
+
+				<div class="grid gap-4 md:grid-cols-3">
 					<FormField
 						type="number"
 						class="no-spin"
@@ -344,64 +172,11 @@
 						required
 					/>
 				</div>
-
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
-					Expenses account
-					<select
-						name="expenseAccountChoice"
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-						required
-						bind:value={expenseAccountChoice}
-					>
-						<option value="" disabled selected={expenseAccountChoice === ''}>
-							Select an account
-						</option>
-						<option value="new">Create new account</option>
-						{#each data.accounts as account}
-							<option value={account.id}>{account.name}</option>
-						{/each}
-					</select>
-					{#if form?.errors?.expenseAccountChoice?.[0]}
-						<span class="text-xs text-rose-600">{form.errors.expenseAccountChoice[0]}</span>
-					{/if}
-				</label>
-
-				{#if expenseAccountChoice === 'new'}
-					<div class="grid gap-4 md:grid-cols-3">
-						<FormField
-							label="Account name"
-							name="expenseAccountName"
-							value={form?.values?.expenseAccountName ?? ''}
-							error={form?.errors?.expenseAccountName?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Interest rate (%)"
-							name="expenseAccountInterestRate"
-							step="0.01"
-							value={form?.values?.expenseAccountInterestRate ?? ''}
-							error={form?.errors?.expenseAccountInterestRate?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Opening balance"
-							name="expenseAccountOpeningBalance"
-							step="0.01"
-							value={form?.values?.expenseAccountOpeningBalance ?? ''}
-							error={form?.errors?.expenseAccountOpeningBalance?.[0]}
-							required
-						/>
-					</div>
-				{/if}
-			</div>
+			</FormSection>
 		{/if}
 
 		{#if selectedType === 'mortgage'}
-			<FormSection title="Mortgage details">
+			<FormSection title={`${assetTypeLabel} DETAILS`}>
 				<label class="grid gap-2 text-sm font-medium text-slate-700">
 					Secured by property
 					<select
@@ -474,151 +249,390 @@
 					/>
 				{/if}
 			</FormSection>
-
-			<FormSection title="Mortgage account">
-				<FormField
-					label="Account name"
-					name="mortgageAccountName"
-					value={form?.values?.mortgageAccountName ?? ''}
-					error={form?.errors?.mortgageAccountName?.[0]}
-					required
-				/>
-
-				<div class="grid gap-4 md:grid-cols-2">
-					<FormField
-						type="number"
-						class="no-spin"
-						label="Interest rate (%)"
-						name="mortgageAccountInterestRate"
-						step="0.01"
-						value={form?.values?.mortgageAccountInterestRate ?? ''}
-						error={form?.errors?.mortgageAccountInterestRate?.[0]}
-						required
-					/>
-					<FormField
-						type="number"
-						class="no-spin"
-						label="Opening balance"
-						name="mortgageAccountOpeningBalance"
-						step="0.01"
-						value={form?.values?.mortgageAccountOpeningBalance ?? ''}
-						error={form?.errors?.mortgageAccountOpeningBalance?.[0]}
-						required
-					/>
-				</div>
-			</FormSection>
-
-			<FormSection title="Payment source account">
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
-					Payment source account
-					<select
-						name="mortgagePaymentSourceChoice"
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-						required
-						bind:value={mortgagePaymentSourceChoice}
-					>
-						<option value="" disabled selected={mortgagePaymentSourceChoice === ''}>
-							Select an account
-						</option>
-						<option value="new">Create new current account</option>
-						{#each data.currentAccounts as account}
-							<option value={account.id}>{account.name}</option>
-						{/each}
-					</select>
-					{#if form?.errors?.mortgagePaymentSourceChoice?.[0]}
-						<span class="text-xs text-rose-600">
-							{form.errors.mortgagePaymentSourceChoice[0]}
-						</span>
-					{/if}
-				</label>
-
-				{#if mortgagePaymentSourceChoice === 'new'}
-					<div class="grid gap-4 md:grid-cols-3">
-						<FormField
-							label="Account name"
-							name="mortgagePaymentSourceName"
-							value={form?.values?.mortgagePaymentSourceName ?? ''}
-							error={form?.errors?.mortgagePaymentSourceName?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Interest rate (%)"
-							name="mortgagePaymentSourceInterestRate"
-							step="0.01"
-							value={form?.values?.mortgagePaymentSourceInterestRate ?? ''}
-							error={form?.errors?.mortgagePaymentSourceInterestRate?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Opening balance"
-							name="mortgagePaymentSourceOpeningBalance"
-							step="0.01"
-							value={form?.values?.mortgagePaymentSourceOpeningBalance ?? ''}
-							error={form?.errors?.mortgagePaymentSourceOpeningBalance?.[0]}
-							required
-						/>
-					</div>
-				{/if}
-			</FormSection>
-
-			<FormSection title="Offset account (optional)">
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
-					Offset account
-					<select
-						name="mortgageOffsetChoice"
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-						bind:value={mortgageOffsetChoice}
-					>
-						<option value="none">None</option>
-						<option value="new">Create new current account</option>
-						{#each data.currentAccounts as account}
-							<option value={account.id}>{account.name}</option>
-						{/each}
-					</select>
-					{#if form?.errors?.mortgageOffsetChoice?.[0]}
-						<span class="text-xs text-rose-600">
-							{form.errors.mortgageOffsetChoice[0]}
-						</span>
-					{/if}
-				</label>
-
-				{#if mortgageOffsetChoice === 'new'}
-					<div class="grid gap-4 md:grid-cols-3">
-						<FormField
-							label="Account name"
-							name="mortgageOffsetName"
-							value={form?.values?.mortgageOffsetName ?? ''}
-							error={form?.errors?.mortgageOffsetName?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Interest rate (%)"
-							name="mortgageOffsetInterestRate"
-							step="0.01"
-							value={form?.values?.mortgageOffsetInterestRate ?? ''}
-							error={form?.errors?.mortgageOffsetInterestRate?.[0]}
-							required
-						/>
-						<FormField
-							type="number"
-							class="no-spin"
-							label="Opening balance"
-							name="mortgageOffsetOpeningBalance"
-							step="0.01"
-							value={form?.values?.mortgageOffsetOpeningBalance ?? ''}
-							error={form?.errors?.mortgageOffsetOpeningBalance?.[0]}
-							required
-						/>
-					</div>
-				{/if}
-			</FormSection>
 		{/if}
+
+		<FormSection title="Cashflows">
+			{#if selectedType === 'person'}
+				<div class="grid gap-4">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Monthly essential expenses"
+						name="essentialExpenses"
+						step="0.01"
+						value={form?.values?.essentialExpenses ?? ''}
+						error={form?.errors?.essentialExpenses?.[0]}
+						required
+					/>
+
+					<label class="grid gap-2 text-sm font-medium text-slate-700">
+						Expenses account
+						<select
+							name="expenseAccountChoice"
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							required
+							bind:value={expenseAccountChoice}
+						>
+							<option value="" disabled selected={expenseAccountChoice === ''}>
+								Select an account
+							</option>
+							<option value="new">Create new account</option>
+							{#each data.accounts as account}
+								<option value={account.id}>{account.name}</option>
+							{/each}
+						</select>
+						{#if form?.errors?.expenseAccountChoice?.[0]}
+							<span class="text-xs text-rose-600">
+								{form.errors.expenseAccountChoice[0]}
+							</span>
+						{/if}
+					</label>
+
+					{#if expenseAccountChoice === 'new'}
+						<div class="grid gap-4 md:grid-cols-3">
+							<FormField
+								label="Account name"
+								name="expenseAccountName"
+								value={form?.values?.expenseAccountName ?? ''}
+								error={form?.errors?.expenseAccountName?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Interest rate (%)"
+								name="expenseAccountInterestRate"
+								step="0.01"
+								value={form?.values?.expenseAccountInterestRate ?? ''}
+								error={form?.errors?.expenseAccountInterestRate?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Opening balance"
+								name="expenseAccountOpeningBalance"
+								step="0.01"
+								value={form?.values?.expenseAccountOpeningBalance ?? ''}
+								error={form?.errors?.expenseAccountOpeningBalance?.[0]}
+								required
+							/>
+						</div>
+					{/if}
+				</div>
+
+				<div class="mt-4 grid gap-4">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Monthly net employment income"
+						name="employmentIncome"
+						step="0.01"
+						value={form?.values?.employmentIncome ?? ''}
+						error={form?.errors?.employmentIncome?.[0]}
+					/>
+
+					<label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+						<input
+							type="checkbox"
+							name="useSameAccount"
+							bind:checked={useSameAccount}
+							class="h-4 w-4 rounded border-slate-300 text-slate-900"
+						/>
+						Use same account as expenses
+					</label>
+
+					{#if useSameAccount}
+						<input type="hidden" name="incomeAccountChoice" value={expenseAccountChoice} />
+						{#if expenseAccountChoice === 'new'}
+							<input
+								type="hidden"
+								name="incomeAccountName"
+								value={form?.values?.expenseAccountName ?? ''}
+							/>
+							<input
+								type="hidden"
+								name="incomeAccountInterestRate"
+								value={form?.values?.expenseAccountInterestRate ?? ''}
+							/>
+							<input
+								type="hidden"
+								name="incomeAccountOpeningBalance"
+								value={form?.values?.expenseAccountOpeningBalance ?? ''}
+							/>
+						{/if}
+					{:else}
+						<label class="grid gap-2 text-sm font-medium text-slate-700">
+							Income account
+							<select
+								name="incomeAccountChoice"
+								class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+								required
+								bind:value={incomeAccountChoice}
+							>
+								<option value="" disabled selected={incomeAccountChoice === ''}>
+									Select an account
+								</option>
+								<option value="new">Create new account</option>
+								{#each data.accounts as account}
+									<option value={account.id}>{account.name}</option>
+								{/each}
+							</select>
+							{#if form?.errors?.incomeAccountChoice?.[0]}
+								<span class="text-xs text-rose-600">{form.errors.incomeAccountChoice[0]}</span>
+							{/if}
+						</label>
+
+						{#if incomeAccountChoice === 'new'}
+							<div class="grid gap-4 md:grid-cols-3">
+								<FormField
+									label="Account name"
+									name="incomeAccountName"
+									value={form?.values?.incomeAccountName ?? ''}
+									error={form?.errors?.incomeAccountName?.[0]}
+									required
+								/>
+								<FormField
+									type="number"
+									class="no-spin"
+									label="Interest rate (%)"
+									name="incomeAccountInterestRate"
+									step="0.01"
+									value={form?.values?.incomeAccountInterestRate ?? ''}
+									error={form?.errors?.incomeAccountInterestRate?.[0]}
+									required
+								/>
+								<FormField
+									type="number"
+									class="no-spin"
+									label="Opening balance"
+									name="incomeAccountOpeningBalance"
+									step="0.01"
+									value={form?.values?.incomeAccountOpeningBalance ?? ''}
+									error={form?.errors?.incomeAccountOpeningBalance?.[0]}
+									required
+								/>
+							</div>
+						{/if}
+					{/if}
+				</div>
+			{/if}
+
+			{#if selectedType === 'property'}
+				<div class="grid gap-4">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Monthly ownership expense"
+						name="propertyOwnershipExpense"
+						step="0.01"
+						value={form?.values?.propertyOwnershipExpense ?? ''}
+						error={form?.errors?.propertyOwnershipExpense?.[0]}
+						required
+					/>
+
+					<label class="grid gap-2 text-sm font-medium text-slate-700">
+						Expenses account
+						<select
+							name="expenseAccountChoice"
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							required
+							bind:value={expenseAccountChoice}
+						>
+							<option value="" disabled selected={expenseAccountChoice === ''}>
+								Select an account
+							</option>
+							<option value="new">Create new account</option>
+							{#each data.accounts as account}
+								<option value={account.id}>{account.name}</option>
+							{/each}
+						</select>
+						{#if form?.errors?.expenseAccountChoice?.[0]}
+							<span class="text-xs text-rose-600">{form.errors.expenseAccountChoice[0]}</span>
+						{/if}
+					</label>
+
+					{#if expenseAccountChoice === 'new'}
+						<div class="grid gap-4 md:grid-cols-3">
+							<FormField
+								label="Account name"
+								name="expenseAccountName"
+								value={form?.values?.expenseAccountName ?? ''}
+								error={form?.errors?.expenseAccountName?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Interest rate (%)"
+								name="expenseAccountInterestRate"
+								step="0.01"
+								value={form?.values?.expenseAccountInterestRate ?? ''}
+								error={form?.errors?.expenseAccountInterestRate?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Opening balance"
+								name="expenseAccountOpeningBalance"
+								step="0.01"
+								value={form?.values?.expenseAccountOpeningBalance ?? ''}
+								error={form?.errors?.expenseAccountOpeningBalance?.[0]}
+								required
+							/>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			{#if selectedType === 'mortgage'}
+				<div class="grid gap-4">
+					<FormField
+						label="Account name"
+						name="mortgageAccountName"
+						value={form?.values?.mortgageAccountName ?? ''}
+						error={form?.errors?.mortgageAccountName?.[0]}
+						required
+					/>
+
+					<div class="grid gap-4 md:grid-cols-2">
+						<FormField
+							type="number"
+							class="no-spin"
+							label="Interest rate (%)"
+							name="mortgageAccountInterestRate"
+							step="0.01"
+							value={form?.values?.mortgageAccountInterestRate ?? ''}
+							error={form?.errors?.mortgageAccountInterestRate?.[0]}
+							required
+						/>
+						<FormField
+							type="number"
+							class="no-spin"
+							label="Opening balance"
+							name="mortgageAccountOpeningBalance"
+							step="0.01"
+							value={form?.values?.mortgageAccountOpeningBalance ?? ''}
+							error={form?.errors?.mortgageAccountOpeningBalance?.[0]}
+							required
+						/>
+					</div>
+				</div>
+
+				<div class="mt-4 grid gap-4">
+					<label class="grid gap-2 text-sm font-medium text-slate-700">
+						Payment source account
+						<select
+							name="mortgagePaymentSourceChoice"
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							required
+							bind:value={mortgagePaymentSourceChoice}
+						>
+							<option value="" disabled selected={mortgagePaymentSourceChoice === ''}>
+								Select an account
+							</option>
+							<option value="new">Create new current account</option>
+							{#each data.currentAccounts as account}
+								<option value={account.id}>{account.name}</option>
+							{/each}
+						</select>
+						{#if form?.errors?.mortgagePaymentSourceChoice?.[0]}
+							<span class="text-xs text-rose-600">
+								{form.errors.mortgagePaymentSourceChoice[0]}
+							</span>
+						{/if}
+					</label>
+
+					{#if mortgagePaymentSourceChoice === 'new'}
+						<div class="grid gap-4 md:grid-cols-3">
+							<FormField
+								label="Account name"
+								name="mortgagePaymentSourceName"
+								value={form?.values?.mortgagePaymentSourceName ?? ''}
+								error={form?.errors?.mortgagePaymentSourceName?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Interest rate (%)"
+								name="mortgagePaymentSourceInterestRate"
+								step="0.01"
+								value={form?.values?.mortgagePaymentSourceInterestRate ?? ''}
+								error={form?.errors?.mortgagePaymentSourceInterestRate?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Opening balance"
+								name="mortgagePaymentSourceOpeningBalance"
+								step="0.01"
+								value={form?.values?.mortgagePaymentSourceOpeningBalance ?? ''}
+								error={form?.errors?.mortgagePaymentSourceOpeningBalance?.[0]}
+								required
+							/>
+						</div>
+					{/if}
+				</div>
+
+				<div class="mt-4 grid gap-4">
+					<label class="grid gap-2 text-sm font-medium text-slate-700">
+						Offset account
+						<select
+							name="mortgageOffsetChoice"
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							bind:value={mortgageOffsetChoice}
+						>
+							<option value="none">None</option>
+							<option value="same_as_payment_source">Same as payment source</option>
+							<option value="new">Create new current account</option>
+							{#each data.currentAccounts as account}
+								<option value={account.id}>{account.name}</option>
+							{/each}
+						</select>
+						{#if form?.errors?.mortgageOffsetChoice?.[0]}
+							<span class="text-xs text-rose-600">
+								{form.errors.mortgageOffsetChoice[0]}
+							</span>
+						{/if}
+					</label>
+
+					{#if mortgageOffsetChoice === 'new'}
+						<div class="grid gap-4 md:grid-cols-3">
+							<FormField
+								label="Account name"
+								name="mortgageOffsetName"
+								value={form?.values?.mortgageOffsetName ?? ''}
+								error={form?.errors?.mortgageOffsetName?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Interest rate (%)"
+								name="mortgageOffsetInterestRate"
+								step="0.01"
+								value={form?.values?.mortgageOffsetInterestRate ?? ''}
+								error={form?.errors?.mortgageOffsetInterestRate?.[0]}
+								required
+							/>
+							<FormField
+								type="number"
+								class="no-spin"
+								label="Opening balance"
+								name="mortgageOffsetOpeningBalance"
+								step="0.01"
+								value={form?.values?.mortgageOffsetOpeningBalance ?? ''}
+								error={form?.errors?.mortgageOffsetOpeningBalance?.[0]}
+								required
+							/>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</FormSection>
 
 		<div class="flex flex-wrap items-center gap-3">
 			<Button type="submit" class="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm">
