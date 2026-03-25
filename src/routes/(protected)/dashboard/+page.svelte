@@ -2,6 +2,11 @@
 	import type { PageData } from './$types';
 	import { afterUpdate, onDestroy } from 'svelte';
 	import Chart from 'chart.js/auto';
+	import {
+		formatYearMonthInput,
+		fromYearMonthInt,
+		normalizeYearMonthValue
+	} from '$lib/yearMonth';
 
 	export let data: PageData;
 
@@ -155,8 +160,7 @@ $: if (Object.keys(propertyDetails).length === 0 && (assetsList.length ?? 0) > 0
 			const rawRate = details.marketGrowthRate;
 			const rate = typeof rawRate === 'number' ? rawRate : Number(rawRate);
 			const rawSaleDate = details.saleDate;
-			const saleDate =
-				typeof rawSaleDate === 'string' ? toMonthYearInput(rawSaleDate) : '';
+			const saleDate = formatYearMonthInput(rawSaleDate);
 			next[asset.id] = {
 				marketGrowthRate: Number.isFinite(rate) ? rate : 0,
 				saleDate
@@ -192,9 +196,9 @@ const setCashflowAmount = (id: string, value: number) => {
 	cashflowAmounts = { ...cashflowAmounts, [id]: value };
 };
 
-const monthLabelFromDate = (value?: string | null) => {
+const monthLabelFromDate = (value?: unknown | null) => {
 	if (!value) return '';
-	return toMonthYearInput(value);
+	return formatYearMonthInput(value);
 };
 
 const getAssetAccountOptions = (assetId: string) => {
@@ -308,8 +312,8 @@ const openCashflowFormForEdit = (assetId: string, cashflow: (typeof cashflows)[n
 		frequency: cashflow.frequency,
 		amount: String(cashflow.amount ?? ''),
 		description: cashflow.description ?? '',
-		startDate: toMonthYearInput(String(cashflow.start_date ?? '')),
-		endDate: cashflow.end_date ? toMonthYearInput(String(cashflow.end_date)) : '',
+		startDate: toMonthYearInput(cashflow.start_date ?? ''),
+		endDate: cashflow.end_date ? toMonthYearInput(cashflow.end_date) : '',
 		inflationAffected: cashflow.inflation_affected,
 		assetAccountId:
 			type === 'expense'
@@ -356,30 +360,7 @@ const setPropertyError = (id: string, message: string) => {
 };
 
 const isValidMonthYear = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
-const toMonthYearInput = (value: string | Date) => {
-	if (value instanceof Date) {
-		const month = String(value.getMonth() + 1).padStart(2, '0');
-		const year = value.getFullYear();
-		return `${month} ${year}`;
-	}
-	const trimmed = value.trim();
-	if (!trimmed) return '';
-	const isoMatch = trimmed.match(/^(\d{4})-(\d{2})/);
-	if (isoMatch) {
-		return `${isoMatch[2]} ${isoMatch[1]}`;
-	}
-	const altMatch = trimmed.match(/^(\d{2})(\s|\/|-)?(\d{4})$/);
-	if (altMatch) {
-		return `${altMatch[1]} ${altMatch[3]}`;
-	}
-	const parsed = new Date(trimmed);
-	if (!Number.isNaN(parsed.getTime())) {
-		const month = String(parsed.getMonth() + 1).padStart(2, '0');
-		const year = parsed.getFullYear();
-		return `${month} ${year}`;
-	}
-	return trimmed;
-};
+const toMonthYearInput = (value: unknown) => formatYearMonthInput(value);
 
 const stepForValue = (value: number) => {
 	const absValue = Math.abs(value);
@@ -703,20 +684,8 @@ const updatePropertyDetails = async (
 	};
 
 	const parseYearMonth = (value: unknown) => {
-		if (!value) return null;
-		const normalized =
-			value instanceof Date
-				? value.toISOString().slice(0, 10)
-				: typeof value === 'string'
-					? value
-					: null;
-		if (!normalized) return null;
-		const match = normalized.match(/^(\d{4})-(\d{2})/);
-		if (!match) return null;
-		const year = Number(match[1]);
-		const month = Number(match[2]);
-		if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
-		return { year, month };
+		const normalized = normalizeYearMonthValue(value);
+		return normalized === null ? null : fromYearMonthInt(normalized);
 	};
 
 	const getBalanceExtent = (accounts: { points: { balance: number }[] }[]) => {
@@ -775,7 +744,7 @@ const updatePropertyDetails = async (
 			date: point.date,
 			monthLabel:
 				projectionRange === '10y' || projectionRange === 'all'
-					? point.date.slice(0, 4)
+					? String(fromYearMonthInt(point.date)?.year ?? '')
 					: point.monthLabel
 		})) ?? [];
 
@@ -833,7 +802,7 @@ const updatePropertyDetails = async (
 			if (transaction.cashflowType === 'transfer') continue;
 			const label =
 				projectionRange === '10y' || projectionRange === 'all'
-					? transaction.date.slice(0, 4)
+					? String(fromYearMonthInt(transaction.date)?.year ?? '')
 					: transaction.monthLabel;
 			const idx = indexByLabel.get(label);
 			if (idx === undefined) continue;
@@ -962,8 +931,8 @@ const updatePropertyDetails = async (
 			maximumFractionDigits: 0
 		}).format(value);
 
-	const getAnnualPoints = (points: { date: string; monthLabel: string; balance: number }[]) => {
-		const byYear = new Map<number, { date: string; monthLabel: string; balance: number }>();
+	const getAnnualPoints = (points: { date: number; monthLabel: string; balance: number }[]) => {
+		const byYear = new Map<number, { date: number; monthLabel: string; balance: number }>();
 		for (const point of points) {
 			const parsed = parseYearMonth(point.date);
 			if (!parsed) continue;
@@ -972,7 +941,7 @@ const updatePropertyDetails = async (
 				byYear.set(parsed.year, point);
 			}
 		}
-		return Array.from(byYear.values()).sort((a, b) => a.date.localeCompare(b.date));
+		return Array.from(byYear.values()).sort((a, b) => a.date - b.date);
 	};
 
 	let chart: Chart | null = null;

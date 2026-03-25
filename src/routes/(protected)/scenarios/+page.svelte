@@ -1,24 +1,12 @@
 <script lang="ts">
 	import type { PageData } from './$types';
+	import { formatYearMonthInput } from '$lib/yearMonth';
 
 	export let data: PageData;
 
-	const formatMonth = (value?: string | Date) => {
-		if (!value) return '—';
-		if (value instanceof Date) {
-			if (Number.isNaN(value.getTime())) return '—';
-			const month = String(value.getMonth() + 1).padStart(2, '0');
-			const year = value.getFullYear();
-			return `${month} ${year}`;
-		}
-
-		const normalized =
-			value.length === 7 ? `${value}-01` : value.length >= 10 ? value.slice(0, 10) : value;
-		const date = new Date(value.length >= 10 ? value : `${normalized}T00:00:00`);
-		if (Number.isNaN(date.getTime())) return '—';
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const year = date.getFullYear();
-		return `${month} ${year}`;
+	const formatMonth = (value?: unknown) => {
+		const formatted = formatYearMonthInput(value);
+		return formatted || '—';
 	};
 </script>
 

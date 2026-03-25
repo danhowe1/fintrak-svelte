@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { z } from 'zod';
 import { createScenarioWithPerson } from '$lib/server/database';
+import { parseYearMonthInput } from '$lib/yearMonth';
 
 const decimalUpToTwoPlacesSchema = z
 	.string()
@@ -94,10 +95,11 @@ export const actions: Actions = {
 		} = parsed.data;
 
 		const normalizeMonth = (value: string) => {
-			const cleaned = value.replace(/\D/g, '');
-			const month = cleaned.slice(0, 2);
-			const year = cleaned.slice(2, 6);
-			return `${year}-${month}-01`;
+			const parsedValue = parseYearMonthInput(value);
+			if (parsedValue === null) {
+				throw new Error('Invalid month format');
+			}
+			return parsedValue;
 		};
 
 		const scenarioId = await createScenarioWithPerson({

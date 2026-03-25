@@ -15,6 +15,7 @@ import {
 	updatePropertyDetails
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
+import { parseYearMonthInput } from '$lib/yearMonth';
 
 export const load: PageServerLoad = async (event) => {
 	const parentData = await event.parent();
@@ -238,10 +239,11 @@ export const actions: Actions = {
 
 		const isMonth = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
 		const normalizeMonth = (value: string) => {
-			const cleaned = value.replace(/\D/g, '');
-			const month = cleaned.slice(0, 2);
-			const year = cleaned.slice(2, 6);
-			return `${year}-${month}-01`;
+			const parsedValue = parseYearMonthInput(value);
+			if (parsedValue === null) {
+				throw new Error('Invalid month format');
+			}
+			return parsedValue;
 		};
 
 		if (
@@ -364,10 +366,11 @@ export const actions: Actions = {
 
 		const isMonth = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
 		const normalizeMonth = (value: string) => {
-			const cleaned = value.replace(/\D/g, '');
-			const month = cleaned.slice(0, 2);
-			const year = cleaned.slice(2, 6);
-			return `${year}-${month}-01`;
+			const parsedValue = parseYearMonthInput(value);
+			if (parsedValue === null) {
+				throw new Error('Invalid month format');
+			}
+			return parsedValue;
 		};
 
 		if (

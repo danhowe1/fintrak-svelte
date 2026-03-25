@@ -1,7 +1,13 @@
-type YearMonth = {
-	year: number;
-	month: number;
-};
+import {
+	type YearMonth,
+	addMonthsToYearMonth,
+	formatYearMonthLabel,
+	fromYearMonthInt,
+	monthsBetweenYearMonths,
+	normalizeYearMonthValue,
+	toYearMonthInt,
+	yearMonthIndex
+} from '$lib/yearMonth';
 
 export type ProjectionTransaction = {
 	cashflowId: string;
@@ -20,12 +26,12 @@ export type ProjectionTransaction = {
 	accountId: string;
 	accountName: string;
 	amount: number;
-	date: string;
+	date: number;
 	monthLabel: string;
 };
 
 export type AccountBalancePoint = {
-	date: string;
+	date: number;
 	monthLabel: string;
 	balance: number;
 };
@@ -37,8 +43,8 @@ export type AccountBalanceSeries = {
 };
 
 export type ProjectionResult = {
-	startDate: string;
-	endDate: string;
+	startDate: number;
+	endDate: number;
 	transactions: ProjectionTransaction[];
 	accounts: AccountBalanceSeries[];
 };
@@ -50,8 +56,8 @@ type ProjectionCashflow = {
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	inflation_affected: boolean;
-	start_date: string;
-	end_date: string | null;
+	start_date: number;
+	end_date: number | null;
 	source_account_id: string | null;
 	destination_account_id: string | null;
 	source_asset_name?: string | null;
@@ -87,46 +93,9 @@ type ProjectionAssetAccount = {
 };
 
 const parseYearMonth = (value?: unknown): YearMonth | null => {
-	if (!value) return null;
-	if (value instanceof Date) {
-		const year = value.getFullYear();
-		const month = value.getMonth() + 1;
-		if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-			return null;
-		}
-		return { year, month };
-	}
-	const normalized = typeof value === 'string' ? value : null;
-	if (!normalized) return null;
-	const match = normalized.match(/^(\d{4})-(\d{2})/);
-	if (!match) return null;
-	const year = Number(match[1]);
-	const month = Number(match[2]);
-	if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
-		return null;
-	}
-	return { year, month };
+	const normalized = normalizeYearMonthValue(value);
+	return normalized === null ? null : fromYearMonthInt(normalized);
 };
-
-const formatYearMonth = (value: YearMonth) => {
-	const month = String(value.month).padStart(2, '0');
-	return `${value.year}-${month}-01`;
-};
-
-const formatMonthLabel = (value: YearMonth) =>
-	`${String(value.month).padStart(2, '0')} ${value.year}`;
-
-const addMonths = (value: YearMonth, monthsToAdd: number): YearMonth => {
-	const total = value.year * 12 + (value.month - 1) + monthsToAdd;
-	const year = Math.floor(total / 12);
-	const month = (total % 12) + 1;
-	return { year, month };
-};
-
-const monthsBetween = (from: YearMonth, to: YearMonth) =>
-	(to.year - from.year) * 12 + (to.month - from.month);
-
-const monthIndex = (value: YearMonth) => value.year * 12 + (value.month - 1);
 
 const getNumberDetail = (details: Record<string, unknown>, key: string) => {
 	const value = details?.[key];
@@ -149,10 +118,9 @@ const getYoungestHundredYearMonth = (assets: ProjectionAsset[], fallbackStart: Y
 	for (const asset of assets) {
 		if (asset.asset_type !== 'person') continue;
 		const dobValue = asset.details?.dob;
-		if (typeof dobValue !== 'string') continue;
 		const dob = parseYearMonth(dobValue);
 		if (!dob) continue;
-		if (!youngestDob || monthsBetween(youngestDob, dob) > 0) {
+		if (!youngestDob || monthsBetweenYearMonths(youngestDob, dob) > 0) {
 			youngestDob = dob;
 		}
 	}
@@ -197,7 +165,7 @@ const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 };
 
 export const buildProjection = (input: {
-	scenarioStartDate?: string | null;
+	scenarioStartDate?: number | null;
 	inflationRate?: number | null;
 	interestRateChange?: number | null;
 	maxMonths?: number | null;
@@ -214,13 +182,13 @@ export const buildProjection = (input: {
 		if (!input.maxMonths || input.maxMonths <= 0) {
 			return naturalEnd;
 		}
-		const capped = addMonths(startYearMonth, input.maxMonths - 1);
-		const naturalIndex = naturalEnd.year * 12 + (naturalEnd.month - 1);
-		const cappedIndex = capped.year * 12 + (capped.month - 1);
+		const capped = addMonthsToYearMonth(startYearMonth, input.maxMonths - 1);
+		const naturalIndex = yearMonthIndex(naturalEnd);
+		const cappedIndex = yearMonthIndex(capped);
 		return cappedIndex < naturalIndex ? capped : naturalEnd;
 	})();
 	const endYearMonth = cappedEnd;
-	const totalMonths = Math.max(0, monthsBetween(startYearMonth, endYearMonth));
+	const totalMonths = Math.max(0, monthsBetweenYearMonths(startYearMonth, endYearMonth));
 	const inflationRate = input.inflationRate ?? 0;
 	const interestRateChange = input.interestRateChange ?? 0;
 
@@ -261,7 +229,7 @@ export const buildProjection = (input: {
 		if (asset.asset_type !== 'person') continue;
 		const dobValue = asset.details?.dob;
 		const retirementAgeValue = asset.details?.retirementAge;
-		const dob = typeof dobValue === 'string' ? parseYearMonth(dobValue) : null;
+		const dob = parseYearMonth(dobValue);
 		const retirementAge =
 			typeof retirementAgeValue === 'number'
 				? retirementAgeValue
@@ -280,7 +248,7 @@ export const buildProjection = (input: {
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'property') continue;
 		const saleDateValue = asset.details?.saleDate;
-		const saleDate = typeof saleDateValue === 'string' ? parseYearMonth(saleDateValue) : null;
+		const saleDate = parseYearMonth(saleDateValue);
 		if (!saleDate) continue;
 		if (asset.id) {
 			propertySaleDates.set(asset.id, saleDate);
@@ -322,8 +290,8 @@ export const buildProjection = (input: {
 		if (asset.asset_type !== 'property' || !asset.id) continue;
 		const startDateValue = asset.details?.startDate;
 		const saleDateValue = asset.details?.saleDate;
-		const startDate = typeof startDateValue === 'string' ? parseYearMonth(startDateValue) : null;
-		const saleDate = typeof saleDateValue === 'string' ? parseYearMonth(saleDateValue) : null;
+		const startDate = parseYearMonth(startDateValue);
+		const saleDate = parseYearMonth(saleDateValue);
 		if (!startDate || !saleDate) continue;
 		const marketValue = getNumberDetail(asset.details ?? {}, 'marketValue');
 		if (marketValue === null) continue;
@@ -369,7 +337,7 @@ export const buildProjection = (input: {
 		if (asset.asset_type !== 'mortgage' || !asset.id) continue;
 		const termMonths = getTermMonths(asset.details ?? {});
 		const startDateValue = asset.details?.startDate;
-		const startDate = typeof startDateValue === 'string' ? parseYearMonth(startDateValue) : null;
+		const startDate = parseYearMonth(startDateValue);
 		const propertySaleDate =
 			asset.property_id && propertySaleDates.has(asset.property_id)
 				? propertySaleDates.get(asset.property_id) ?? null
@@ -402,9 +370,9 @@ export const buildProjection = (input: {
 	}
 
 	for (let i = 0; i <= totalMonths; i += 1) {
-		const current = addMonths(startYearMonth, i);
-		const monthLabel = formatMonthLabel(current);
-		const currentDate = formatYearMonth(current);
+		const current = addMonthsToYearMonth(startYearMonth, i);
+		const monthLabel = formatYearMonthLabel(current);
+		const currentDate = toYearMonthInt(current);
 		const yearDiff = current.year - startYearMonth.year;
 		const inflationFactor = Math.pow(1 + inflationRate / 100, yearDiff);
 
@@ -437,10 +405,10 @@ export const buildProjection = (input: {
 		for (const meta of cashflowMeta) {
 			const { cashflow, start, end, interval, assetName } = meta;
 			if (!start) continue;
-			const monthDiff = monthsBetween(start, current);
+			const monthDiff = monthsBetweenYearMonths(start, current);
 			if (monthDiff < 0) continue;
 			if (end) {
-				const endDiff = monthsBetween(start, end);
+				const endDiff = monthsBetweenYearMonths(start, end);
 				if (endDiff < 0) continue;
 				if (monthDiff > endDiff) continue;
 			}
@@ -456,16 +424,16 @@ export const buildProjection = (input: {
 			if (cashflowAccountId) {
 				const person = accountToPerson.get(cashflowAccountId);
 				if (person) {
-					const startIndex = monthIndex(start);
-					const currentIndex = monthIndex(current);
+					const startIndex = yearMonthIndex(start);
+					const currentIndex = yearMonthIndex(current);
 					if (cashflow.category === 'employment_income') {
-						const retirementIndex = monthIndex(person.retirementDate);
+						const retirementIndex = yearMonthIndex(person.retirementDate);
 						if (startIndex <= retirementIndex && currentIndex >= retirementIndex) {
 							continue;
 						}
 					}
 					if (cashflow.category === 'living_expenses') {
-						const hundredIndex = monthIndex(person.hundredDate);
+						const hundredIndex = yearMonthIndex(person.hundredDate);
 						if (startIndex <= hundredIndex && currentIndex >= hundredIndex) {
 							continue;
 						}
@@ -474,9 +442,9 @@ export const buildProjection = (input: {
 
 				const propertySaleDate = accountToPropertySale.get(cashflowAccountId);
 				if (propertySaleDate && cashflow.category === 'asset_ownership') {
-					const startIndex = monthIndex(start);
-					const currentIndex = monthIndex(current);
-					const saleIndex = monthIndex(propertySaleDate);
+					const startIndex = yearMonthIndex(start);
+					const currentIndex = yearMonthIndex(current);
+					const saleIndex = yearMonthIndex(propertySaleDate);
 					if (startIndex <= saleIndex && currentIndex >= saleIndex) {
 						continue;
 					}
@@ -542,11 +510,11 @@ export const buildProjection = (input: {
 		}
 
 		for (const [assetId, property] of propertySaleStates.entries()) {
-			const currentIndex = monthIndex(current);
-			const saleIndex = monthIndex(property.saleDate);
+			const currentIndex = yearMonthIndex(current);
+			const saleIndex = yearMonthIndex(property.saleDate);
 			if (currentIndex !== saleIndex) continue;
 
-			const monthsHeld = monthsBetween(property.startDate, property.saleDate);
+			const monthsHeld = monthsBetweenYearMonths(property.startDate, property.saleDate);
 			const yearsHeld = monthsHeld / 12;
 			const growthFactor = Math.pow(1 + property.marketGrowthRate / 100, yearsHeld);
 			const saleAmount = property.marketValue * growthFactor;
@@ -595,7 +563,7 @@ export const buildProjection = (input: {
 
 		for (const [assetId, state] of mortgageStates.entries()) {
 			if (state.termRemainingMonths <= 0) continue;
-			if (state.startDate && monthsBetween(state.startDate, current) < 0) {
+			if (state.startDate && monthsBetweenYearMonths(state.startDate, current) < 0) {
 				continue;
 			}
 
@@ -608,8 +576,8 @@ export const buildProjection = (input: {
 			}
 
 			if (state.propertySaleDate) {
-				const saleIndex = monthIndex(state.propertySaleDate);
-				const currentIndex = monthIndex(current);
+				const saleIndex = yearMonthIndex(state.propertySaleDate);
+				const currentIndex = yearMonthIndex(current);
 				if (currentIndex === saleIndex) {
 					pushTransaction(
 						state.fundingSourceAccountId,
@@ -727,8 +695,8 @@ export const buildProjection = (input: {
 	}
 
 	return {
-		startDate: formatYearMonth(startYearMonth),
-		endDate: formatYearMonth(endYearMonth),
+		startDate: toYearMonthInt(startYearMonth),
+		endDate: toYearMonthInt(endYearMonth),
 		transactions,
 		accounts: accountSeries
 	};

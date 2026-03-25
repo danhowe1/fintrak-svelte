@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ActionData, PageData } from './$types';
+	import { onMount, tick } from 'svelte';
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import FormSection from '$lib/components/forms/FormSection.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -13,6 +14,13 @@
 	const selectedPersonIds = Array.isArray(form?.values?.personIds)
 		? form?.values?.personIds
 		: null;
+
+	let accountTypeSelect: HTMLSelectElement | null = null;
+
+	onMount(async () => {
+		await tick();
+		accountTypeSelect?.focus();
+	});
 </script>
 
 <h1>Create account</h1>
@@ -36,10 +44,10 @@
 					Type
 					<select
 						name="accountType"
+						bind:this={accountTypeSelect}
 						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
 						required
 						value={formValues.accountType ?? 'current_account'}
-						autofocus
 					>
 						<option value="current_account">Current account</option>
 						<option value="savings_account">Savings account</option>

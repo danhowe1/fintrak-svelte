@@ -2,6 +2,7 @@ import { env } from '$env/dynamic/private';
 import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
+import { parseYearMonthInput } from '$lib/yearMonth';
 
 const databaseUrlSchema = z
 	.string()
@@ -104,7 +105,7 @@ export type ScenarioSummary = {
 	id: string;
 	name: string;
 	details?: {
-		startDate?: string;
+		startDate?: number;
 	};
 };
 
@@ -112,7 +113,7 @@ export type ScenarioListItem = {
 	id: string;
 	name: string;
 	details: {
-		startDate?: string;
+		startDate?: number;
 	};
 	created_at: string;
 };
@@ -313,9 +314,7 @@ export async function updatePropertyDetails(
 		typeof input.saleDate === 'string' && input.saleDate.trim().length > 0
 			? input.saleDate.trim()
 			: null;
-	const normalizedSaleDate = saleDate
-		? saleDate.replace(/(\s|\/)/g, '-').replace(/^(\d{2})-(\d{4})$/, '$2-$1')
-		: null;
+	const normalizedSaleDate = saleDate ? parseYearMonthInput(saleDate) : null;
 	await getPool().query(
 		`
 			update assets
@@ -327,7 +326,7 @@ export async function updatePropertyDetails(
 					true
 				),
 				'{saleDate}',
-				case when $4::text is null then 'null'::jsonb else to_jsonb($4::text) end,
+				case when $4::int is null then 'null'::jsonb else to_jsonb($4::int) end,
 				true
 			)
 			where id = $2::uuid
@@ -370,8 +369,8 @@ export async function createCashflow(input: {
 		| 'other';
 	amount: number;
 	inflationAffected: boolean;
-	startDate: string;
-	endDate?: string | null;
+	startDate: number;
+	endDate?: number | null;
 	sourceAssetAccountId?: string | null;
 	destinationAssetAccountId?: string | null;
 	description: string;
@@ -400,8 +399,8 @@ export async function createCashflow(input: {
 				$4::cashflow_category,
 				$5::numeric,
 				$6::boolean,
-				$7::date,
-				$8::date,
+				$7::int,
+				$8::int,
 				$9::uuid,
 				$10::uuid,
 				$11::text,
@@ -449,8 +448,8 @@ export async function updateCashflow(input: {
 		| 'other';
 	amount: number;
 	inflationAffected: boolean;
-	startDate: string;
-	endDate?: string | null;
+	startDate: number;
+	endDate?: number | null;
 	sourceAssetAccountId?: string | null;
 	destinationAssetAccountId?: string | null;
 	description: string;
@@ -463,8 +462,8 @@ export async function updateCashflow(input: {
 				category = $5::cashflow_category,
 				amount = $6::numeric,
 				inflation_affected = $7::boolean,
-				start_date = $8::date,
-				end_date = $9::date,
+				start_date = $8::int,
+				end_date = $9::int,
 				source_asset_account_id = $10::uuid,
 				destination_asset_account_id = $11::uuid,
 				description = $12::text
@@ -495,8 +494,8 @@ export type CashflowSummary = {
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	inflation_affected: boolean;
-	start_date: string;
-	end_date: string | null;
+	start_date: number;
+	end_date: number | null;
 	description: string;
 	source_asset_account_id: string | null;
 	destination_asset_account_id: string | null;
@@ -674,9 +673,9 @@ export async function getOrCreateAssetAccount(
 export type CreateScenarioWithPersonInput = {
 	userId: string;
 	scenarioName: string;
-	startDate: string;
+	startDate: number;
 	personName: string;
-	personDob: string;
+	personDob: number;
 	retirementAge: number;
 	monthlyNetIncome: number;
 	monthlyEssentialExpenses: number;
@@ -821,7 +820,7 @@ async function insertScenario(client: DbClient, input: CreateScenarioWithPersonI
 			values (
 				$1::text,
 				jsonb_build_object(
-					'startDate', $2::text
+					'startDate', $2::int
 				),
 				$3::text
 			)
@@ -861,9 +860,9 @@ async function insertPersonAsset(
 				'person'::asset_type,
 				$2::text,
 				jsonb_build_object(
-					'dob', $3::text,
+					'dob', $3::int,
 					'retirementAge', $4::int,
-					'startDate', $5::text
+					'startDate', $5::int
 				)
 			)
 			returning id
@@ -944,8 +943,8 @@ type InsertCashflowInput = {
 	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
 	amount: number;
 	inflationAffected?: boolean;
-	startDate: string;
-	endDate?: string | null;
+	startDate: number;
+	endDate?: number | null;
 	sourceAssetAccountId?: string | null;
 	destinationAssetAccountId?: string | null;
 	description: string;
@@ -976,8 +975,8 @@ async function insertCashflow(client: DbClient, input: InsertCashflowInput) {
 				$4::cashflow_category,
 				$5::numeric,
 				$6::boolean,
-				$7::date,
-				$8::date,
+				$7::int,
+				$8::int,
 				$9::uuid,
 				$10::uuid,
 				$11::text,
@@ -1005,9 +1004,9 @@ export type CreatePersonAssetWithCashflowsInput = {
 	scenarioId: string;
 	userId: string;
 	name: string;
-	dob: string;
+	dob: number;
 	retirementAge: number;
-	startDate: string;
+	startDate: number;
 	employmentIncome: number;
 	essentialExpenses: number;
 	incomeAccount:
@@ -1022,12 +1021,12 @@ export type CreatePropertyAssetWithExpenseInput = {
 	scenarioId: string;
 	userId: string;
 	name: string;
-	startDate: string;
+	startDate: number;
 	marketValue: number;
 	marketGrowthRate: number;
 	fixedSellingCosts: number;
 	variableSellingCosts: number;
-	saleDate?: string;
+	saleDate?: number;
 	ownershipExpense: number;
 	expenseAccount:
 		| { type: 'existing'; accountId: string }

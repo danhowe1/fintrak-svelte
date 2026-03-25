@@ -1,7 +1,7 @@
 export type ScenarioDetails = {
 	id: string;
 	name: string;
-	startDate: string;
+	startDate: number;
 	assets: Asset[];
 };
 
@@ -9,9 +9,9 @@ export type PersonDetails = {
 	type: 'person';
 	id: string;
 	name: string;
-	dob: string;
+	dob: number;
 	retirementAge: number;
-	startDate: string;
+	startDate: number;
 };
 
 export type PropertyDetails = {
@@ -19,7 +19,7 @@ export type PropertyDetails = {
 	id: string;
 	name: string;
 	marketValue: number;
-	startDate: string;
+	startDate: number;
 	marketGrowthRate: number;
 	fixedSellingCosts: number;
 	variableSellingCosts: number;
@@ -46,8 +46,8 @@ export type Cashflow = {
 	frequency: CashflowFrequency;
 	amount: number;
 	inflationAffected: boolean;
-	startDate: string;
-	endDate?: string | null;
+	startDate: number;
+	endDate?: number | null;
 	sourceAssetAccountId?: string | null;
 	destinationAssetAccountId?: string | null;
 	description: string;

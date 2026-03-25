@@ -10,6 +10,7 @@ import {
 	getAssetsForScenario,
 	getScenarioForUserById
 } from '$lib/server/database';
+import { parseYearMonthInput } from '$lib/yearMonth';
 
 const monthSchema = z
 	.string()
@@ -491,10 +492,11 @@ const createAssetSchema = z
 	});
 
 const normalizeMonth = (value: string) => {
-	const cleaned = value.replace(/\D/g, '');
-	const month = cleaned.slice(0, 2);
-	const year = cleaned.slice(2, 6);
-	return `${year}-${month}-01`;
+	const parsedValue = parseYearMonthInput(value);
+	if (parsedValue === null) {
+		throw new Error('Invalid month format');
+	}
+	return parsedValue;
 };
 
 export const load: PageServerLoad = async (event) => {
@@ -652,7 +654,7 @@ export const actions: Actions = {
 					name,
 					dob: normalizeMonth(personDob ?? ''),
 					retirementAge: Number(retirementAge),
-					startDate: details.startDate as string,
+					startDate: details.startDate as number,
 					employmentIncome: employmentIncome ? currencySchema.parse(employmentIncome) : 0,
 					essentialExpenses: currencySchema.parse(essentialExpenses ?? ''),
 					expenseAccount:
@@ -694,7 +696,7 @@ export const actions: Actions = {
 					scenarioId: scenario.id,
 					userId,
 					name,
-					startDate: details.startDate as string,
+					startDate: details.startDate as number,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
 					marketGrowthRate: decimalUpToOnePlaceSchema.parse(propertyMarketGrowthRate ?? '5'),
 					fixedSellingCosts: currencySchema.parse(propertyFixedSellingCosts ?? '10000'),

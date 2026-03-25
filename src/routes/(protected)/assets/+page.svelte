@@ -3,26 +3,13 @@
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import FormSection from '$lib/components/forms/FormSection.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import { formatYearMonthInput } from '$lib/yearMonth';
 
 	export let data: PageData;
 
-	const now = new Date();
-	const defaultMonth = (() => {
-		const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-		const year = firstOfMonth.getFullYear();
-		const month = String(firstOfMonth.getMonth() + 1).padStart(2, '0');
-		return `${month} ${year}`;
-	})();
-
-	const formatMonth = (value?: string) => {
-		if (!value) return '—';
-		const normalized =
-			value.length === 7 ? `${value}-01` : value.length >= 10 ? value.slice(0, 10) : value;
-		const date = new Date(value.length >= 10 ? value : `${normalized}T00:00:00`);
-		if (Number.isNaN(date.getTime())) return '—';
-		const month = String(date.getMonth() + 1).padStart(2, '0');
-		const year = date.getFullYear();
-		return `${month} ${year}`;
+	const formatMonth = (value?: unknown) => {
+		const formatted = formatYearMonthInput(value);
+		return formatted || '—';
 	};
 
 	const formatLabel = (value: string) =>
@@ -103,11 +90,11 @@
 							<td class="px-4 py-3">{formatLabel(asset.asset_type)}</td>
 							<td class="px-4 py-3 font-medium text-slate-900">{asset.name}</td>
 							<td class="px-4 py-3">
-								{formatMonth((asset.details?.startDate as string) ?? '')}
+								{formatMonth(asset.details?.startDate)}
 							</td>
 							<td class="px-4 py-3 text-slate-600">
 								{#if asset.asset_type === 'person'}
-									DOB {formatMonth((asset.details?.dob as string) ?? '')}, retire{' '}
+									DOB {formatMonth(asset.details?.dob)}, retire{' '}
 									{asset.details?.retirementAge ?? '—'}
 								{:else if asset.asset_type === 'property'}
 									Market value {asset.details?.marketValue ?? '—'}
@@ -118,7 +105,7 @@
 									)}
 									{#if asset.details?.interestOnly}
 										, interest-only until{' '}
-										{formatMonth((asset.details?.interestOnlyEnd as string) ?? '')}
+										{formatMonth(asset.details?.interestOnlyEnd)}
 									{/if}
 								{:else}
 									—
