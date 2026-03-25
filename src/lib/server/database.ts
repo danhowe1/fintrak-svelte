@@ -333,6 +333,7 @@ export async function updatePropertyDetails(
 }
 
 export type AssetAccountLink = {
+	id: string;
 	asset_id: string;
 	account_id: string;
 	relationship_role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
@@ -341,7 +342,7 @@ export type AssetAccountLink = {
 export async function getAssetAccountsForScenario(scenarioId: string) {
 	const result = await getPool().query<AssetAccountLink>(
 		`
-			select asset_id, account_id, relationship_role
+			select id, asset_id, account_id, relationship_role
 			from asset_accounts
 			where scenario_id = $1::uuid
 		`,
@@ -349,6 +350,79 @@ export async function getAssetAccountsForScenario(scenarioId: string) {
 	);
 
 	return result.rows;
+}
+
+export async function createCashflow(input: {
+	scenarioId: string;
+	type: 'expense' | 'income' | 'transfer';
+	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	amount: number;
+	inflationAffected: boolean;
+	startDate: string;
+	endDate?: string | null;
+	sourceAssetAccountId?: string | null;
+	destinationAssetAccountId?: string | null;
+	description: string;
+	createdBy: string;
+}) {
+	await getPool().query(
+		`
+			insert into cashflows (
+				scenario_id,
+				cashflow_type,
+				frequency,
+				category,
+				amount,
+				inflation_affected,
+				start_date,
+				end_date,
+				source_asset_account_id,
+				destination_asset_account_id,
+				description,
+				created_by
+			)
+			values (
+				$1::uuid,
+				$2::cashflow_type,
+				$3::cashflow_frequency,
+				$4::cashflow_category,
+				$5::numeric,
+				$6::boolean,
+				$7::date,
+				$8::date,
+				$9::uuid,
+				$10::uuid,
+				$11::text,
+				$12::text
+			)
+		`,
+		[
+			input.scenarioId,
+			input.type,
+			input.frequency,
+			input.category,
+			input.amount,
+			input.inflationAffected,
+			input.startDate,
+			input.endDate ?? null,
+			input.sourceAssetAccountId ?? null,
+			input.destinationAssetAccountId ?? null,
+			input.description,
+			input.createdBy
+		]
+	);
+}
+
+export async function deleteCashflow(scenarioId: string, cashflowId: string) {
+	await getPool().query(
+		`
+			delete from cashflows
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+		`,
+		[scenarioId, cashflowId]
+	);
 }
 
 export type CashflowSummary = {
@@ -363,6 +437,8 @@ export type CashflowSummary = {
 	description: string;
 	source_account_id: string | null;
 	destination_account_id: string | null;
+	source_asset_id: string | null;
+	destination_asset_id: string | null;
 	source_asset_name: string | null;
 	destination_asset_name: string | null;
 	source_account_name: string | null;
@@ -384,6 +460,8 @@ export async function getCashflowsForScenario(scenarioId: string) {
 				c.description,
 				saa.account_id as source_account_id,
 				daa.account_id as destination_account_id,
+				sasset.id as source_asset_id,
+				dasset.id as destination_asset_id,
 				sasset.name as source_asset_name,
 				dasset.name as destination_asset_name,
 				sacc.name as source_account_name,

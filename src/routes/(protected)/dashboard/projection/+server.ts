@@ -63,6 +63,7 @@ export const GET: RequestHandler = async (event) => {
 		getAssetsForScenario(scenario.id),
 		getAssetAccountsForScenario(scenario.id)
 	]);
+	const includeCashflows = event.url.searchParams.get('includeCashflows') === 'true';
 
 	const projection = buildProjection({
 		scenarioStartDate: scenario.details?.startDate,
@@ -77,6 +78,7 @@ export const GET: RequestHandler = async (event) => {
 
 	return json({
 		projection,
+		...(includeCashflows ? { cashflows } : {}),
 		projectionRange,
 		sessionRates: {
 			inflationRate,

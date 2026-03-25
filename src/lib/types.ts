@@ -35,6 +35,7 @@ export type CashflowCategory =
 	| 'living_expenses'
 	| 'employment_income'
 	| 'asset_ownership'
+	| 'rental_income'
 	| 'other';
 
 export type Cashflow = {

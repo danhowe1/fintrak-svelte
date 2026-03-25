@@ -45,7 +45,7 @@ export type ProjectionResult = {
 type ProjectionCashflow = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'rental_income' | 'other';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	inflation_affected: boolean;
