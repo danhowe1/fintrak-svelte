@@ -26,7 +26,7 @@
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 <div class="min-h-screen bg-slate-50">
 	<header class="border-b border-slate-200 bg-white/90 backdrop-blur">
-		<div class="mx-auto flex max-w-6xl items-center justify-between px-3 py-4">
+		<div class="mx-auto flex w-full items-center justify-between px-4 py-4">
 			<a class="flex items-center gap-3 no-underline" href="/">
 				<span
 					class="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-sm font-semibold tracking-[0.24em] text-white"
@@ -69,7 +69,7 @@
 		</div>
 	</header>
 
-	<main class="mx-auto max-w-6xl px-3 py-12">
+	<main class="mx-auto w-full px-4 py-12">
 		<article class="prose max-w-none prose-slate">
 			{#key $page.url.pathname}
 				{@render children()}
