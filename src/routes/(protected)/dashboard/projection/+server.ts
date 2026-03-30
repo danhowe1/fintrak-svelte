@@ -69,6 +69,7 @@ export const GET: RequestHandler = async (event) => {
 		scenarioStartDate: scenario.details?.startDate,
 		inflationRate,
 		interestRateChange,
+		projectionRange,
 		maxMonths: projectionMonths,
 		cashflows,
 		accounts,
