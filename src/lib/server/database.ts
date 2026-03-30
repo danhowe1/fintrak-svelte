@@ -288,6 +288,34 @@ export async function updatePersonRetirementAge(
 	);
 }
 
+export async function updatePersonDetails(
+	scenarioId: string,
+	assetId: string,
+	input: { name: string; startDate: number; dob: number }
+) {
+	await getPool().query(
+		`
+			update assets
+			set name = $3::text,
+				details = jsonb_set(
+				jsonb_set(
+					coalesce(details, '{}'::jsonb),
+					'{startDate}',
+					to_jsonb($4::int),
+					true
+				),
+				'{dob}',
+				to_jsonb($5::int),
+				true
+			)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+			  and asset_type = 'person'
+		`,
+		[scenarioId, assetId, input.name, input.startDate, input.dob]
+	);
+}
+
 export async function updateCashflowAmount(
 	scenarioId: string,
 	cashflowId: string,
@@ -307,32 +335,76 @@ export async function updateCashflowAmount(
 export async function updatePropertyDetails(
 	scenarioId: string,
 	assetId: string,
-	input: { marketGrowthRate: number; saleDate?: string | null }
+	input: {
+		name: string;
+		startDate: string;
+		marketValue: number;
+		marketGrowthRate: number;
+		saleDate?: string | null;
+		fixedSellingCosts: number;
+		variableSellingCosts: number;
+	}
 ) {
 	const saleDate =
 		typeof input.saleDate === 'string' && input.saleDate.trim().length > 0
 			? input.saleDate.trim()
 			: null;
+	const startDate = input.startDate.trim();
+	const normalizedStartDate = parseYearMonthInput(startDate);
 	const normalizedSaleDate = saleDate ? parseYearMonthInput(saleDate) : null;
+	if (normalizedStartDate === null) {
+		throw new Error('Invalid property start date');
+	}
 	await getPool().query(
 		`
 			update assets
-			set details = jsonb_set(
-				jsonb_set(
-					coalesce(details, '{}'::jsonb),
-					'{marketGrowthRate}',
-					to_jsonb($3::numeric),
+			set name = $3::text,
+				details = jsonb_set(
+					jsonb_set(
+						jsonb_set(
+							jsonb_set(
+								jsonb_set(
+									jsonb_set(
+										coalesce(details, '{}'::jsonb),
+										'{startDate}',
+										to_jsonb($4::int),
+										true
+									),
+									'{marketValue}',
+									to_jsonb($5::numeric),
+									true
+								),
+								'{marketGrowthRate}',
+								to_jsonb($6::numeric),
+								true
+							),
+							'{saleDate}',
+							case when $7::int is null then 'null'::jsonb else to_jsonb($7::int) end,
+							true
+						),
+						'{fixedSellingCosts}',
+						to_jsonb($8::numeric),
+						true
+					),
+					'{variableSellingCosts}',
+					to_jsonb($9::numeric),
 					true
-				),
-				'{saleDate}',
-				case when $4::int is null then 'null'::jsonb else to_jsonb($4::int) end,
-				true
-			)
+				)
 			where id = $2::uuid
 			  and scenario_id = $1::uuid
 			  and asset_type = 'property'
 		`,
-		[scenarioId, assetId, input.marketGrowthRate, normalizedSaleDate]
+		[
+			scenarioId,
+			assetId,
+			input.name,
+			normalizedStartDate,
+			input.marketValue,
+			input.marketGrowthRate,
+			normalizedSaleDate,
+			input.fixedSellingCosts,
+			input.variableSellingCosts
+		]
 	);
 }
 

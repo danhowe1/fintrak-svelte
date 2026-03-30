@@ -96,10 +96,33 @@ let assetsList = data.assets ?? [];
 let accountsList = data.accounts ?? [];
 let assetAccountsList = data.assetAccounts ?? [];
 let personRetirementAges: Record<string, number> = {};
+let personDetails: Record<string, { name: string; startDate: string; dob: string }> = {};
 let cashflowAmounts: Record<string, number> = {};
-let propertyDetails: Record<string, { marketGrowthRate: number; saleDate: string }> = {};
+let propertyDetails: Record<
+	string,
+	{
+		name: string;
+		startDate: string;
+		marketValue: number;
+		marketGrowthRate: number;
+		saleDate: string;
+		fixedSellingCosts: number;
+		variableSellingCosts: number;
+	}
+> = {};
 let accountInterestRates: Record<string, number> = {};
-let propertyErrors: Record<string, string> = {};
+let propertyErrors: Record<
+	string,
+	{
+		name?: string;
+		startDate?: string;
+		saleDate?: string;
+		marketValue?: string;
+		fixedSellingCosts?: string;
+		variableSellingCosts?: string;
+	}
+> = {};
+let personDetailsErrors: Record<string, { name?: string; startDate?: string; dob?: string }> = {};
 let cashflowFormErrors: Record<string, string> = {};
 let lastScenarioId = data.scenario.id;
 let updateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
@@ -108,6 +131,8 @@ let activeCashflowForm: { assetId: string; type: 'income' | 'expense'; cashflowI
 let cashflowDrafts: Record<string, CashflowDraft> = {};
 let cashflowsByAssetId: Record<string, typeof cashflows> = {};
 let editingCashflowIds = new Set<string>();
+let expandedPersonDetailIds = new Set<string>();
+let expandedPropertyDetailIds = new Set<string>();
 let deleteConfirmId: string | null = null;
 
 const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
@@ -123,15 +148,19 @@ $: assetAccountsList = data.assetAccounts ?? [];
 
 $: if (data.scenario.id !== lastScenarioId) {
 	personRetirementAges = {};
+	personDetails = {};
 	cashflowAmounts = {};
 	propertyDetails = {};
 	accountInterestRates = {};
 	propertyErrors = {};
+	personDetailsErrors = {};
 	cashflowFormErrors = {};
 	activeCashflowForm = null;
 	cashflowDrafts = {};
 	updateTimers = {};
 	editingCashflowIds = new Set();
+	expandedPersonDetailIds = new Set();
+	expandedPropertyDetailIds = new Set();
 	lastScenarioId = data.scenario.id;
 }
 
@@ -145,6 +174,20 @@ $: if (Object.keys(personRetirementAges).length === 0 && (assetsList.length ?? 0
 	personRetirementAges = next;
 }
 
+$: if (Object.keys(personDetails).length === 0 && (assetsList.length ?? 0) > 0) {
+	const next: Record<string, { name: string; startDate: string; dob: string }> = {};
+	for (const asset of assetsList) {
+		if (asset.asset_type === 'person') {
+			next[asset.id] = {
+				name: asset.name ?? '',
+				startDate: formatYearMonthInput(asset.details?.startDate),
+				dob: formatYearMonthInput(asset.details?.dob)
+			};
+		}
+	}
+	personDetails = next;
+}
+
 $: if (Object.keys(cashflowAmounts).length === 0 && (cashflows?.length ?? 0) > 0) {
 	const next: Record<string, number> = {};
 	for (const cashflow of cashflows ?? []) {
@@ -154,17 +197,50 @@ $: if (Object.keys(cashflowAmounts).length === 0 && (cashflows?.length ?? 0) > 0
 }
 
 $: if (Object.keys(propertyDetails).length === 0 && (assetsList.length ?? 0) > 0) {
-	const next: Record<string, { marketGrowthRate: number; saleDate: string }> = {};
+	const next: Record<
+		string,
+		{
+			name: string;
+			startDate: string;
+			marketValue: number;
+			marketGrowthRate: number;
+			saleDate: string;
+			fixedSellingCosts: number;
+			variableSellingCosts: number;
+		}
+	> = {};
 	for (const asset of assetsList) {
 		if (asset.asset_type === 'property') {
 			const details = asset.details ?? {};
+			const rawMarketValue = details.marketValue;
+			const marketValue =
+				typeof rawMarketValue === 'number' ? rawMarketValue : Number(rawMarketValue);
 			const rawRate = details.marketGrowthRate;
 			const rate = typeof rawRate === 'number' ? rawRate : Number(rawRate);
+			const rawStartDate = details.startDate;
+			const startDate = formatYearMonthInput(rawStartDate);
 			const rawSaleDate = details.saleDate;
 			const saleDate = formatYearMonthInput(rawSaleDate);
+			const rawFixedSellingCosts = details.fixedSellingCosts;
+			const fixedSellingCosts =
+				typeof rawFixedSellingCosts === 'number'
+					? rawFixedSellingCosts
+					: Number(rawFixedSellingCosts);
+			const rawVariableSellingCosts = details.variableSellingCosts;
+			const variableSellingCosts =
+				typeof rawVariableSellingCosts === 'number'
+					? rawVariableSellingCosts
+					: Number(rawVariableSellingCosts);
 			next[asset.id] = {
+				name: asset.name ?? '',
+				startDate,
+				marketValue: Number.isFinite(marketValue) ? marketValue : 0,
 				marketGrowthRate: Number.isFinite(rate) ? rate : 0,
-				saleDate
+				saleDate,
+				fixedSellingCosts: Number.isFinite(fixedSellingCosts) ? fixedSellingCosts : 0,
+				variableSellingCosts: Number.isFinite(variableSellingCosts)
+					? variableSellingCosts
+					: 0
 			};
 		}
 	}
@@ -183,6 +259,31 @@ $: if (Object.keys(accountInterestRates).length === 0 && (accountsList.length ??
 
 const setPersonRetirementAge = (id: string, value: number) => {
 	personRetirementAges = { ...personRetirementAges, [id]: value };
+};
+
+const setPersonDetails = (id: string, value: { name: string; startDate: string; dob: string }) => {
+	personDetails = { ...personDetails, [id]: value };
+};
+
+const setPersonDetailsError = (
+	id: string,
+	field: 'name' | 'startDate' | 'dob',
+	message: string
+) => {
+	personDetailsErrors = {
+		...personDetailsErrors,
+		[id]: { ...(personDetailsErrors[id] ?? {}), [field]: message }
+	};
+};
+
+const togglePersonDetails = (id: string) => {
+	const next = new Set(expandedPersonDetailIds);
+	if (next.has(id)) {
+		next.delete(id);
+	} else {
+		next.add(id);
+	}
+	expandedPersonDetailIds = next;
 };
 
 $: cashflowsByAssetId = (() => {
@@ -361,13 +462,35 @@ const setCashflowDraft = (
 
 const setPropertyDetails = (
 	id: string,
-	value: { marketGrowthRate: number; saleDate: string }
+	value: {
+		name: string;
+		startDate: string;
+		marketValue: number;
+		marketGrowthRate: number;
+		saleDate: string;
+		fixedSellingCosts: number;
+		variableSellingCosts: number;
+	}
 ) => {
 	propertyDetails = { ...propertyDetails, [id]: value };
 };
 
-const setPropertyError = (id: string, message: string) => {
-	propertyErrors = { ...propertyErrors, [id]: message };
+const setPropertyError = (
+	id: string,
+	field: 'name' | 'startDate' | 'saleDate' | 'marketValue' | 'fixedSellingCosts' | 'variableSellingCosts',
+	message: string
+) => {
+	propertyErrors = { ...propertyErrors, [id]: { ...(propertyErrors[id] ?? {}), [field]: message } };
+};
+
+const togglePropertyDetails = (id: string) => {
+	const next = new Set(expandedPropertyDetailIds);
+	if (next.has(id)) {
+		next.delete(id);
+	} else {
+		next.add(id);
+	}
+	expandedPropertyDetailIds = next;
 };
 
 const setAccountInterestRate = (id: string, value: number) => {
@@ -486,6 +609,29 @@ const updateRetirementAge = async (assetId: string, retirementAge: number) => {
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update retirement age.';
+	});
+};
+
+const updatePersonDetails = async (assetId: string, name: string, startDate: string, dob: string) => {
+	await withLock(
+		`person-details:${assetId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('assetId', assetId);
+			formData.set('name', name);
+			formData.set('startDate', startDate);
+			formData.set('dob', dob);
+			const response = await fetch('?/updatePersonDetails', { method: 'POST', body: formData });
+			if (!response.ok) {
+				throw new Error('Unable to update person details. Please try again.');
+			}
+			await refreshProjection();
+		},
+		true
+	).catch((error) => {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update person details.';
 	});
 };
 
@@ -661,8 +807,13 @@ const confirmDeleteCashflow = async () => {
 
 const updatePropertyDetails = async (
 	assetId: string,
+	name: string,
+	startDate: string,
+	marketValue: number,
 	marketGrowthRate: number,
-	saleDate: string
+	saleDate: string,
+	fixedSellingCosts: number,
+	variableSellingCosts: number
 ) => {
 	await withLock(
 		`property:${assetId}`,
@@ -670,8 +821,13 @@ const updatePropertyDetails = async (
 			const formData = new FormData();
 			formData.set('scenarioId', data.scenario.id);
 			formData.set('assetId', assetId);
+			formData.set('name', name);
+			formData.set('startDate', startDate);
+			formData.set('marketValue', String(marketValue));
 			formData.set('marketGrowthRate', String(marketGrowthRate));
 			formData.set('saleDate', saleDate);
+			formData.set('fixedSellingCosts', String(fixedSellingCosts));
+			formData.set('variableSellingCosts', String(variableSellingCosts));
 			const response = await fetch('?/updatePropertyDetails', {
 				method: 'POST',
 				body: formData
@@ -1531,7 +1687,9 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 			<div class="mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
-					<h3 class="text-sm font-semibold text-slate-900">{person.name}</h3>
+					<h3 class="text-sm font-semibold text-slate-900">
+						{personDetails[person.id]?.name ?? person.name}
+					</h3>
 					<div class="mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Retirement age</span>
 						<input
@@ -1548,8 +1706,213 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 								);
 							}}
 						/>
-						<span></span>
+						<button
+							type="button"
+							class="flex items-center justify-end text-slate-500 hover:text-slate-700"
+							aria-label={expandedPersonDetailIds.has(person.id) ? 'Hide details' : 'Show details'}
+							title={expandedPersonDetailIds.has(person.id) ? 'Hide details' : 'Show details'}
+							on:click={() => togglePersonDetails(person.id)}
+						>
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="h-4 w-4"
+							>
+								<path d="M5 12h14" />
+								{#if !expandedPersonDetailIds.has(person.id)}
+									<path d="M12 5v14" />
+								{/if}
+							</svg>
+						</button>
 					</div>
+					{#if expandedPersonDetailIds.has(person.id)}
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Start date (MM YYYY)</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									inputmode="numeric"
+									pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={personDetails[person.id]?.startDate ?? ''}
+									on:input={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = personDetails[person.id] ?? {
+												name: person.name,
+												startDate: '',
+												dob: ''
+											};
+											setPersonDetails(person.id, { ...current, startDate: next });
+											if (next.trim().length === 0 || isValidMonthYear(next)) {
+												setPersonDetailsError(person.id, 'startDate', '');
+										}
+									}}
+									on:change={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = personDetails[person.id] ?? {
+												name: person.name,
+												startDate: '',
+												dob: ''
+											};
+											if (next.trim().length === 0 || !isValidMonthYear(next)) {
+												setPersonDetailsError(person.id, 'startDate', 'Use MM YYYY format.');
+												return;
+											}
+											if (!current.name.trim()) {
+												setPersonDetailsError(person.id, 'name', 'Name is required.');
+												return;
+											}
+											if (current.dob.trim().length === 0 || !isValidMonthYear(current.dob)) {
+												setPersonDetailsError(person.id, 'dob', 'Use MM YYYY format.');
+												return;
+											}
+											setPersonDetailsError(person.id, 'startDate', '');
+											setPersonDetails(person.id, { ...current, startDate: next });
+											scheduleUpdate(`person-details:${person.id}`, () =>
+												updatePersonDetails(person.id, current.name, next, current.dob)
+											);
+										}}
+									/>
+								{#if personDetailsErrors[person.id]?.startDate}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{personDetailsErrors[person.id]?.startDate}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Name</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={personDetails[person.id]?.name ?? person.name}
+									on:input={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = personDetails[person.id] ?? {
+											name: person.name,
+											startDate: '',
+											dob: ''
+										};
+										setPersonDetails(person.id, { ...current, name: next });
+										if (next.trim().length > 0) {
+											setPersonDetailsError(person.id, 'name', '');
+										}
+									}}
+									on:change={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value.trim();
+										const current = personDetails[person.id] ?? {
+											name: person.name,
+											startDate: '',
+											dob: ''
+										};
+										if (!next) {
+											setPersonDetailsError(person.id, 'name', 'Name is required.');
+											return;
+										}
+										if (
+											current.startDate.trim().length === 0 ||
+											!isValidMonthYear(current.startDate)
+										) {
+											setPersonDetailsError(person.id, 'startDate', 'Use MM YYYY format.');
+											return;
+										}
+										if (current.dob.trim().length === 0 || !isValidMonthYear(current.dob)) {
+											setPersonDetailsError(person.id, 'dob', 'Use MM YYYY format.');
+											return;
+										}
+										setPersonDetailsError(person.id, 'name', '');
+										setPersonDetails(person.id, { ...current, name: next });
+										assetsList = assetsList.map((asset) =>
+											asset.id === person.id ? { ...asset, name: next } : asset
+										);
+										scheduleUpdate(`person-details:${person.id}`, () =>
+											updatePersonDetails(
+												person.id,
+												next,
+												current.startDate,
+												current.dob
+											)
+										);
+									}}
+								/>
+								{#if personDetailsErrors[person.id]?.name}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{personDetailsErrors[person.id]?.name}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Date of birth (MM YYYY)</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									inputmode="numeric"
+									pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={personDetails[person.id]?.dob ?? ''}
+										on:input={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = personDetails[person.id] ?? {
+												name: person.name,
+												startDate: '',
+												dob: ''
+											};
+											setPersonDetails(person.id, { ...current, dob: next });
+											if (next.trim().length === 0 || isValidMonthYear(next)) {
+												setPersonDetailsError(person.id, 'dob', '');
+										}
+									}}
+										on:change={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = personDetails[person.id] ?? {
+												name: person.name,
+												startDate: '',
+												dob: ''
+											};
+											if (next.trim().length === 0 || !isValidMonthYear(next)) {
+												setPersonDetailsError(person.id, 'dob', 'Use MM YYYY format.');
+												return;
+											}
+											if (!current.name.trim()) {
+												setPersonDetailsError(person.id, 'name', 'Name is required.');
+												return;
+											}
+											if (
+												current.startDate.trim().length === 0 ||
+												!isValidMonthYear(current.startDate)
+										) {
+											setPersonDetailsError(person.id, 'startDate', 'Use MM YYYY format.');
+											return;
+										}
+											setPersonDetailsError(person.id, 'dob', '');
+											setPersonDetails(person.id, { ...current, dob: next });
+											scheduleUpdate(`person-details:${person.id}`, () =>
+												updatePersonDetails(
+													person.id,
+													current.name,
+													current.startDate,
+													next
+												)
+											);
+										}}
+								/>
+								{#if personDetailsErrors[person.id]?.dob}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{personDetailsErrors[person.id]?.dob}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+					{/if}
 					<div class="mt-3 space-y-2">
 						{#each cashflowsByAssetId[person.id] ?? [] as cashflow}
 							<div
@@ -1816,7 +2179,9 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 			{/each}
 			{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
-					<h3 class="text-sm font-semibold text-slate-900">{property.name}</h3>
+					<h3 class="text-sm font-semibold text-slate-900">
+						{propertyDetails[property.id]?.name ?? property.name}
+					</h3>
 					<div class="mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Market growth rate</span>
 						<input
@@ -1827,8 +2192,13 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 							on:input={(event) => {
 								const next = Number((event.currentTarget as HTMLInputElement).value);
 								const current = propertyDetails[property.id] ?? {
+									name: property.name,
+									startDate: formatYearMonthInput(property.details?.startDate),
+									marketValue: Number(property.details?.marketValue) || 0,
 									marketGrowthRate: 0,
-									saleDate: ''
+									saleDate: '',
+									fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
+									variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
 								};
 								setPropertyDetails(property.id, {
 									...current,
@@ -1838,22 +2208,311 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 							on:change={(event) => {
 								const next = Number((event.currentTarget as HTMLInputElement).value);
 								const current = propertyDetails[property.id] ?? {
+									name: property.name,
+									startDate: formatYearMonthInput(property.details?.startDate),
+									marketValue: Number(property.details?.marketValue) || 0,
 									marketGrowthRate: 0,
-									saleDate: ''
+									saleDate: '',
+									fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
+									variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
 								};
 								const value = Number.isFinite(next) ? next : 0;
 								setPropertyDetails(property.id, { ...current, marketGrowthRate: value });
 								scheduleUpdate(`property:${property.id}`, () =>
 									updatePropertyDetails(
 										property.id,
+										current.name,
+										current.startDate,
+										current.marketValue ?? 0,
 										value,
-										current.saleDate ?? ''
+										current.saleDate ?? '',
+										current.fixedSellingCosts ?? 0,
+										current.variableSellingCosts ?? 0
 									)
 								);
 							}}
 						/>
-						<span></span>
+						<button
+							type="button"
+							class="flex items-center justify-end text-slate-500 hover:text-slate-700"
+							aria-label={expandedPropertyDetailIds.has(property.id) ? 'Hide details' : 'Show details'}
+							title={expandedPropertyDetailIds.has(property.id) ? 'Hide details' : 'Show details'}
+							on:click={() => togglePropertyDetails(property.id)}
+						>
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="h-4 w-4"
+							>
+								<path d="M5 12h14" />
+								{#if !expandedPropertyDetailIds.has(property.id)}
+									<path d="M12 5v14" />
+								{/if}
+							</svg>
+						</button>
 					</div>
+					{#if expandedPropertyDetailIds.has(property.id)}
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Start date (MM YYYY)</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									inputmode="numeric"
+									pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={propertyDetails[property.id]?.startDate ?? ''}
+									on:input={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										setPropertyDetails(property.id, { ...current, startDate: next });
+										if (next.trim().length > 0 && isValidMonthYear(next)) {
+											setPropertyError(property.id, 'startDate', '');
+										}
+									}}
+									on:change={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										if (!isValidMonthYear(next)) {
+											setPropertyError(property.id, 'startDate', 'Use MM YYYY format.');
+											return;
+										}
+										setPropertyError(property.id, 'startDate', '');
+										setPropertyDetails(property.id, { ...current, startDate: next });
+										scheduleUpdate(`property:${property.id}`, () =>
+											updatePropertyDetails(
+												property.id,
+												current.name,
+												next,
+												current.marketValue,
+												current.marketGrowthRate,
+												current.saleDate ?? '',
+												current.fixedSellingCosts,
+												current.variableSellingCosts
+											)
+										);
+									}}
+								/>
+								{#if propertyErrors[property.id]?.startDate}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{propertyErrors[property.id]?.startDate}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Name</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={propertyDetails[property.id]?.name ?? property.name}
+									on:input={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										setPropertyDetails(property.id, { ...current, name: next });
+										if (next.trim().length > 0) {
+											setPropertyError(property.id, 'name', '');
+										}
+									}}
+									on:change={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value.trim();
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										if (!next) {
+											setPropertyError(property.id, 'name', 'Name is required.');
+											return;
+										}
+										setPropertyError(property.id, 'name', '');
+										setPropertyDetails(property.id, { ...current, name: next });
+										assetsList = assetsList.map((asset) =>
+											asset.id === property.id ? { ...asset, name: next } : asset
+										);
+										scheduleUpdate(`property:${property.id}`, () =>
+											updatePropertyDetails(
+												property.id,
+												next,
+												current.startDate,
+												current.marketValue,
+												current.marketGrowthRate,
+												current.saleDate ?? '',
+												current.fixedSellingCosts,
+												current.variableSellingCosts
+											)
+										);
+									}}
+								/>
+								{#if propertyErrors[property.id]?.name}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{propertyErrors[property.id]?.name}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Market value</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="number"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={propertyDetails[property.id]?.marketValue ?? 0}
+									step={stepForValue(propertyDetails[property.id]?.marketValue ?? 0)}
+									on:input={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										setPropertyDetails(property.id, {
+											...current,
+											marketValue: Number.isFinite(next) ? next : 0
+										});
+									}}
+									on:change={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										if (!Number.isFinite(next)) {
+											setPropertyError(property.id, 'marketValue', 'Use a valid number.');
+											return;
+										}
+										setPropertyError(property.id, 'marketValue', '');
+										setPropertyDetails(property.id, { ...current, marketValue: next });
+										scheduleUpdate(`property:${property.id}`, () =>
+											updatePropertyDetails(
+												property.id,
+												current.name,
+												current.startDate,
+												next,
+												current.marketGrowthRate,
+												current.saleDate ?? '',
+												current.fixedSellingCosts,
+												current.variableSellingCosts
+											)
+										);
+									}}
+								/>
+								{#if propertyErrors[property.id]?.marketValue}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{propertyErrors[property.id]?.marketValue}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Fixed selling costs</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="number"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={propertyDetails[property.id]?.fixedSellingCosts ?? 0}
+									step={stepForValue(propertyDetails[property.id]?.fixedSellingCosts ?? 0)}
+									on:input={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										setPropertyDetails(property.id, {
+											...current,
+											fixedSellingCosts: Number.isFinite(next) ? next : 0
+										});
+									}}
+									on:change={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										if (!Number.isFinite(next)) {
+											setPropertyError(
+												property.id,
+												'fixedSellingCosts',
+												'Use a valid number.'
+											);
+											return;
+										}
+										setPropertyError(property.id, 'fixedSellingCosts', '');
+										setPropertyDetails(property.id, { ...current, fixedSellingCosts: next });
+										scheduleUpdate(`property:${property.id}`, () =>
+											updatePropertyDetails(
+												property.id,
+												current.name,
+												current.startDate,
+												current.marketValue,
+												current.marketGrowthRate,
+												current.saleDate ?? '',
+												next,
+												current.variableSellingCosts
+											)
+										);
+									}}
+								/>
+								{#if propertyErrors[property.id]?.fixedSellingCosts}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{propertyErrors[property.id]?.fixedSellingCosts}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Variable selling costs (%)</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="number"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={propertyDetails[property.id]?.variableSellingCosts ?? 0}
+									step="0.01"
+									on:input={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										setPropertyDetails(property.id, {
+											...current,
+											variableSellingCosts: Number.isFinite(next) ? next : 0
+										});
+									}}
+									on:change={(event) => {
+										const next = Number((event.currentTarget as HTMLInputElement).value);
+										const current = propertyDetails[property.id];
+										if (!current) return;
+										if (!Number.isFinite(next)) {
+											setPropertyError(
+												property.id,
+												'variableSellingCosts',
+												'Use a valid number.'
+											);
+											return;
+										}
+										setPropertyError(property.id, 'variableSellingCosts', '');
+										setPropertyDetails(property.id, { ...current, variableSellingCosts: next });
+										scheduleUpdate(`property:${property.id}`, () =>
+											updatePropertyDetails(
+												property.id,
+												current.name,
+												current.startDate,
+												current.marketValue,
+												current.marketGrowthRate,
+												current.saleDate ?? '',
+												current.fixedSellingCosts,
+												next
+											)
+										);
+									}}
+								/>
+								{#if propertyErrors[property.id]?.variableSellingCosts}
+									<span class="mt-1 text-[10px] text-rose-600">
+										{propertyErrors[property.id]?.variableSellingCosts}
+									</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+					{/if}
 					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Sale date (MM YYYY)</span>
 						<div class="justify-self-end flex flex-col items-end">
@@ -1866,38 +2525,53 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 								on:input={(event) => {
 									const next = (event.currentTarget as HTMLInputElement).value;
 									const current = propertyDetails[property.id] ?? {
+										name: property.name,
+										startDate: formatYearMonthInput(property.details?.startDate),
+										marketValue: Number(property.details?.marketValue) || 0,
 										marketGrowthRate: 0,
-										saleDate: ''
+										saleDate: '',
+										fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
+										variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
 									};
 									setPropertyDetails(property.id, { ...current, saleDate: next });
 									if (next.trim().length === 0 || isValidMonthYear(next)) {
-										setPropertyError(property.id, '');
+										setPropertyError(property.id, 'saleDate', '');
 									}
 								}}
 								on:change={(event) => {
 									const next = (event.currentTarget as HTMLInputElement).value;
 									const current = propertyDetails[property.id] ?? {
+										name: property.name,
+										startDate: formatYearMonthInput(property.details?.startDate),
+										marketValue: Number(property.details?.marketValue) || 0,
 										marketGrowthRate: 0,
-										saleDate: ''
+										saleDate: '',
+										fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
+										variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
 									};
 									if (next.trim().length > 0 && !isValidMonthYear(next)) {
-										setPropertyError(property.id, 'Use MM YYYY format.');
+										setPropertyError(property.id, 'saleDate', 'Use MM YYYY format.');
 										return;
 									}
-									setPropertyError(property.id, '');
+									setPropertyError(property.id, 'saleDate', '');
 									setPropertyDetails(property.id, { ...current, saleDate: next });
 									scheduleUpdate(`property:${property.id}`, () =>
 										updatePropertyDetails(
 											property.id,
+											current.name,
+											current.startDate,
+											current.marketValue ?? 0,
 											current.marketGrowthRate ?? 0,
-											next
+											next,
+											current.fixedSellingCosts ?? 0,
+											current.variableSellingCosts ?? 0
 										)
 									);
 								}}
 							/>
-							{#if propertyErrors[property.id]}
+							{#if propertyErrors[property.id]?.saleDate}
 								<span class="mt-1 text-[10px] text-rose-600">
-									{propertyErrors[property.id]}
+									{propertyErrors[property.id]?.saleDate}
 								</span>
 							{/if}
 						</div>

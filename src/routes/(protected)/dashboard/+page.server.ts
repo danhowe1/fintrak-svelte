@@ -12,6 +12,7 @@ import {
 	getSingleScenarioForUser,
 	updateCashflowAmount,
 	updatePersonRetirementAge,
+	updatePersonDetails,
 	updatePropertyDetails,
 	updateAccountInterestRate
 } from '$lib/server/database';
@@ -175,6 +176,29 @@ export const actions: Actions = {
 		await updatePersonRetirementAge(scenarioId, assetId, retirementAge);
 		return { success: true };
 	},
+	updatePersonDetails: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const name = String(formData.get('name') ?? '').trim();
+		const startDateRaw = String(formData.get('startDate') ?? '').trim();
+		const dobRaw = String(formData.get('dob') ?? '').trim();
+		const startDate = parseYearMonthInput(startDateRaw);
+		const dob = parseYearMonthInput(dobRaw);
+		if (!scenarioId || !assetId || !name || startDate === null || dob === null) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updatePersonDetails(scenarioId, assetId, { name, startDate, dob });
+		return { success: true };
+	},
 	updateCashflowAmount: async (event) => {
 		const userId = event.locals.appUserId;
 		if (!userId) {
@@ -202,13 +226,38 @@ export const actions: Actions = {
 		const formData = await event.request.formData();
 		const scenarioId = String(formData.get('scenarioId') ?? '');
 		const assetId = String(formData.get('assetId') ?? '');
+		const name = String(formData.get('name') ?? '').trim();
+		const startDate = String(formData.get('startDate') ?? '').trim();
+		const marketValueRaw = Number(formData.get('marketValue'));
 		const marketGrowthRateRaw = Number(formData.get('marketGrowthRate'));
 		const marketGrowthRate = Number.isFinite(marketGrowthRateRaw)
 			? Math.round(marketGrowthRateRaw * 10) / 10
 			: Number.NaN;
+		const marketValue = Number.isFinite(marketValueRaw)
+			? Math.round(marketValueRaw * 100) / 100
+			: Number.NaN;
+		const normalizedStartDate = parseYearMonthInput(startDate);
 		const saleDateRaw = String(formData.get('saleDate') ?? '').trim();
 		const saleDate = saleDateRaw.length > 0 ? saleDateRaw : null;
-		if (!scenarioId || !assetId || !Number.isFinite(marketGrowthRate)) {
+		const fixedSellingCostsRaw = Number(formData.get('fixedSellingCosts'));
+		const variableSellingCostsRaw = Number(formData.get('variableSellingCosts'));
+		const fixedSellingCosts = Number.isFinite(fixedSellingCostsRaw)
+			? Math.round(fixedSellingCostsRaw * 100) / 100
+			: Number.NaN;
+		const variableSellingCosts = Number.isFinite(variableSellingCostsRaw)
+			? Math.round(variableSellingCostsRaw * 100) / 100
+			: Number.NaN;
+		if (
+			!scenarioId ||
+			!assetId ||
+			!name ||
+			!startDate ||
+			normalizedStartDate === null ||
+			!Number.isFinite(marketValue) ||
+			!Number.isFinite(marketGrowthRate) ||
+			!Number.isFinite(fixedSellingCosts) ||
+			!Number.isFinite(variableSellingCosts)
+		) {
 			return fail(400, { error: 'Invalid input.' });
 		}
 		const scenario = await getScenarioForUserById(userId, scenarioId);
@@ -216,8 +265,13 @@ export const actions: Actions = {
 			return fail(404, { error: 'Scenario not found.' });
 		}
 		await updatePropertyDetails(scenarioId, assetId, {
+			name,
+			startDate,
+			marketValue,
 			marketGrowthRate,
-			saleDate
+			saleDate,
+			fixedSellingCosts,
+			variableSellingCosts
 		});
 		return { success: true };
 	},
