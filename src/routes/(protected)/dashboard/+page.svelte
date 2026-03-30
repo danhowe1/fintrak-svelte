@@ -1304,7 +1304,7 @@ const updateMortgageDetails = async (
 			const targetMap = transaction.cashflowType === 'income' ? incomeMap : expenseMap;
 			const accountName = transaction.accountName;
 			const category = formatLabel(transaction.category);
-			const description = transaction.description ?? '—';
+			const description = (transaction.description ?? '').trim();
 
 			const categoryMap =
 				targetMap.get(accountName) ?? new Map<string, Map<string, number[]>>();
@@ -1331,11 +1331,18 @@ const updateMortgageDetails = async (
 					const descMap = categoryMap.get(category)!;
 					const descNodes: PnlNode[] = [];
 					const descTotals: number[][] = [];
+					const noDescriptionTotals: number[] = Array(headers.length).fill(0);
 
 					for (const description of Array.from(descMap.keys()).sort((a, b) =>
 						a.localeCompare(b)
 					)) {
 						const values = descMap.get(description)!;
+						if (!description) {
+							values.forEach((value, idx) => {
+								noDescriptionTotals[idx] += value;
+							});
+							continue;
+						}
 						descTotals.push(values);
 						descNodes.push({
 							id: `${accountName}|${category}|${description}`,
@@ -1345,14 +1352,19 @@ const updateMortgageDetails = async (
 						});
 					}
 
-					const categoryValues = sumArrays(descTotals, headers.length);
+					const categoryValues = sumArrays(
+						noDescriptionTotals.some((value) => value !== 0)
+							? [...descTotals, noDescriptionTotals]
+							: descTotals,
+						headers.length
+					);
 					categoryTotals.push(categoryValues);
 					categoryNodes.push({
 						id: `${accountName}|${category}`,
 						label: category,
 						level: 2,
 						values: categoryValues,
-						children: descNodes
+						children: descNodes.length > 0 ? descNodes : undefined
 					});
 				}
 
