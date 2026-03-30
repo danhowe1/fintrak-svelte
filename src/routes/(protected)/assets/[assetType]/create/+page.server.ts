@@ -525,9 +525,9 @@ export const load: PageServerLoad = async (event) => {
 	const properties = (await getAssetsForScenario(scenario.id)).filter(
 		(asset) => asset.asset_type === 'property'
 	);
-	const currentAccounts = accounts.filter((account) => account.account_type === 'current_account');
+	const cashAccounts = accounts.filter((account) => account.account_type === 'cash_account');
 
-	return { scenario, assetType: assetType.data, accounts, properties, currentAccounts };
+	return { scenario, assetType: assetType.data, accounts, properties, cashAccounts };
 };
 
 export const actions: Actions = {

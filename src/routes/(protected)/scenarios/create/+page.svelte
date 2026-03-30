@@ -119,7 +119,7 @@
 			</div>
 		</FormSection>
 
-		<FormSection title="Default current account">
+		<FormSection title="Default cash account">
 			<div class="grid gap-4 md:grid-cols-3">
 				<FormField
 					label="Account name"

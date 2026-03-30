@@ -68,9 +68,8 @@ type ProjectionCashflow = {
 type ProjectionAccount = {
 	id: string;
 	account_type:
-		| 'current_account'
+		| 'cash_account'
 		| 'mortgage_account'
-		| 'savings_account'
 		| 'credit_card'
 		| 'brokerage'
 		| 'super_account';
@@ -661,7 +660,7 @@ export const buildProjection = (input: {
 		}
 
 		for (const [accountId, accountInfo] of accountMap.entries()) {
-			if (accountInfo.type !== 'current_account' && accountInfo.type !== 'savings_account') {
+			if (accountInfo.type !== 'cash_account') {
 				continue;
 			}
 

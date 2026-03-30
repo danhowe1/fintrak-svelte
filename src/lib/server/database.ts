@@ -221,9 +221,8 @@ export async function getAssetsForScenario(scenarioId: string) {
 export type AccountListItem = {
 	id: string;
 	account_type:
-		| 'current_account'
+		| 'cash_account'
 		| 'mortgage_account'
-		| 'savings_account'
 		| 'credit_card'
 		| 'brokerage'
 		| 'super_account';
@@ -909,7 +908,7 @@ async function insertDefaultAccount(
 			insert into accounts (scenario_id, account_type, name, details)
 			values (
 				$1::uuid,
-				'current_account'::account_type,
+				'cash_account'::account_type,
 				$2::text,
 				jsonb_build_object(
 					'interestRate', $3::numeric,
@@ -1102,7 +1101,7 @@ export async function createPersonAssetWithCashflows(input: CreatePersonAssetWit
 			return await createAccount(
 				{
 					scenarioId: input.scenarioId,
-					accountType: 'current_account',
+					accountType: 'cash_account',
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
@@ -1209,7 +1208,7 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 			return await createAccount(
 				{
 					scenarioId: input.scenarioId,
-					accountType: 'current_account',
+					accountType: 'cash_account',
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
@@ -1292,7 +1291,7 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 			return await createAccount(
 				{
 					scenarioId: input.scenarioId,
-					accountType: 'current_account',
+					accountType: 'cash_account',
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
@@ -1322,7 +1321,7 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 			return await createAccount(
 				{
 					scenarioId: input.scenarioId,
-					accountType: 'current_account',
+					accountType: 'cash_account',
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,

@@ -20,7 +20,7 @@ const currencySchema = z
 	.transform((value) => Number(value));
 
 const createAccountSchema = z.object({
-	accountType: z.enum(['current_account', 'savings_account', 'credit_card']),
+	accountType: z.enum(['cash_account', 'credit_card']),
 	name: z.string().trim().min(1, 'Account name is required'),
 	interestRate: decimalUpToTwoPlacesSchema,
 	openingBalance: currencySchema,

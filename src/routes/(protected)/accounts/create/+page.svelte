@@ -47,10 +47,9 @@
 						bind:this={accountTypeSelect}
 						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
 						required
-						value={formValues.accountType ?? 'current_account'}
+						value={formValues.accountType ?? 'cash_account'}
 					>
-						<option value="current_account">Current account</option>
-						<option value="savings_account">Savings account</option>
+						<option value="cash_account">Cash account</option>
 						<option value="credit_card">Credit card</option>
 					</select>
 					{#if formErrors.accountType?.[0]}

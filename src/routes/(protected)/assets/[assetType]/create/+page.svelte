@@ -532,8 +532,8 @@
 							<option value="" disabled selected={mortgagePaymentSourceChoice === ''}>
 								Select an account
 							</option>
-							<option value="new">Create new current account</option>
-							{#each data.currentAccounts as account}
+							<option value="new">Create new cash account</option>
+							{#each data.cashAccounts as account}
 								<option value={account.id}>{account.name}</option>
 							{/each}
 						</select>
@@ -587,8 +587,8 @@
 						>
 							<option value="none">None</option>
 							<option value="same_as_payment_source">Same as payment source</option>
-							<option value="new">Create new current account</option>
-							{#each data.currentAccounts as account}
+							<option value="new">Create new cash account</option>
+							{#each data.cashAccounts as account}
 								<option value={account.id}>{account.name}</option>
 							{/each}
 						</select>
