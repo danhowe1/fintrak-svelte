@@ -321,12 +321,15 @@ export const buildProjection = (input: {
 	}
 
 	const propertySaleDates = new Map<string, YearMonth>();
+	const propertyNames = new Map<string, string>();
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'property') continue;
+		if (asset.id) {
+			propertyNames.set(asset.id, asset.name ?? 'Property');
+		}
 		const saleDateValue = asset.details?.saleDate;
 		const saleDate = parseYearMonth(saleDateValue);
-		if (!saleDate) continue;
-		if (asset.id) {
+		if (saleDate && asset.id) {
 			propertySaleDates.set(asset.id, saleDate);
 		}
 	}
@@ -420,6 +423,7 @@ export const buildProjection = (input: {
 			fundingSourceAccountId: string;
 			offsetAccountId: string | null;
 			propertySaleDate: YearMonth | null;
+			propertyName: string | null;
 			termRemainingMonths: number;
 			startDate: YearMonth | null;
 		}
@@ -446,6 +450,7 @@ export const buildProjection = (input: {
 			asset.property_id && propertySaleDates.has(asset.property_id)
 				? propertySaleDates.get(asset.property_id) ?? null
 				: null;
+		const propertyName = asset.property_id ? propertyNames.get(asset.property_id) ?? null : null;
 		let mortgageAccountId: string | null = null;
 		let fundingSourceAccountId: string | null = null;
 		let offsetAccountId: string | null = null;
@@ -470,6 +475,7 @@ export const buildProjection = (input: {
 				fundingSourceAccountId,
 				offsetAccountId,
 				propertySaleDate,
+				propertyName,
 				termRemainingMonths: termMonths,
 				startDate: startDate ?? accountStartDate
 			});
@@ -887,7 +893,8 @@ export const buildProjection = (input: {
 						'transfer',
 						'mortgage_repayment',
 						`mortgage_payoff_${assetId}`,
-						'Mortgage payoff'
+						'Mortgage payoff',
+						state.propertyName
 					);
 					pushTransaction(
 						state.mortgageAccountId,
@@ -895,7 +902,8 @@ export const buildProjection = (input: {
 						'transfer',
 						'mortgage_repayment',
 						`mortgage_payoff_${assetId}`,
-						'Mortgage payoff'
+						'Mortgage payoff',
+						state.propertyName
 					);
 					recordMortgagePaidOffEvent(state.mortgageAccountId, monthLabel);
 					state.termRemainingMonths = 0;
@@ -931,14 +939,18 @@ export const buildProjection = (input: {
 					-payment,
 					'transfer',
 					'mortgage_repayment',
-					`mortgage_payment_${assetId}`
+					`mortgage_payment_${assetId}`,
+					null,
+					state.propertyName
 				);
 				pushTransaction(
 					state.mortgageAccountId,
 					payment,
 					'transfer',
 					'mortgage_repayment',
-					`mortgage_payment_${assetId}`
+					`mortgage_payment_${assetId}`,
+					null,
+					state.propertyName
 				);
 			}
 
