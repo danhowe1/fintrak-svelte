@@ -65,6 +65,7 @@ const cashflowFrequencyOptions = [
 ];
 
 type ProjectionRange = '1y' | '5y' | '10y' | 'all';
+type AssetPanelTab = 'assets' | 'accounts';
 type CashflowDraft = {
 	type: 'income' | 'expense';
 	category:
@@ -90,6 +91,7 @@ const normalizeProjectionRange = (value: unknown): ProjectionRange => {
 
 let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
 let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionRange);
+let assetPanelTab: AssetPanelTab = 'assets';
 let isUpdating = false;
 let updateLocks = new Set<string>();
 let expandedPnlNodes = new Set<string>();
@@ -1918,8 +1920,31 @@ const updateMortgageDetails = async (
 	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
 		<div>
 			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-				<h3 class="text-sm font-semibold text-slate-900">Assets</h3>
-				<div class="h-px w-full bg-transparent"></div>
+				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							assetPanelTab === 'assets'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (assetPanelTab = 'assets')}
+					>
+						Assets
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							assetPanelTab === 'accounts'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (assetPanelTab = 'accounts')}
+					>
+						Accounts
+					</button>
+				</div>
+				{#if assetPanelTab === 'assets'}
 			<div class="assets-cards mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -3440,6 +3465,21 @@ const updateMortgageDetails = async (
 				</div>
 				{/each}
 			</div>
+				{:else}
+					<div class="accounts-cards mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+						{#if accountsList.length > 0}
+							{#each accountsList as account}
+								<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+									<h3 class="truncate text-sm font-semibold text-slate-900">{account.name}</h3>
+									<div class="mt-3 text-xs text-slate-500">Account type</div>
+									<div class="text-xs text-slate-700">{formatLabel(account.account_type)}</div>
+								</div>
+							{/each}
+						{:else}
+							<div class="text-sm text-slate-600">No accounts to show yet.</div>
+						{/if}
+					</div>
+				{/if}
 			</div>
 		</div>
 		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
