@@ -30,7 +30,7 @@ const positiveCurrencySchema = currencySchema.refine((value) => value > 0, {
 
 const createScenarioSchema = z.object({
 	scenarioName: z.string().trim().min(1, 'Scenario name is required'),
-	startDate: z
+	personStartDate: z
 		.string()
 		.trim()
 		.regex(/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/, { message: 'Start month is required' }),
@@ -64,7 +64,7 @@ export const actions: Actions = {
 		const formData = await event.request.formData();
 		const payload = {
 			scenarioName: formData.get('scenarioName'),
-			startDate: formData.get('startDate'),
+			personStartDate: formData.get('personStartDate'),
 			personName: formData.get('personName'),
 			personDob: formData.get('personDob'),
 			retirementAge: formData.get('retirementAge'),
@@ -83,7 +83,7 @@ export const actions: Actions = {
 
 		const {
 			scenarioName,
-			startDate,
+			personStartDate,
 			personName,
 			personDob,
 			retirementAge,
@@ -105,7 +105,7 @@ export const actions: Actions = {
 		const scenarioId = await createScenarioWithPerson({
 			userId,
 			scenarioName,
-			startDate: normalizeMonth(startDate),
+			startDate: normalizeMonth(personStartDate),
 			personName,
 			personDob: normalizeMonth(personDob),
 			retirementAge,

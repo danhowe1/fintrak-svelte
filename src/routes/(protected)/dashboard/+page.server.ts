@@ -91,7 +91,6 @@ export const load: PageServerLoad = async (event) => {
 					: null;
 
 	const projection = buildProjection({
-		scenarioStartDate: scenario.details?.startDate,
 		inflationRate: parentData.sessionRates.inflationRate,
 		interestRateChange: parentData.sessionRates.interestRateChange,
 		projectionRange,

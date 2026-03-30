@@ -1,13 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { formatYearMonthInput } from '$lib/yearMonth';
 
 	export let data: PageData;
-
-	const formatMonth = (value?: unknown) => {
-		const formatted = formatYearMonthInput(value);
-		return formatted || '—';
-	};
 </script>
 
 <h1>Scenarios</h1>
@@ -36,9 +30,6 @@
 				<div class="flex flex-wrap items-start justify-between gap-4">
 					<div>
 						<h2 class="text-lg font-semibold text-slate-900">{scenario.name}</h2>
-						<p class="mt-1 text-sm text-slate-600">
-							Start month: {formatMonth(scenario.details?.startDate)}
-						</p>
 						<div class="mt-2 text-sm text-slate-600"></div>
 					</div>
 

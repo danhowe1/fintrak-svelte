@@ -66,6 +66,16 @@
 				/>
 
 				<FormField
+					type="text"
+					label="Start date (MM YYYY)"
+					name="startDate"
+					inputmode="numeric"
+					value={formValues.startDate ?? ''}
+					error={formErrors.startDate?.[0]}
+					required
+				/>
+
+				<FormField
 					type="number"
 					label="Interest rate (%)"
 					name="interestRate"
@@ -107,8 +117,8 @@
 						</label>
 					{/each}
 				</div>
-				{#if form?.errors?.personIds?.[0]}
-					<span class="text-xs text-rose-600">{form.errors.personIds[0]}</span>
+				{#if formErrors.personIds?.[0]}
+					<span class="text-xs text-rose-600">{formErrors.personIds[0]}</span>
 				{/if}
 			{/if}
 		</FormSection>

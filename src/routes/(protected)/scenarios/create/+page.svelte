@@ -40,16 +40,6 @@
 		<FormSection title="Scenario details">
 			<div class="grid gap-4 md:grid-cols-2">
 				<FormField
-					type="text"
-					label="Start month"
-					name="startDate"
-					inputmode="numeric"
-					value={form?.values?.startDate ?? defaultStartMonth}
-					error={form?.errors?.startDate?.[0]}
-					required
-				/>
-
-				<FormField
 					label="Scenario name"
 					name="scenarioName"
 					value={form?.values?.scenarioName ?? ''}
@@ -64,6 +54,16 @@
 
 		<FormSection title="First family member">
 			<div class="grid gap-4 md:grid-cols-3">
+				<FormField
+					type="text"
+					label="Start month"
+					name="personStartDate"
+					inputmode="numeric"
+					value={form?.values?.personStartDate ?? defaultStartMonth}
+					error={form?.errors?.personStartDate?.[0]}
+					required
+				/>
+
 				<FormField
 					label="Name"
 					name="personName"

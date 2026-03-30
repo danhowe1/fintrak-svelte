@@ -6,6 +6,7 @@ import {
 	getAssetsForScenario,
 	getScenarioForUserById
 } from '$lib/server/database';
+import { parseYearMonthInput } from '$lib/yearMonth';
 
 const decimalUpToTwoPlacesSchema = z
 	.string()
@@ -22,6 +23,10 @@ const currencySchema = z
 const createAccountSchema = z.object({
 	accountType: z.enum(['cash_account', 'credit_card']),
 	name: z.string().trim().min(1, 'Account name is required'),
+	startDate: z
+		.string()
+		.trim()
+		.regex(/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/, { message: 'Start month is required' }),
 	interestRate: decimalUpToTwoPlacesSchema,
 	openingBalance: currencySchema,
 	personIds: z.array(z.string()).min(1, 'Select at least one account holder')
@@ -70,6 +75,7 @@ export const actions: Actions = {
 		const payload = {
 			accountType: formData.get('accountType'),
 			name: formData.get('name'),
+			startDate: formData.get('startDate'),
 			interestRate: formData.get('interestRate'),
 			openingBalance: formData.get('openingBalance'),
 			personIds: formData.getAll('personIds')
@@ -81,7 +87,14 @@ export const actions: Actions = {
 			return fail(400, { errors, values: payload });
 		}
 
-		const { accountType, name, interestRate, openingBalance, personIds } = parsed.data;
+		const { accountType, name, startDate, interestRate, openingBalance, personIds } = parsed.data;
+		const normalizedStartDate = parseYearMonthInput(startDate);
+		if (normalizedStartDate === null) {
+			return fail(400, {
+				errors: { startDate: ['Start month is required'] },
+				values: payload
+			});
+		}
 
 		const assets = await getAssetsForScenario(scenario.id);
 		const validPeople = new Set(
@@ -102,7 +115,8 @@ export const actions: Actions = {
 			name,
 			details: {
 				interestRate,
-				openingBalance
+				openingBalance,
+				startDate: normalizedStartDate
 			},
 			holderAssetIds
 		});

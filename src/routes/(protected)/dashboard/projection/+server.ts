@@ -66,7 +66,6 @@ export const GET: RequestHandler = async (event) => {
 	const includeCashflows = event.url.searchParams.get('includeCashflows') === 'true';
 
 	const projection = buildProjection({
-		scenarioStartDate: scenario.details?.startDate,
 		inflationRate,
 		interestRateChange,
 		projectionRange,

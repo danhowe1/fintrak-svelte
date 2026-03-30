@@ -104,24 +104,18 @@ export async function countScenariosForUser(userId: string) {
 export type ScenarioSummary = {
 	id: string;
 	name: string;
-	details?: {
-		startDate?: number;
-	};
 };
 
 export type ScenarioListItem = {
 	id: string;
 	name: string;
-	details: {
-		startDate?: number;
-	};
 	created_at: string;
 };
 
 export async function getSingleScenarioForUser(userId: string) {
 	const result = await getPool().query<ScenarioSummary>(
 		`
-			select s.id, s.name, s.details
+			select s.id, s.name
 			from scenarios s
 			left join scenario_members sm
 				on sm.scenario_id = s.id
@@ -140,7 +134,7 @@ export async function getSingleScenarioForUser(userId: string) {
 export async function getScenarioForUserById(userId: string, scenarioId: string) {
 	const result = await getPool().query<ScenarioListItem>(
 		`
-			select s.id, s.name, s.details, s.created_at
+			select s.id, s.name, s.created_at
 			from scenarios s
 			left join scenario_members sm
 				on sm.scenario_id = s.id
@@ -158,7 +152,7 @@ export async function getScenarioForUserById(userId: string, scenarioId: string)
 export async function getScenariosForUser(userId: string) {
 	const result = await getPool().query<ScenarioListItem>(
 		`
-			select distinct s.id, s.name, s.details, s.created_at
+			select distinct s.id, s.name, s.created_at
 			from scenarios s
 			left join scenario_members sm
 				on sm.scenario_id = s.id
@@ -980,17 +974,11 @@ async function createIdentity(provider: string, providerUserId: string, appUserI
 async function insertScenario(client: DbClient, input: CreateScenarioWithPersonInput) {
 	const scenarioResult = await client.query<{ id: string }>(
 		`
-			insert into scenarios (name, details, created_by)
-			values (
-				$1::text,
-				jsonb_build_object(
-					'startDate', $2::int
-				),
-				$3::text
-			)
+			insert into scenarios (name, created_by)
+			values ($1::text, $2::text)
 			returning id
 		`,
-		[input.scenarioName, input.startDate, input.userId]
+		[input.scenarioName, input.userId]
 	);
 
 	const scenarioId = scenarioResult.rows[0]?.id;
@@ -1056,12 +1044,13 @@ async function insertDefaultAccount(
 				$2::text,
 				jsonb_build_object(
 					'interestRate', $3::numeric,
-					'openingBalance', $4::numeric
+					'openingBalance', $4::numeric,
+					'startDate', $5::int
 				)
 			)
 			returning id
 		`,
-		[scenarioId, input.accountName, input.accountInterestRate, input.openingBalance]
+		[scenarioId, input.accountName, input.accountInterestRate, input.openingBalance, input.startDate]
 	);
 
 	const accountId = accountResult.rows[0]?.id;
@@ -1249,7 +1238,8 @@ export async function createPersonAssetWithCashflows(input: CreatePersonAssetWit
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
-						openingBalance: account.openingBalance
+						openingBalance: account.openingBalance,
+						startDate: input.startDate
 					}
 				},
 				client
@@ -1356,7 +1346,8 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
-						openingBalance: account.openingBalance
+						openingBalance: account.openingBalance,
+						startDate: input.startDate
 					}
 				},
 				client
@@ -1398,6 +1389,8 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
+		const parsedStartDate = Number(input.details?.startDate);
+		const mortgageStartDate = Number.isFinite(parsedStartDate) ? parsedStartDate : null;
 
 		const assetId = await createAsset(
 			{
@@ -1417,7 +1410,8 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 				name: input.mortgageAccount.name,
 				details: {
 					interestRate: input.mortgageAccount.interestRate,
-					openingBalance: input.mortgageAccount.openingBalance
+					openingBalance: input.mortgageAccount.openingBalance,
+					...(mortgageStartDate !== null ? { startDate: mortgageStartDate } : {})
 				}
 			},
 			client
@@ -1439,7 +1433,8 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
-						openingBalance: account.openingBalance
+						openingBalance: account.openingBalance,
+						...(mortgageStartDate !== null ? { startDate: mortgageStartDate } : {})
 					}
 				},
 				client
@@ -1469,7 +1464,8 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 					name: account.name,
 					details: {
 						interestRate: account.interestRate,
-						openingBalance: account.openingBalance
+						openingBalance: account.openingBalance,
+						...(mortgageStartDate !== null ? { startDate: mortgageStartDate } : {})
 					}
 				},
 				client

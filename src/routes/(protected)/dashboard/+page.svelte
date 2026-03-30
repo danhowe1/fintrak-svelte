@@ -432,6 +432,14 @@ const getDefaultDraft = (
 	type: 'income' | 'expense',
 	assetType: string
 ): CashflowDraft => {
+	const now = new Date();
+	const fallbackStartMonth = `${String(now.getMonth() + 1).padStart(2, '0')} ${now.getFullYear()}`;
+	const defaultStartDate =
+		monthLabelFromDate(
+			assetsList.find((asset) => asset.asset_type === 'person')?.details?.startDate ??
+				accountsList[0]?.details?.startDate ??
+				''
+		) || fallbackStartMonth;
 	const options = getAssetAccountOptions(assetId);
 	const defaultCategory: CashflowDraft['category'] =
 		assetType === 'person'
@@ -451,7 +459,7 @@ const getDefaultDraft = (
 		frequency: 'monthly',
 		amount: '',
 		description: '',
-		startDate: monthLabelFromDate(data.scenario.details?.startDate ?? ''),
+		startDate: defaultStartDate,
 		endDate: '',
 		inflationAffected: true,
 		assetAccountId: options[0]?.id ?? ''
@@ -1514,7 +1522,7 @@ const updateMortgageDetails = async (
 		<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h2 class="text-lg font-semibold text-slate-900">
-			Projections for {data.scenario.name}
+			Projections for {data.scenario.name} ({formatYearMonthInput(projectionData.startDate)})
 		</h2>
 		<div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">

@@ -176,7 +176,6 @@ const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 };
 
 export const buildProjection = (input: {
-	scenarioStartDate?: number | null;
 	inflationRate?: number | null;
 	interestRateChange?: number | null;
 	projectionRange?: '1y' | '5y' | '10y' | 'all';
@@ -186,8 +185,27 @@ export const buildProjection = (input: {
 	assets: ProjectionAsset[];
 	assetAccounts: ProjectionAssetAccount[];
 }): ProjectionResult => {
-	const startYearMonth = parseYearMonth(input.scenarioStartDate ?? undefined) ??
-		parseYearMonth(input.cashflows[0]?.start_date) ?? { year: new Date().getFullYear(), month: 1 };
+	const startYearMonth = (() => {
+		const candidates: YearMonth[] = [];
+		for (const cashflow of input.cashflows) {
+			const start = parseYearMonth(cashflow.start_date);
+			if (start) candidates.push(start);
+		}
+		for (const account of input.accounts) {
+			const start = parseYearMonth(account.details?.startDate);
+			if (start) candidates.push(start);
+		}
+		for (const asset of input.assets) {
+			const start = parseYearMonth(asset.details?.startDate);
+			if (start) candidates.push(start);
+		}
+		if (candidates.length === 0) {
+			return { year: new Date().getFullYear(), month: 1 };
+		}
+		return candidates.reduce((earliest, current) =>
+			yearMonthIndex(current) < yearMonthIndex(earliest) ? current : earliest
+		);
+	})();
 
 	const cappedEnd = (() => {
 		const naturalEnd = getYoungestHundredYearMonth(input.assets, startYearMonth);
@@ -220,10 +238,18 @@ export const buildProjection = (input: {
 				name: account.name,
 				type: account.account_type,
 				interestRate: getInterestRate(account.details),
-				balance: getOpeningBalance(account.details)
+				startDate: parseYearMonth(account.details?.startDate),
+				openingBalance: getOpeningBalance(account.details),
+				balance: 0
 			}
 		])
 	);
+
+	for (const [, accountInfo] of accountMap) {
+		if (!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, startYearMonth) <= 0) {
+			accountInfo.balance = accountInfo.openingBalance;
+		}
+	}
 
 	const transactions: ProjectionTransaction[] = [];
 	const events: ProjectionResult['events'] = [];
@@ -395,13 +421,16 @@ export const buildProjection = (input: {
 		}
 
 		if (mortgageAccountId && fundingSourceAccountId && termMonths > 0) {
+			const mortgageAccountDetails =
+				input.accounts.find((account) => account.id === mortgageAccountId)?.details ?? {};
+			const accountStartDate = parseYearMonth(mortgageAccountDetails?.startDate);
 			mortgageStates.set(asset.id, {
 				mortgageAccountId,
 				fundingSourceAccountId,
 				offsetAccountId,
 				propertySaleDate,
 				termRemainingMonths: termMonths,
-				startDate
+				startDate: startDate ?? accountStartDate
 			});
 		}
 	}
@@ -412,6 +441,13 @@ export const buildProjection = (input: {
 		const currentDate = toYearMonthInt(current);
 		const yearDiff = current.year - startYearMonth.year;
 		const inflationFactor = Math.pow(1 + inflationRate / 100, yearDiff);
+
+		for (const [, accountInfo] of accountMap) {
+			if (!accountInfo.startDate) continue;
+			if (monthsBetweenYearMonths(accountInfo.startDate, current) !== 0) continue;
+			if (Math.abs(accountInfo.balance) > 0.0000001) continue;
+			accountInfo.balance = accountInfo.openingBalance;
+		}
 
 		const pushTransaction = (
 			accountId: string,
@@ -424,6 +460,7 @@ export const buildProjection = (input: {
 		) => {
 			const accountInfo = accountMap.get(accountId);
 			if (!accountInfo) return;
+			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0) return;
 			accountInfo.balance += signedAmount;
 			transactions.push({
 				cashflowId,
@@ -703,6 +740,9 @@ export const buildProjection = (input: {
 			if (accountInfo.type !== 'cash_account') {
 				continue;
 			}
+			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0) {
+				continue;
+			}
 
 			if (accountInfo.balance <= 0) {
 				continue;
@@ -738,7 +778,11 @@ export const buildProjection = (input: {
 			series.points.push({
 				date: currentDate,
 				monthLabel,
-				balance: accountInfo?.balance ?? 0
+				balance:
+					accountInfo &&
+					(!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, current) <= 0)
+						? accountInfo.balance
+						: 0
 			});
 		}
 
@@ -746,6 +790,7 @@ export const buildProjection = (input: {
 			if (insolventEventAccountIds.has(accountId)) continue;
 			const accountInfo = accountMap.get(accountId);
 			if (!accountInfo) continue;
+			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0) continue;
 			if (accountInfo.balance < 0) {
 				events.push({
 					tone: 'negative',
