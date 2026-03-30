@@ -1140,7 +1140,9 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 	});
 </script>
 
-<section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+<section class="not-prose mt-6">
+	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+		<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h2 class="text-lg font-semibold text-slate-900">
 			Projections for {data.scenario.name}
@@ -1494,8 +1496,30 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 					</div>
 				</div>
 			{/if}
+			</div>
+		{/if}
 		</div>
-	{/if}
+		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+			<h3 class="text-sm font-semibold text-slate-900">Events</h3>
+			{#if (projectionData.events?.length ?? 0) > 0}
+				<div class="mt-3 space-y-2">
+					{#each projectionData.events as event}
+						<div
+							class={`rounded-lg border px-3 py-2 text-sm ${
+								event.tone === 'negative'
+									? 'border-rose-200 bg-rose-50 text-rose-700'
+									: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+							}`}
+						>
+							{event.message}
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<div class="mt-3 text-sm text-slate-600">No events for this projection.</div>
+			{/if}
+		</div>
+	</div>
 </section>
 
 <section class="not-prose mt-6">

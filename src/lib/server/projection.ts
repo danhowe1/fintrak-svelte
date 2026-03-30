@@ -47,6 +47,10 @@ export type ProjectionResult = {
 	endDate: number;
 	transactions: ProjectionTransaction[];
 	accounts: AccountBalanceSeries[];
+	events: {
+		tone: 'negative' | 'positive';
+		message: string;
+	}[];
 };
 
 type ProjectionCashflow = {
@@ -214,11 +218,16 @@ export const buildProjection = (input: {
 	);
 
 	const transactions: ProjectionTransaction[] = [];
+	const events: ProjectionResult['events'] = [];
 	const accountSeries: AccountBalanceSeries[] = input.accounts.map((account) => ({
 		accountId: account.id,
 		accountName: account.name,
 		points: []
 	}));
+	const cashAccountIds = input.accounts
+		.filter((account) => account.account_type === 'cash_account')
+		.map((account) => account.id);
+	const insolventEventAccountIds = new Set<string>();
 
 	const cashflowMeta = input.cashflows.map((cashflow) => {
 		const start = parseYearMonth(cashflow.start_date);
@@ -295,6 +304,17 @@ export const buildProjection = (input: {
 			assetName: string;
 		}
 	>();
+	const mortgagePaidOffEventAccountIds = new Set<string>();
+	const recordMortgagePaidOffEvent = (mortgageAccountId: string, monthLabel: string) => {
+		if (mortgagePaidOffEventAccountIds.has(mortgageAccountId)) return;
+		const mortgageAccount = accountMap.get(mortgageAccountId);
+		if (!mortgageAccount) return;
+		events.push({
+			tone: 'positive',
+			message: `Mortgage ${mortgageAccount.name} paid off on ${monthLabel}.`
+		});
+		mortgagePaidOffEventAccountIds.add(mortgageAccountId);
+	};
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'property' || !asset.id) continue;
 		const startDateValue = asset.details?.startDate;
@@ -580,6 +600,7 @@ export const buildProjection = (input: {
 			if (!mortgageAccount) continue;
 			const principal = Math.abs(mortgageAccount.balance);
 			if (principal === 0) {
+				recordMortgagePaidOffEvent(state.mortgageAccountId, monthLabel);
 				state.termRemainingMonths -= 1;
 				continue;
 			}
@@ -604,6 +625,7 @@ export const buildProjection = (input: {
 						`mortgage_payoff_${assetId}`,
 						'Mortgage payoff'
 					);
+					recordMortgagePaidOffEvent(state.mortgageAccountId, monthLabel);
 					state.termRemainingMonths = 0;
 					continue;
 				}
@@ -623,11 +645,13 @@ export const buildProjection = (input: {
 			const effectiveRate = baseRate + interestRateChange;
 			const monthlyRate = effectiveRate / 100 / 12;
 			const remaining = state.termRemainingMonths;
-			const payment =
+			const scheduledPayment =
 				monthlyRate === 0
 					? principal / remaining
 					: (principal * monthlyRate) / (1 - Math.pow(1 + monthlyRate, -remaining));
 			const interestAmount = interestPrincipal * monthlyRate;
+			// Do not allow mortgage balance to cross above zero due to an oversized final payment.
+			const payment = Math.min(scheduledPayment, principal + Math.max(interestAmount, 0));
 
 			if (payment > 0) {
 				pushTransaction(
@@ -654,6 +678,10 @@ export const buildProjection = (input: {
 					'interest',
 					`mortgage_interest_${assetId}`
 				);
+			}
+
+			if (Math.abs(mortgageAccount.balance) <= 0.01) {
+				recordMortgagePaidOffEvent(state.mortgageAccountId, monthLabel);
 			}
 
 			state.termRemainingMonths -= 1;
@@ -701,12 +729,33 @@ export const buildProjection = (input: {
 				balance: accountInfo?.balance ?? 0
 			});
 		}
+
+		for (const accountId of cashAccountIds) {
+			if (insolventEventAccountIds.has(accountId)) continue;
+			const accountInfo = accountMap.get(accountId);
+			if (!accountInfo) continue;
+			if (accountInfo.balance < 0) {
+				events.push({
+					tone: 'negative',
+					message: `Account ${accountInfo.name} runs out of money on ${monthLabel}.`
+				});
+				insolventEventAccountIds.add(accountId);
+			}
+		}
+	}
+
+	if (insolventEventAccountIds.size === 0) {
+		events.push({
+			tone: 'positive',
+			message: 'Congratulations - you are solvent for this time frame'
+		});
 	}
 
 	return {
 		startDate: toYearMonthInt(startYearMonth),
 		endDate: toYearMonthInt(endYearMonth),
 		transactions,
-		accounts: accountSeries
+		accounts: accountSeries,
+		events
 	};
 };
