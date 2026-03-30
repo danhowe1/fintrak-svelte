@@ -152,6 +152,14 @@ const getInterestRate = (details: Record<string, unknown>) => {
 	return 0;
 };
 
+const formatEventCurrency = (value: number) => {
+	if (!Number.isFinite(value)) return '$0';
+	return `$${value.toLocaleString('en-AU', {
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 0
+	})}`;
+};
+
 const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 	switch (frequency) {
 		case 'monthly':
@@ -558,6 +566,10 @@ export const buildProjection = (input: {
 				'Asset sale',
 				property.assetName
 			);
+			events.push({
+				tone: 'positive',
+				message: `${property.assetName} sold on ${monthLabel} for ${formatEventCurrency(saleAmount)}.`
+			});
 
 			const inflationFactor = Math.pow(1 + inflationRate / 100, yearsHeld);
 			const inflatedFixedCosts = property.fixedSellingCosts * inflationFactor;
@@ -745,9 +757,9 @@ export const buildProjection = (input: {
 	}
 
 	if (insolventEventAccountIds.size === 0) {
-		events.push({
+		events.unshift({
 			tone: 'positive',
-			message: 'Congratulations - you are solvent for this time frame'
+			message: 'Congratulations - you are solvent for this time frame.'
 		});
 	}
 
