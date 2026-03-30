@@ -12,7 +12,8 @@ import {
 	getSingleScenarioForUser,
 	updateCashflowAmount,
 	updatePersonRetirementAge,
-	updatePropertyDetails
+	updatePropertyDetails,
+	updateAccountInterestRate
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
 import { parseYearMonthInput } from '$lib/yearMonth';
@@ -217,6 +218,28 @@ export const actions: Actions = {
 			marketGrowthRate,
 			saleDate
 		});
+		return { success: true };
+	},
+	updateAccountInterestRate: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const accountId = String(formData.get('accountId') ?? '');
+		const interestRateRaw = Number(formData.get('interestRate'));
+		const interestRate = Number.isFinite(interestRateRaw)
+			? Math.round(interestRateRaw * 100) / 100
+			: Number.NaN;
+		if (!scenarioId || !accountId || !Number.isFinite(interestRate)) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updateAccountInterestRate(scenarioId, accountId, interestRate);
 		return { success: true };
 	},
 	createCashflow: async (event) => {

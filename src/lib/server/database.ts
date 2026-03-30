@@ -337,6 +337,27 @@ export async function updatePropertyDetails(
 	);
 }
 
+export async function updateAccountInterestRate(
+	scenarioId: string,
+	accountId: string,
+	interestRate: number
+) {
+	await getPool().query(
+		`
+			update accounts
+			set details = jsonb_set(
+				coalesce(details, '{}'::jsonb),
+				'{interestRate}',
+				to_jsonb(round($3::numeric, 2)),
+				true
+			)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+		`,
+		[scenarioId, accountId, interestRate]
+	);
+}
+
 export type AssetAccountLink = {
 	id: string;
 	asset_id: string;

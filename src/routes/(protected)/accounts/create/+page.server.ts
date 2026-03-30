@@ -7,10 +7,10 @@ import {
 	getScenarioForUserById
 } from '$lib/server/database';
 
-const decimalOnePlaceSchema = z
+const decimalUpToTwoPlacesSchema = z
 	.string()
 	.trim()
-	.regex(/^-?\d+(\.\d)?$/, { message: 'Must be a number with 1 decimal place' })
+	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a number with up to 2 decimal places' })
 	.transform((value) => Number(value));
 
 const currencySchema = z
@@ -22,7 +22,7 @@ const currencySchema = z
 const createAccountSchema = z.object({
 	accountType: z.enum(['current_account', 'savings_account', 'credit_card']),
 	name: z.string().trim().min(1, 'Account name is required'),
-	interestRate: decimalOnePlaceSchema,
+	interestRate: decimalUpToTwoPlacesSchema,
 	openingBalance: currencySchema,
 	personIds: z.array(z.string()).min(1, 'Select at least one account holder')
 });

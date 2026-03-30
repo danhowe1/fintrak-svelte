@@ -92,13 +92,13 @@ let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionR
 let isUpdating = false;
 let updateLocks = new Set<string>();
 let expandedPnlNodes = new Set<string>();
-let assetsTab: 'assets' | 'accounts' = 'assets';
 let assetsList = data.assets ?? [];
 let accountsList = data.accounts ?? [];
 let assetAccountsList = data.assetAccounts ?? [];
 let personRetirementAges: Record<string, number> = {};
 let cashflowAmounts: Record<string, number> = {};
 let propertyDetails: Record<string, { marketGrowthRate: number; saleDate: string }> = {};
+let accountInterestRates: Record<string, number> = {};
 let propertyErrors: Record<string, string> = {};
 let cashflowFormErrors: Record<string, string> = {};
 let lastScenarioId = data.scenario.id;
@@ -125,6 +125,7 @@ $: if (data.scenario.id !== lastScenarioId) {
 	personRetirementAges = {};
 	cashflowAmounts = {};
 	propertyDetails = {};
+	accountInterestRates = {};
 	propertyErrors = {};
 	cashflowFormErrors = {};
 	activeCashflowForm = null;
@@ -168,6 +169,16 @@ $: if (Object.keys(propertyDetails).length === 0 && (assetsList.length ?? 0) > 0
 		}
 	}
 	propertyDetails = next;
+}
+
+$: if (Object.keys(accountInterestRates).length === 0 && (accountsList.length ?? 0) > 0) {
+	const next: Record<string, number> = {};
+	for (const account of accountsList) {
+		const rawRate = account.details?.interestRate;
+		const rate = typeof rawRate === 'number' ? rawRate : Number(rawRate);
+		next[account.id] = Number.isFinite(rate) ? rate : 0;
+	}
+	accountInterestRates = next;
 }
 
 const setPersonRetirementAge = (id: string, value: number) => {
@@ -357,6 +368,19 @@ const setPropertyDetails = (
 
 const setPropertyError = (id: string, message: string) => {
 	propertyErrors = { ...propertyErrors, [id]: message };
+};
+
+const setAccountInterestRate = (id: string, value: number) => {
+	accountInterestRates = { ...accountInterestRates, [id]: value };
+};
+
+const roundToTwo = (value: number) => Math.round(value * 100) / 100;
+
+const adjustAccountInterestRate = (accountId: string, delta: number) => {
+	const current = accountInterestRates[accountId] ?? 0;
+	const next = roundToTwo(current + delta);
+	setAccountInterestRate(accountId, next);
+	scheduleUpdate(`account:${accountId}`, () => updateAccountInterestRate(accountId, next));
 };
 
 const isValidMonthYear = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
@@ -661,6 +685,30 @@ const updatePropertyDetails = async (
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update property details.';
+	});
+};
+
+const updateAccountInterestRate = async (accountId: string, interestRate: number) => {
+	await withLock(
+		`account:${accountId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('accountId', accountId);
+			formData.set('interestRate', String(interestRate));
+			const response = await fetch('?/updateAccountInterestRate', {
+				method: 'POST',
+				body: formData
+			});
+			if (!response.ok) {
+				throw new Error('Unable to update account interest rate. Please try again.');
+			}
+			await refreshProjection();
+		},
+		true
+	).catch((error) => {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update account interest rate.';
 	});
 };
 
@@ -1451,40 +1499,12 @@ const updatePropertyDetails = async (
 </section>
 
 <section class="not-prose mt-6">
-	<div class="inline-flex items-end gap-1">
-		<button
-			type="button"
-			class={`relative rounded-t-xl border border-b-0 px-4 py-2 text-xs font-semibold ${
-				assetsTab === 'assets'
-					? '-mb-px z-10 border-slate-200 bg-white text-slate-900 shadow-none'
-					: 'border-slate-300 bg-slate-100 text-slate-600'
-			}`}
-			on:click={() => (assetsTab = 'assets')}
-		>
-			Assets
-			{#if assetsTab === 'assets'}
-				<span class="absolute inset-x-0 -bottom-px h-px bg-white"></span>
-			{/if}
-		</button>
-		<button
-			type="button"
-			class={`relative rounded-t-xl border border-b-0 px-4 py-2 text-xs font-semibold ${
-				assetsTab === 'accounts'
-					? '-mb-px z-10 border-slate-200 bg-white text-slate-900 shadow-none'
-					: 'border-slate-300 bg-slate-100 text-slate-600'
-			}`}
-			on:click={() => (assetsTab = 'accounts')}
-		>
-			Accounts
-			{#if assetsTab === 'accounts'}
-				<span class="absolute inset-x-0 -bottom-px h-px bg-white"></span>
-			{/if}
-		</button>
-	</div>
-	<div class="rounded-2xl rounded-tl-none border border-slate-200 bg-white p-4 shadow-sm">
-		<div class="h-px w-full bg-transparent"></div>
-	{#if assetsTab === 'assets'}
-		<div class="mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+		<div>
+			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+				<h3 class="text-sm font-semibold text-slate-900">Assets</h3>
+				<div class="h-px w-full bg-transparent"></div>
+			<div class="mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">{person.name}</h3>
@@ -2131,11 +2151,72 @@ const updatePropertyDetails = async (
 						{/if}
 					{/if}
 				</div>
-			{/each}
+				{/each}
+			</div>
+			</div>
 		</div>
-	{:else}
-		<div class="mt-5 text-sm text-slate-600">No accounts to show yet.</div>
-	{/if}
+		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+			<h3 class="text-sm font-semibold text-slate-900">Interest Rates</h3>
+			{#if accountsList.length > 0}
+				<div class="mt-3 space-y-2">
+					{#each accountsList as account}
+						<div class="grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">{account.name}</span>
+							<input
+								type="number"
+								class="no-spin justify-self-end w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={formatRate(accountInterestRates[account.id] ?? 0, 2)}
+								step="0.01"
+								on:input={(event) => {
+									const next = Number((event.currentTarget as HTMLInputElement).value);
+									const value = Number.isFinite(next) ? next : 0;
+									setAccountInterestRate(account.id, value);
+								}}
+								on:keydown={(event) => {
+									const keyboardEvent = event as KeyboardEvent;
+									if (keyboardEvent.key === 'ArrowUp') {
+										keyboardEvent.preventDefault();
+										adjustAccountInterestRate(account.id, 0.25);
+									}
+									if (keyboardEvent.key === 'ArrowDown') {
+										keyboardEvent.preventDefault();
+										adjustAccountInterestRate(account.id, -0.25);
+									}
+								}}
+								on:change={(event) => {
+									const next = Number((event.currentTarget as HTMLInputElement).value);
+									const value = Number.isFinite(next) ? roundToTwo(next) : 0;
+									setAccountInterestRate(account.id, value);
+									scheduleUpdate(`account:${account.id}`, () =>
+										updateAccountInterestRate(account.id, value)
+									);
+								}}
+							/>
+							<div class="flex flex-col items-end gap-0.5">
+								<button
+									type="button"
+									class="grid h-3.5 w-6 place-items-center rounded border border-slate-200 bg-white text-[10px] leading-none text-slate-600 hover:bg-slate-50"
+									aria-label={`Increase ${account.name} interest rate`}
+									on:click={() => adjustAccountInterestRate(account.id, 0.25)}
+								>
+									▲
+								</button>
+								<button
+									type="button"
+									class="grid h-3.5 w-6 place-items-center rounded border border-slate-200 bg-white text-[10px] leading-none text-slate-600 hover:bg-slate-50"
+									aria-label={`Decrease ${account.name} interest rate`}
+									on:click={() => adjustAccountInterestRate(account.id, -0.25)}
+								>
+									▼
+								</button>
+							</div>
+						</div>
+					{/each}
+				</div>
+			{:else}
+				<div class="mt-3 text-sm text-slate-600">No accounts to show yet.</div>
+			{/if}
+		</div>
 	</div>
 </section>
 
@@ -2165,3 +2246,16 @@ const updatePropertyDetails = async (
 		</div>
 	</div>
 {/if}
+
+<style>
+	.no-spin::-webkit-outer-spin-button,
+	.no-spin::-webkit-inner-spin-button {
+		-webkit-appearance: none;
+		margin: 0;
+	}
+
+	.no-spin {
+		appearance: textfield;
+		-moz-appearance: textfield;
+	}
+</style>

@@ -70,7 +70,7 @@
 					type="number"
 					label="Interest rate (%)"
 					name="interestRate"
-					step="0.1"
+					step="0.01"
 					value={formValues.interestRate ?? ''}
 					error={formErrors.interestRate?.[0]}
 					required
