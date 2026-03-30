@@ -37,6 +37,7 @@ let sessionRates = data.sessionRates;
 let projectionVersion = 1;
 let projectionError: string | null = null;
 let cashflows = data.cashflows ?? [];
+let autoRunProjection = true;
 
 const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 const cashflowCategoryOptions = [
@@ -712,7 +713,10 @@ const withLock = async (key: string, run: () => Promise<void>, showSpinner = fal
 		expandedPnlNodes = next;
 	};
 
-	const refreshProjection = async (options?: { includeCashflows?: boolean }) => {
+	const refreshProjection = async (options?: { includeCashflows?: boolean; force?: boolean }) => {
+		if (!autoRunProjection && !options?.force) {
+			return;
+		}
 		const url = new URL('/dashboard/projection', window.location.origin);
 		url.searchParams.set('scenarioId', data.scenario.id);
 		if (options?.includeCashflows) {
@@ -742,7 +746,20 @@ const withLock = async (key: string, run: () => Promise<void>, showSpinner = fal
 				const formData = new FormData();
 				formData.set('projectionRange', range);
 				await fetch('?/updateRange', { method: 'POST', body: formData });
-				await refreshProjection();
+				await refreshProjection({ force: true });
+			},
+			true
+		).catch((error) => {
+			projectionError =
+				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+		});
+	};
+
+	const runProjectionNow = async () => {
+		await withLock(
+			'manualProjection',
+			async () => {
+				await refreshProjection({ includeCashflows: true, force: true });
 			},
 			true
 		).catch((error) => {
@@ -765,7 +782,7 @@ const updateRetirementAge = async (assetId: string, retirementAge: number) => {
 			}
 			await refreshProjection();
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update retirement age.';
@@ -788,7 +805,7 @@ const updatePersonDetails = async (assetId: string, name: string, startDate: str
 			}
 			await refreshProjection();
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update person details.';
@@ -809,7 +826,7 @@ const updateCashflowAmount = async (cashflowId: string, amount: number) => {
 			}
 			await refreshProjection();
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update cashflow amount.';
@@ -858,7 +875,7 @@ const createAssetCashflow = async (assetId: string, draft: CashflowDraft) => {
 			cashflowFormErrors = { ...cashflowFormErrors, [assetId]: '' };
 			activeCashflowForm = null;
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		cashflowFormErrors = {
 			...cashflowFormErrors,
@@ -911,7 +928,7 @@ const updateAssetCashflow = async (
 			cashflowFormErrors = { ...cashflowFormErrors, [assetId]: '' };
 			activeCashflowForm = null;
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		cashflowFormErrors = {
 			...cashflowFormErrors,
@@ -958,7 +975,7 @@ const confirmDeleteCashflow = async () => {
 			}
 			deleteConfirmId = null;
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to delete cashflow.';
@@ -997,7 +1014,7 @@ const updatePropertyDetails = async (
 			}
 			await refreshProjection();
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update property details.';
@@ -1021,7 +1038,7 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 			}
 			await refreshProjection();
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update account interest rate.';
@@ -1055,7 +1072,7 @@ const updateMortgageDetails = async (
 			}
 			await refreshProjection();
 		},
-		true
+		autoRunProjection
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update mortgage details.';
@@ -1072,7 +1089,7 @@ const updateMortgageDetails = async (
 				formData.set('deltaInflation', String(deltaInflation));
 				formData.set('deltaInterest', String(deltaInterest));
 				await fetch('?/updateRates', { method: 'POST', body: formData });
-				await refreshProjection();
+				await refreshProjection({ force: true });
 			},
 			true
 		).catch((error) => {
@@ -1593,6 +1610,31 @@ const updateMortgageDetails = async (
 				>
 					All
 				</button>
+			</div>
+			<div class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700">
+				<span>Auto-run</span>
+				<button
+					type="button"
+					class={`rounded-full px-2 py-0.5 transition ${
+						autoRunProjection
+							? 'bg-emerald-600 text-white'
+							: 'bg-slate-200 text-slate-700'
+					}`}
+					aria-pressed={autoRunProjection}
+					on:click={() => (autoRunProjection = !autoRunProjection)}
+				>
+					{autoRunProjection ? 'On' : 'Off'}
+				</button>
+				{#if !autoRunProjection}
+					<button
+						type="button"
+						class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+						disabled={isUpdating}
+						on:click={runProjectionNow}
+					>
+						Run now
+					</button>
+				{/if}
 			</div>
 		</div>
 	</div>
