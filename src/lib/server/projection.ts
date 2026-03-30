@@ -168,6 +168,7 @@ export const buildProjection = (input: {
 	scenarioStartDate?: number | null;
 	inflationRate?: number | null;
 	interestRateChange?: number | null;
+	projectionRange?: '1y' | '5y' | '10y' | 'all';
 	maxMonths?: number | null;
 	cashflows: ProjectionCashflow[];
 	accounts: ProjectionAccount[];
@@ -187,7 +188,16 @@ export const buildProjection = (input: {
 		const cappedIndex = yearMonthIndex(capped);
 		return cappedIndex < naturalIndex ? capped : naturalEnd;
 	})();
-	const endYearMonth = cappedEnd;
+	const alignToCompletedYearEnd = (end: YearMonth) => {
+		if (end.month === 12) {
+			return end;
+		}
+		return { year: end.year - 1, month: 12 };
+	};
+	const endYearMonth =
+		input.projectionRange === '10y' || input.projectionRange === 'all'
+			? alignToCompletedYearEnd(cappedEnd)
+			: cappedEnd;
 	const totalMonths = Math.max(0, monthsBetweenYearMonths(startYearMonth, endYearMonth));
 	const inflationRate = input.inflationRate ?? 0;
 	const interestRateChange = input.interestRateChange ?? 0;
