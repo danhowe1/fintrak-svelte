@@ -122,6 +122,28 @@ let propertyErrors: Record<
 		variableSellingCosts?: string;
 	}
 > = {};
+let mortgageDetails: Record<
+	string,
+	{
+		name: string;
+		startDate: string;
+		termYears: number;
+		termMonths: number;
+		mortgageAccountName: string;
+		openingBalance: number;
+	}
+> = {};
+let mortgageErrors: Record<
+	string,
+	{
+		name?: string;
+		startDate?: string;
+		termYears?: string;
+		termMonths?: string;
+		mortgageAccountName?: string;
+		openingBalance?: string;
+	}
+> = {};
 let personDetailsErrors: Record<string, { name?: string; startDate?: string; dob?: string }> = {};
 let cashflowFormErrors: Record<string, string> = {};
 let lastScenarioId = data.scenario.id;
@@ -133,6 +155,7 @@ let cashflowsByAssetId: Record<string, typeof cashflows> = {};
 let editingCashflowIds = new Set<string>();
 let expandedPersonDetailIds = new Set<string>();
 let expandedPropertyDetailIds = new Set<string>();
+let expandedMortgageDetailIds = new Set<string>();
 let deleteConfirmId: string | null = null;
 
 const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
@@ -153,6 +176,8 @@ $: if (data.scenario.id !== lastScenarioId) {
 	propertyDetails = {};
 	accountInterestRates = {};
 	propertyErrors = {};
+	mortgageDetails = {};
+	mortgageErrors = {};
 	personDetailsErrors = {};
 	cashflowFormErrors = {};
 	activeCashflowForm = null;
@@ -161,6 +186,7 @@ $: if (data.scenario.id !== lastScenarioId) {
 	editingCashflowIds = new Set();
 	expandedPersonDetailIds = new Set();
 	expandedPropertyDetailIds = new Set();
+	expandedMortgageDetailIds = new Set();
 	lastScenarioId = data.scenario.id;
 }
 
@@ -255,6 +281,52 @@ $: if (Object.keys(accountInterestRates).length === 0 && (accountsList.length ??
 		next[account.id] = Number.isFinite(rate) ? rate : 0;
 	}
 	accountInterestRates = next;
+}
+
+$: if (Object.keys(mortgageDetails).length === 0 && (assetsList.length ?? 0) > 0) {
+	const accountsById = new Map(accountsList.map((account) => [account.id, account]));
+	const heldInByAssetId = new Map(
+		assetAccountsList
+			.filter((link) => link.relationship_role === 'held_in')
+			.map((link) => [link.asset_id, link.account_id])
+	);
+	const next: Record<
+		string,
+		{
+			name: string;
+			startDate: string;
+			termYears: number;
+			termMonths: number;
+			mortgageAccountName: string;
+			openingBalance: number;
+		}
+	> = {};
+	for (const asset of assetsList) {
+		if (asset.asset_type !== 'mortgage') continue;
+		const details = asset.details ?? {};
+		const accountId = heldInByAssetId.get(asset.id);
+		const account = accountId ? accountsById.get(accountId) : null;
+		const rawTermYears = details.termYears;
+		const rawTermMonths = details.termMonths;
+		const termYears =
+			typeof rawTermYears === 'number' ? rawTermYears : Number(rawTermYears ?? 0);
+		const termMonths =
+			typeof rawTermMonths === 'number' ? rawTermMonths : Number(rawTermMonths ?? 0);
+		const rawOpeningBalance = account?.details?.openingBalance;
+		const openingBalance =
+			typeof rawOpeningBalance === 'number' ? rawOpeningBalance : Number(rawOpeningBalance ?? 0);
+		next[asset.id] = {
+			name: asset.name ?? '',
+			startDate: formatYearMonthInput(details.startDate),
+			termYears: Number.isFinite(termYears) ? Math.max(0, Math.round(termYears)) : 0,
+			termMonths: Number.isFinite(termMonths)
+				? Math.min(11, Math.max(0, Math.round(termMonths)))
+				: 0,
+			mortgageAccountName: account?.name ?? 'Mortgage account',
+			openingBalance: Number.isFinite(openingBalance) ? openingBalance : 0
+		};
+	}
+	mortgageDetails = next;
 }
 
 const setPersonRetirementAge = (id: string, value: number) => {
@@ -491,6 +563,94 @@ const togglePropertyDetails = (id: string) => {
 		next.add(id);
 	}
 	expandedPropertyDetailIds = next;
+};
+
+const setMortgageDetails = (
+	id: string,
+	value: {
+		name: string;
+		startDate: string;
+		termYears: number;
+		termMonths: number;
+		mortgageAccountName: string;
+		openingBalance: number;
+	}
+) => {
+	mortgageDetails = { ...mortgageDetails, [id]: value };
+};
+
+const setMortgageError = (
+	id: string,
+	field: 'name' | 'startDate' | 'termYears' | 'termMonths' | 'mortgageAccountName' | 'openingBalance',
+	message: string
+) => {
+	mortgageErrors = { ...mortgageErrors, [id]: { ...(mortgageErrors[id] ?? {}), [field]: message } };
+};
+
+const toggleMortgageDetails = (id: string) => {
+	const next = new Set(expandedMortgageDetailIds);
+	if (next.has(id)) {
+		next.delete(id);
+	} else {
+		next.add(id);
+	}
+	expandedMortgageDetailIds = next;
+};
+
+const validateMortgageDetails = (
+	id: string,
+	value: {
+		name: string;
+		startDate: string;
+		termYears: number;
+		termMonths: number;
+		mortgageAccountName: string;
+		openingBalance: number;
+	}
+) => {
+	let hasError = false;
+	if (!value.name.trim()) {
+		setMortgageError(id, 'name', 'Name is required.');
+		hasError = true;
+	} else {
+		setMortgageError(id, 'name', '');
+	}
+	if (!value.startDate.trim() || !isValidMonthYear(value.startDate)) {
+		setMortgageError(id, 'startDate', 'Use MM YYYY format.');
+		hasError = true;
+	} else {
+		setMortgageError(id, 'startDate', '');
+	}
+	if (!Number.isFinite(value.termYears) || value.termYears < 0) {
+		setMortgageError(id, 'termYears', 'Use 0 or more years.');
+		hasError = true;
+	} else {
+		setMortgageError(id, 'termYears', '');
+	}
+	if (
+		!Number.isFinite(value.termMonths) ||
+		value.termMonths < 0 ||
+		value.termMonths > 11 ||
+		!Number.isInteger(value.termMonths)
+	) {
+		setMortgageError(id, 'termMonths', 'Use a value from 0 to 11.');
+		hasError = true;
+	} else {
+		setMortgageError(id, 'termMonths', '');
+	}
+	if (!value.mortgageAccountName.trim()) {
+		setMortgageError(id, 'mortgageAccountName', 'Account name is required.');
+		hasError = true;
+	} else {
+		setMortgageError(id, 'mortgageAccountName', '');
+	}
+	if (!Number.isFinite(value.openingBalance)) {
+		setMortgageError(id, 'openingBalance', 'Use a valid number.');
+		hasError = true;
+	} else {
+		setMortgageError(id, 'openingBalance', '');
+	}
+	return !hasError;
 };
 
 const setAccountInterestRate = (id: string, value: number) => {
@@ -865,6 +1025,40 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update account interest rate.';
+	});
+};
+
+const updateMortgageDetails = async (
+	assetId: string,
+	name: string,
+	startDate: string,
+	termYears: number,
+	termMonths: number,
+	mortgageAccountName: string,
+	openingBalance: number
+) => {
+	await withLock(
+		`mortgage:${assetId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('assetId', assetId);
+			formData.set('name', name);
+			formData.set('startDate', startDate);
+			formData.set('termYears', String(termYears));
+			formData.set('termMonths', String(termMonths));
+			formData.set('mortgageAccountName', mortgageAccountName);
+			formData.set('openingBalance', String(openingBalance));
+			const response = await fetch('?/updateMortgageDetails', { method: 'POST', body: formData });
+			if (!response.ok) {
+				throw new Error('Unable to update mortgage details. Please try again.');
+			}
+			await refreshProjection();
+		},
+		true
+	).catch((error) => {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update mortgage details.';
 	});
 };
 
@@ -1684,7 +1878,7 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 				<h3 class="text-sm font-semibold text-slate-900">Assets</h3>
 				<div class="h-px w-full bg-transparent"></div>
-			<div class="mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="assets-cards mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">
@@ -2178,6 +2372,7 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 				</div>
 			{/each}
 			{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
+				<div class="flex w-fit max-w-xs flex-col gap-0.5">
 				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">
 						{propertyDetails[property.id]?.name ?? property.name}
@@ -2849,6 +3044,358 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 						{/if}
 					{/if}
 				</div>
+				{#each assetsList.filter((asset) => asset.asset_type === 'mortgage' && asset.property_id === property.id) as mortgage}
+					{@const mortgageAccountLink = assetAccountsList.find(
+						(link) => link.asset_id === mortgage.id && link.relationship_role === 'held_in'
+					)}
+					<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="truncate text-sm font-semibold text-slate-900">
+								{mortgageDetails[mortgage.id]?.name ?? mortgage.name}
+							</h3>
+							<button
+								type="button"
+								class="flex items-center justify-end text-slate-500 hover:text-slate-700"
+								aria-label={expandedMortgageDetailIds.has(mortgage.id)
+									? 'Hide details'
+									: 'Show details'}
+								title={expandedMortgageDetailIds.has(mortgage.id) ? 'Hide details' : 'Show details'}
+								on:click={() => toggleMortgageDetails(mortgage.id)}
+							>
+								<svg
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									class="h-4 w-4"
+								>
+									<path d="M5 12h14" />
+									{#if !expandedMortgageDetailIds.has(mortgage.id)}
+										<path d="M12 5v14" />
+									{/if}
+								</svg>
+							</button>
+						</div>
+						{#if expandedMortgageDetailIds.has(mortgage.id)}
+							<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+								<span class="truncate text-slate-500">Start date (MM YYYY)</span>
+								<div class="justify-self-end flex flex-col items-end">
+									<input
+										type="text"
+										inputmode="numeric"
+										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+										class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={mortgageDetails[mortgage.id]?.startDate ?? ''}
+										on:input={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											setMortgageDetails(mortgage.id, { ...current, startDate: next });
+											if (next.trim().length === 0 || isValidMonthYear(next)) {
+												setMortgageError(mortgage.id, 'startDate', '');
+											}
+										}}
+										on:change={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											const updated = { ...current, startDate: next };
+											setMortgageDetails(mortgage.id, updated);
+											if (!validateMortgageDetails(mortgage.id, updated)) return;
+											scheduleUpdate(`mortgage:${mortgage.id}`, () =>
+												updateMortgageDetails(
+													mortgage.id,
+													updated.name,
+													updated.startDate,
+													updated.termYears,
+													updated.termMonths,
+													updated.mortgageAccountName,
+													updated.openingBalance
+												)
+											);
+										}}
+									/>
+									{#if mortgageErrors[mortgage.id]?.startDate}
+										<span class="mt-1 text-[10px] text-rose-600">
+											{mortgageErrors[mortgage.id]?.startDate}
+										</span>
+									{/if}
+								</div>
+								<span></span>
+							</div>
+							<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+								<span class="truncate text-slate-500">Mortgage name</span>
+								<div class="justify-self-end flex flex-col items-end">
+									<input
+										type="text"
+										class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={mortgageDetails[mortgage.id]?.name ?? mortgage.name}
+										on:input={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											setMortgageDetails(mortgage.id, { ...current, name: next });
+											if (next.trim().length > 0) {
+												setMortgageError(mortgage.id, 'name', '');
+											}
+										}}
+										on:change={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value.trim();
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											const updated = { ...current, name: next };
+											setMortgageDetails(mortgage.id, updated);
+											assetsList = assetsList.map((asset) =>
+												asset.id === mortgage.id ? { ...asset, name: next } : asset
+											);
+											if (!validateMortgageDetails(mortgage.id, updated)) return;
+											scheduleUpdate(`mortgage:${mortgage.id}`, () =>
+												updateMortgageDetails(
+													mortgage.id,
+													updated.name,
+													updated.startDate,
+													updated.termYears,
+													updated.termMonths,
+													updated.mortgageAccountName,
+													updated.openingBalance
+												)
+											);
+										}}
+									/>
+									{#if mortgageErrors[mortgage.id]?.name}
+										<span class="mt-1 text-[10px] text-rose-600">
+											{mortgageErrors[mortgage.id]?.name}
+										</span>
+									{/if}
+								</div>
+								<span></span>
+							</div>
+							<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+								<span class="truncate text-slate-500">Term remaining (years)</span>
+								<div class="justify-self-end flex flex-col items-end">
+									<input
+										type="number"
+										min="0"
+										step="1"
+										class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={mortgageDetails[mortgage.id]?.termYears ?? 0}
+										on:input={(event) => {
+											const next = Number((event.currentTarget as HTMLInputElement).value);
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											setMortgageDetails(mortgage.id, {
+												...current,
+												termYears: Number.isFinite(next)
+													? Math.max(0, Math.round(next))
+													: 0
+											});
+										}}
+										on:change={(event) => {
+											const next = Number((event.currentTarget as HTMLInputElement).value);
+											const current = mortgageDetails[mortgage.id];
+											if (!current || !Number.isFinite(next)) {
+												setMortgageError(mortgage.id, 'termYears', 'Use 0 or more years.');
+												return;
+											}
+											const updated = {
+												...current,
+												termYears: Math.max(0, Math.round(next))
+											};
+											setMortgageDetails(mortgage.id, updated);
+											if (!validateMortgageDetails(mortgage.id, updated)) return;
+											scheduleUpdate(`mortgage:${mortgage.id}`, () =>
+												updateMortgageDetails(
+													mortgage.id,
+													updated.name,
+													updated.startDate,
+													updated.termYears,
+													updated.termMonths,
+													updated.mortgageAccountName,
+													updated.openingBalance
+												)
+											);
+										}}
+									/>
+									{#if mortgageErrors[mortgage.id]?.termYears}
+										<span class="mt-1 text-[10px] text-rose-600">
+											{mortgageErrors[mortgage.id]?.termYears}
+										</span>
+									{/if}
+								</div>
+								<span></span>
+							</div>
+							<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+								<span class="truncate text-slate-500">Term remaining (months)</span>
+								<div class="justify-self-end flex flex-col items-end">
+									<input
+										type="number"
+										min="0"
+										max="11"
+										step="1"
+										class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={mortgageDetails[mortgage.id]?.termMonths ?? 0}
+										on:input={(event) => {
+											const next = Number((event.currentTarget as HTMLInputElement).value);
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											setMortgageDetails(mortgage.id, {
+												...current,
+												termMonths: Number.isFinite(next)
+													? Math.min(11, Math.max(0, Math.round(next)))
+													: 0
+											});
+										}}
+										on:change={(event) => {
+											const next = Number((event.currentTarget as HTMLInputElement).value);
+											const current = mortgageDetails[mortgage.id];
+											if (
+												!current ||
+												!Number.isFinite(next) ||
+												next < 0 ||
+												next > 11
+											) {
+												setMortgageError(
+													mortgage.id,
+													'termMonths',
+													'Use a value from 0 to 11.'
+												);
+												return;
+											}
+											const updated = {
+												...current,
+												termMonths: Math.round(next)
+											};
+											setMortgageDetails(mortgage.id, updated);
+											if (!validateMortgageDetails(mortgage.id, updated)) return;
+											scheduleUpdate(`mortgage:${mortgage.id}`, () =>
+												updateMortgageDetails(
+													mortgage.id,
+													updated.name,
+													updated.startDate,
+													updated.termYears,
+													updated.termMonths,
+													updated.mortgageAccountName,
+													updated.openingBalance
+												)
+											);
+										}}
+									/>
+									{#if mortgageErrors[mortgage.id]?.termMonths}
+										<span class="mt-1 text-[10px] text-rose-600">
+											{mortgageErrors[mortgage.id]?.termMonths}
+										</span>
+									{/if}
+								</div>
+								<span></span>
+							</div>
+							<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+								<span class="truncate text-slate-500">Mortgage account name</span>
+								<div class="justify-self-end flex flex-col items-end">
+									<input
+										type="text"
+										class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={mortgageDetails[mortgage.id]?.mortgageAccountName ?? ''}
+										on:input={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value;
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											setMortgageDetails(mortgage.id, { ...current, mortgageAccountName: next });
+											if (next.trim().length > 0) {
+												setMortgageError(mortgage.id, 'mortgageAccountName', '');
+											}
+										}}
+										on:change={(event) => {
+											const next = (event.currentTarget as HTMLInputElement).value.trim();
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											const updated = { ...current, mortgageAccountName: next };
+											setMortgageDetails(mortgage.id, updated);
+											if (mortgageAccountLink?.account_id) {
+												accountsList = accountsList.map((account) =>
+													account.id === mortgageAccountLink.account_id
+														? { ...account, name: next }
+														: account
+												);
+											}
+											if (!validateMortgageDetails(mortgage.id, updated)) return;
+											scheduleUpdate(`mortgage:${mortgage.id}`, () =>
+												updateMortgageDetails(
+													mortgage.id,
+													updated.name,
+													updated.startDate,
+													updated.termYears,
+													updated.termMonths,
+													updated.mortgageAccountName,
+													updated.openingBalance
+												)
+											);
+										}}
+									/>
+									{#if mortgageErrors[mortgage.id]?.mortgageAccountName}
+										<span class="mt-1 text-[10px] text-rose-600">
+											{mortgageErrors[mortgage.id]?.mortgageAccountName}
+										</span>
+									{/if}
+								</div>
+								<span></span>
+							</div>
+							<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+								<span class="truncate text-slate-500">Opening balance</span>
+								<div class="justify-self-end flex flex-col items-end">
+									<input
+										type="number"
+										step="0.01"
+										class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={mortgageDetails[mortgage.id]?.openingBalance ?? 0}
+										on:input={(event) => {
+											const next = Number((event.currentTarget as HTMLInputElement).value);
+											const current = mortgageDetails[mortgage.id];
+											if (!current) return;
+											setMortgageDetails(mortgage.id, {
+												...current,
+												openingBalance: Number.isFinite(next) ? next : 0
+											});
+										}}
+										on:change={(event) => {
+											const next = Number((event.currentTarget as HTMLInputElement).value);
+											const current = mortgageDetails[mortgage.id];
+											if (!current || !Number.isFinite(next)) {
+												setMortgageError(mortgage.id, 'openingBalance', 'Use a valid number.');
+												return;
+											}
+											const updated = {
+												...current,
+												openingBalance: Math.round(next * 100) / 100
+											};
+											setMortgageDetails(mortgage.id, updated);
+											if (!validateMortgageDetails(mortgage.id, updated)) return;
+											scheduleUpdate(`mortgage:${mortgage.id}`, () =>
+												updateMortgageDetails(
+													mortgage.id,
+													updated.name,
+													updated.startDate,
+													updated.termYears,
+													updated.termMonths,
+													updated.mortgageAccountName,
+													updated.openingBalance
+												)
+											);
+										}}
+									/>
+									{#if mortgageErrors[mortgage.id]?.openingBalance}
+										<span class="mt-1 text-[10px] text-rose-600">
+											{mortgageErrors[mortgage.id]?.openingBalance}
+										</span>
+									{/if}
+								</div>
+								<span></span>
+							</div>
+						{/if}
+					</div>
+				{/each}
+				</div>
 				{/each}
 			</div>
 			</div>
@@ -2946,6 +3493,12 @@ const updateAccountInterestRate = async (accountId: string, interestRate: number
 {/if}
 
 <style>
+	.assets-cards input,
+	.assets-cards select {
+		font-size: 0.75rem;
+		line-height: 1rem;
+	}
+
 	.no-spin::-webkit-outer-spin-button,
 	.no-spin::-webkit-inner-spin-button {
 		-webkit-appearance: none;

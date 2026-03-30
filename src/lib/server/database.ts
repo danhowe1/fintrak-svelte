@@ -429,6 +429,78 @@ export async function updateAccountInterestRate(
 	);
 }
 
+export async function updateMortgageDetails(
+	scenarioId: string,
+	assetId: string,
+	input: {
+		startDate: number;
+		name: string;
+		termYears: number;
+		termMonths: number;
+		mortgageAccountName: string;
+		openingBalance: number;
+	}
+) {
+	await getPool().query(
+		`
+			update assets
+			set name = $3::text,
+				details = jsonb_set(
+					jsonb_set(
+						jsonb_set(
+							coalesce(details, '{}'::jsonb),
+							'{startDate}',
+							to_jsonb($4::int),
+							true
+						),
+						'{termYears}',
+						to_jsonb($5::int),
+						true
+					),
+					'{termMonths}',
+					to_jsonb($6::int),
+					true
+				)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+			  and asset_type = 'mortgage'
+		`,
+		[scenarioId, assetId, input.name, input.startDate, input.termYears, input.termMonths]
+	);
+
+	await getPool().query(
+		`
+			update accounts a
+			set name = $4::text,
+				details = jsonb_set(
+					jsonb_set(
+						coalesce(a.details, '{}'::jsonb),
+						'{openingBalance}',
+						to_jsonb($5::numeric),
+						true
+					),
+					'{startDate}',
+					to_jsonb($6::int),
+					true
+				)
+			from asset_accounts aa
+			where aa.account_id = a.id
+			  and aa.scenario_id = $1::uuid
+			  and aa.asset_id = $2::uuid
+			  and aa.relationship_role = 'held_in'
+			  and a.scenario_id = $1::uuid
+			  and a.account_type = 'mortgage_account'
+		`,
+		[
+			scenarioId,
+			assetId,
+			input.mortgageAccountName,
+			input.openingBalance,
+			input.startDate
+		]
+	);
+}
+
 export type AssetAccountLink = {
 	id: string;
 	asset_id: string;

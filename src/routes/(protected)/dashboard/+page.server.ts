@@ -14,7 +14,8 @@ import {
 	updatePersonRetirementAge,
 	updatePersonDetails,
 	updatePropertyDetails,
-	updateAccountInterestRate
+	updateAccountInterestRate,
+	updateMortgageDetails
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
 import { parseYearMonthInput } from '$lib/yearMonth';
@@ -295,6 +296,59 @@ export const actions: Actions = {
 			return fail(404, { error: 'Scenario not found.' });
 		}
 		await updateAccountInterestRate(scenarioId, accountId, interestRate);
+		return { success: true };
+	},
+	updateMortgageDetails: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const name = String(formData.get('name') ?? '').trim();
+		const startDateRaw = String(formData.get('startDate') ?? '').trim();
+		const termYearsRaw = Number(formData.get('termYears'));
+		const termMonthsRaw = Number(formData.get('termMonths'));
+		const mortgageAccountName = String(formData.get('mortgageAccountName') ?? '').trim();
+		const openingBalanceRaw = Number(formData.get('openingBalance'));
+
+		const startDate = parseYearMonthInput(startDateRaw);
+		const termYears = Number.isFinite(termYearsRaw) ? Math.max(0, Math.round(termYearsRaw)) : NaN;
+		const termMonths =
+			Number.isFinite(termMonthsRaw) && termMonthsRaw >= 0 && termMonthsRaw <= 11
+				? Math.round(termMonthsRaw)
+				: NaN;
+		const openingBalance = Number.isFinite(openingBalanceRaw)
+			? Math.round(openingBalanceRaw * 100) / 100
+			: NaN;
+
+		if (
+			!scenarioId ||
+			!assetId ||
+			!name ||
+			!mortgageAccountName ||
+			startDate === null ||
+			!Number.isFinite(termYears) ||
+			!Number.isFinite(termMonths) ||
+			!Number.isFinite(openingBalance)
+		) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+
+		await updateMortgageDetails(scenarioId, assetId, {
+			startDate,
+			name,
+			termYears,
+			termMonths,
+			mortgageAccountName,
+			openingBalance
+		});
 		return { success: true };
 	},
 	createCashflow: async (event) => {
