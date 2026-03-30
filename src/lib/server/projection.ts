@@ -11,13 +11,15 @@ import {
 
 export type ProjectionTransaction = {
 	cashflowId: string;
-	cashflowType: 'expense' | 'income' | 'transfer';
+	cashflowType: 'expense' | 'income' | 'transfer' | 'valuation';
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'dividend_income'
 		| 'rental_income'
 		| 'asset_ownership'
 		| 'asset_sale'
+		| 'capital_growth'
 		| 'mortgage_repayment'
 		| 'other'
 		| 'interest';
@@ -42,11 +44,25 @@ export type AccountBalanceSeries = {
 	points: AccountBalancePoint[];
 };
 
+export type AssetValuePoint = {
+	date: number;
+	monthLabel: string;
+	value: number;
+};
+
+export type AssetValueSeries = {
+	assetId: string;
+	assetName: string;
+	assetType: ProjectionAsset['asset_type'];
+	points: AssetValuePoint[];
+};
+
 export type ProjectionResult = {
 	startDate: number;
 	endDate: number;
 	transactions: ProjectionTransaction[];
 	accounts: AccountBalanceSeries[];
+	assets: AssetValueSeries[];
 	events: {
 		tone: 'negative' | 'positive';
 		message: string;
@@ -82,7 +98,7 @@ type ProjectionAccount = {
 };
 
 type ProjectionAsset = {
-	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation';
+	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation' | 'shares';
 	details: Record<string, unknown>;
 	id?: string;
 	name?: string;
@@ -246,7 +262,7 @@ export const buildProjection = (input: {
 	);
 
 	for (const [, accountInfo] of accountMap) {
-		if (!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, startYearMonth) <= 0) {
+		if (!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, startYearMonth) >= 0) {
 			accountInfo.balance = accountInfo.openingBalance;
 		}
 	}
@@ -258,6 +274,14 @@ export const buildProjection = (input: {
 		accountName: account.name,
 		points: []
 	}));
+	const assetSeries: AssetValueSeries[] = input.assets
+		.filter((asset) => (asset.asset_type === 'property' || asset.asset_type === 'shares') && asset.id)
+		.map((asset) => ({
+			assetId: asset.id as string,
+			assetName: asset.name ?? (asset.asset_type === 'shares' ? 'Shares' : 'Property'),
+			assetType: asset.asset_type,
+			points: []
+		}));
 	const cashAccountIds = input.accounts
 		.filter((account) => account.account_type === 'cash_account')
 		.map((account) => account.id);
@@ -325,17 +349,19 @@ export const buildProjection = (input: {
 		}
 	}
 
-	const propertySaleStates = new Map<
+	const propertyValuationStates = new Map<
 		string,
 		{
 			accountId: string;
 			startDate: YearMonth;
-			saleDate: YearMonth;
+			saleDate: YearMonth | null;
 			marketValue: number;
 			marketGrowthRate: number;
 			fixedSellingCosts: number;
 			variableSellingCosts: number;
 			assetName: string;
+			currentValue: number;
+			sold: boolean;
 		}
 	>();
 	const mortgagePaidOffEventAccountIds = new Set<string>();
@@ -355,7 +381,7 @@ export const buildProjection = (input: {
 		const saleDateValue = asset.details?.saleDate;
 		const startDate = parseYearMonth(startDateValue);
 		const saleDate = parseYearMonth(saleDateValue);
-		if (!startDate || !saleDate) continue;
+		if (!startDate) continue;
 		const marketValue = getNumberDetail(asset.details ?? {}, 'marketValue');
 		if (marketValue === null) continue;
 		const marketGrowthRate = getNumberDetail(asset.details ?? {}, 'marketGrowthRate') ?? 5;
@@ -373,7 +399,7 @@ export const buildProjection = (input: {
 		}
 		if (!accountId) continue;
 
-		propertySaleStates.set(asset.id, {
+		propertyValuationStates.set(asset.id, {
 			accountId,
 			startDate,
 			saleDate,
@@ -381,7 +407,9 @@ export const buildProjection = (input: {
 			marketGrowthRate,
 			fixedSellingCosts,
 			variableSellingCosts,
-			assetName: asset.name ?? 'Property'
+			assetName: asset.name ?? 'Property',
+			currentValue: marketValue,
+			sold: false
 		});
 	}
 
@@ -394,6 +422,19 @@ export const buildProjection = (input: {
 			propertySaleDate: YearMonth | null;
 			termRemainingMonths: number;
 			startDate: YearMonth | null;
+		}
+	>();
+	const shareStates = new Map<
+		string,
+		{
+			assetName: string;
+			brokerageAccountId: string;
+			paysIntoAccountId: string | null;
+			startDate: YearMonth | null;
+			currentValue: number;
+			capitalGrowthRate: number;
+			dividendYield: number;
+			dividendsTakenAsIncomeDate: YearMonth | null;
 		}
 	>();
 	for (const asset of input.assets) {
@@ -432,6 +473,49 @@ export const buildProjection = (input: {
 				termRemainingMonths: termMonths,
 				startDate: startDate ?? accountStartDate
 			});
+		}
+	}
+	for (const asset of input.assets) {
+		if (asset.asset_type !== 'shares' || !asset.id) continue;
+		const details = asset.details ?? {};
+		const startDate = parseYearMonth(details.startDate);
+		const dividendsTakenAsIncomeDate = parseYearMonth(details.dividendsTakenAsIncomeDate);
+		const capitalGrowthRate = getNumberDetail(details, 'capitalGrowthRate') ?? 0;
+		const dividendYield = getNumberDetail(details, 'dividendYield') ?? 0;
+		let brokerageAccountId: string | null = null;
+		let paysIntoAccountId: string | null = null;
+		for (const link of input.assetAccounts) {
+			if (link.asset_id !== asset.id) continue;
+			if (link.relationship_role === 'held_in') {
+				brokerageAccountId = link.account_id;
+			}
+			if (link.relationship_role === 'pays_into') {
+				paysIntoAccountId = link.account_id;
+			}
+		}
+		if (!brokerageAccountId) continue;
+		const brokerageOpeningBalance = accountMap.get(brokerageAccountId)?.openingBalance ?? 0;
+		shareStates.set(asset.id, {
+			assetName: asset.name ?? 'Shares',
+			brokerageAccountId,
+			paysIntoAccountId,
+			startDate,
+			currentValue: brokerageOpeningBalance,
+			capitalGrowthRate,
+			dividendYield,
+			dividendsTakenAsIncomeDate
+		});
+	}
+	for (const [, shareState] of shareStates) {
+		const brokerageAccount = accountMap.get(shareState.brokerageAccountId);
+		if (!brokerageAccount) continue;
+		brokerageAccount.openingBalance = 0;
+		brokerageAccount.balance = 0;
+	}
+	const brokerageShareByAccountId = new Map<string, string>();
+	for (const [shareAssetId, shareState] of shareStates.entries()) {
+		if (!brokerageShareByAccountId.has(shareState.brokerageAccountId)) {
+			brokerageShareByAccountId.set(shareState.brokerageAccountId, shareAssetId);
 		}
 	}
 
@@ -558,9 +642,95 @@ export const buildProjection = (input: {
 					);
 				}
 			} else {
-				if (cashflow.source_account_id) {
+				const sourceId = cashflow.source_account_id;
+				const destinationId = cashflow.destination_account_id;
+				const sourceAccount = sourceId ? accountMap.get(sourceId) : null;
+				const destinationAccount = destinationId ? accountMap.get(destinationId) : null;
+				const destinationShareAssetId = destinationId
+					? brokerageShareByAccountId.get(destinationId) ?? null
+					: null;
+				const sourceShareAssetId = sourceId ? brokerageShareByAccountId.get(sourceId) ?? null : null;
+
+				const isShareBuyTransfer =
+					sourceId &&
+					destinationId &&
+					sourceAccount?.type === 'cash_account' &&
+					destinationAccount?.type === 'brokerage' &&
+					destinationShareAssetId !== null;
+				const isShareSellTransfer =
+					sourceId &&
+					destinationId &&
+					sourceAccount?.type === 'brokerage' &&
+					destinationAccount?.type === 'cash_account' &&
+					sourceShareAssetId !== null;
+
+				if (isShareBuyTransfer && sourceId && destinationId && destinationShareAssetId) {
 					pushTransaction(
-						cashflow.source_account_id,
+						sourceId,
+						-rawAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
+					);
+					pushTransaction(
+						destinationId,
+						rawAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
+					);
+					const brokerageAccount = accountMap.get(destinationId);
+					if (brokerageAccount) {
+						// Brokerage is a routing link account in projection; buys become asset value directly.
+						brokerageAccount.balance -= rawAmount;
+					}
+					const shareState = shareStates.get(destinationShareAssetId);
+					if (shareState) {
+						shareState.currentValue += rawAmount;
+					}
+					continue;
+				}
+
+				if (isShareSellTransfer && sourceId && destinationId && sourceShareAssetId) {
+					const shareState = shareStates.get(sourceShareAssetId);
+					if (!shareState) continue;
+					const tradeAmount = Math.min(rawAmount, Math.max(0, shareState.currentValue));
+					if (tradeAmount <= 0) continue;
+
+					pushTransaction(
+						sourceId,
+						-tradeAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
+					);
+					pushTransaction(
+						destinationId,
+						tradeAmount,
+						cashflow.cashflow_type,
+						cashflow.category,
+						cashflow.id,
+						cashflow.description ?? null,
+						assetName
+					);
+					const brokerageAccount = accountMap.get(sourceId);
+					if (brokerageAccount) {
+						// Brokerage is a routing link account in projection; sells come from asset value.
+						brokerageAccount.balance += tradeAmount;
+					}
+					shareState.currentValue -= tradeAmount;
+					continue;
+				}
+
+				if (sourceId) {
+					pushTransaction(
+						sourceId,
 						-rawAmount,
 						cashflow.cashflow_type,
 						cashflow.category,
@@ -569,9 +739,9 @@ export const buildProjection = (input: {
 						assetName
 					);
 				}
-				if (cashflow.destination_account_id) {
+				if (destinationId) {
 					pushTransaction(
-						cashflow.destination_account_id,
+						destinationId,
 						rawAmount,
 						cashflow.cashflow_type,
 						cashflow.category,
@@ -583,33 +753,83 @@ export const buildProjection = (input: {
 			}
 		}
 
-		for (const [assetId, property] of propertySaleStates.entries()) {
+		for (const [assetId, state] of shareStates.entries()) {
+			if (state.startDate && monthsBetweenYearMonths(state.startDate, current) < 0) continue;
+			if (!Number.isFinite(state.currentValue) || state.currentValue === 0) continue;
+
+			const capitalMonthlyRate = state.capitalGrowthRate / 100 / 12;
+			const dividendMonthlyRate = state.dividendYield / 100 / 12;
+			const capitalGrowthAmount = state.currentValue * capitalMonthlyRate;
+			const hasDividendIncomeDate =
+				state.dividendsTakenAsIncomeDate !== null &&
+				Number.isFinite(yearMonthIndex(state.dividendsTakenAsIncomeDate));
+			const reachedDividendIncomeDate =
+				hasDividendIncomeDate &&
+				monthsBetweenYearMonths(state.dividendsTakenAsIncomeDate as YearMonth, current) >= 0;
+
+			if (!hasDividendIncomeDate || !reachedDividendIncomeDate) {
+				const combinedGrowthAmount = state.currentValue * (capitalMonthlyRate + dividendMonthlyRate);
+				state.currentValue += combinedGrowthAmount;
+				continue;
+			}
+
+			state.currentValue += capitalGrowthAmount;
+
+			const monthDiff = monthsBetweenYearMonths(
+				state.dividendsTakenAsIncomeDate as YearMonth,
+				current
+			);
+			if (monthDiff < 0 || monthDiff % 3 !== 0) continue;
+			if (!state.paysIntoAccountId) continue;
+
+			const quarterlyDividendAmount = state.currentValue * (state.dividendYield / 100 / 4);
+			if (quarterlyDividendAmount === 0) continue;
+			pushTransaction(
+				state.paysIntoAccountId,
+				quarterlyDividendAmount,
+				'income',
+				'dividend_income',
+				`shares_dividend_${assetId}`,
+				null,
+				state.assetName
+			);
+		}
+
+		for (const [assetId, property] of propertyValuationStates.entries()) {
+			if (property.sold) continue;
+			const monthsHeld = monthsBetweenYearMonths(property.startDate, current);
+			if (monthsHeld < 0) continue;
+
+			const yearsHeld = (monthsHeld + 1) / 12;
+			const growthFactor = Math.pow(1 + property.marketGrowthRate / 100, yearsHeld);
+			const targetMarketValue = property.marketValue * growthFactor;
+			if (!Number.isFinite(targetMarketValue)) continue;
+			property.currentValue = targetMarketValue;
+
+			if (!property.saleDate) continue;
 			const currentIndex = yearMonthIndex(current);
 			const saleIndex = yearMonthIndex(property.saleDate);
 			if (currentIndex !== saleIndex) continue;
 
-			const monthsHeld = monthsBetweenYearMonths(property.startDate, property.saleDate);
-			const yearsHeld = monthsHeld / 12;
-			const growthFactor = Math.pow(1 + property.marketGrowthRate / 100, yearsHeld);
-			const saleAmount = property.marketValue * growthFactor;
-			if (saleAmount <= 0) continue;
-
-			pushTransaction(
-				property.accountId,
-				saleAmount,
-				'income',
-				'asset_sale',
-				`property_sale_${assetId}`,
-				'Asset sale',
-				property.assetName
-			);
+			const saleAmount = targetMarketValue;
+			if (saleAmount > 0) {
+				pushTransaction(
+					property.accountId,
+					saleAmount,
+					'income',
+					'asset_sale',
+					`property_sale_${assetId}`,
+					'Asset sale',
+					property.assetName
+				);
+			}
 			events.push({
 				tone: 'positive',
 				message: `${property.assetName} sold on ${monthLabel} for ${formatEventCurrency(saleAmount)}.`
 			});
 
-			const inflationFactor = Math.pow(1 + inflationRate / 100, yearsHeld);
-			const inflatedFixedCosts = property.fixedSellingCosts * inflationFactor;
+			const saleInflationFactor = Math.pow(1 + inflationRate / 100, yearsHeld);
+			const inflatedFixedCosts = property.fixedSellingCosts * saleInflationFactor;
 			const variableCosts = (property.variableSellingCosts / 100) * saleAmount;
 			const totalFixedCosts = inflatedFixedCosts > 0 ? inflatedFixedCosts : 0;
 			const totalVariableCosts = variableCosts > 0 ? variableCosts : 0;
@@ -637,6 +857,9 @@ export const buildProjection = (input: {
 					property.assetName
 				);
 			}
+
+			property.currentValue = 0;
+			property.sold = true;
 		}
 
 		for (const [assetId, state] of mortgageStates.entries()) {
@@ -780,10 +1003,44 @@ export const buildProjection = (input: {
 				monthLabel,
 				balance:
 					accountInfo &&
-					(!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, current) <= 0)
+					(!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, current) >= 0)
 						? accountInfo.balance
 						: 0
 			});
+		}
+		for (const series of assetSeries) {
+			if (series.assetType === 'property') {
+				const propertyState = propertyValuationStates.get(series.assetId);
+				if (!propertyState) {
+					series.points.push({ date: currentDate, monthLabel, value: 0 });
+					continue;
+				}
+				const started = monthsBetweenYearMonths(propertyState.startDate, current) >= 0;
+				series.points.push({
+					date: currentDate,
+					monthLabel,
+					value: started ? propertyState.currentValue : 0
+				});
+				continue;
+			}
+
+			if (series.assetType === 'shares') {
+				const shareState = shareStates.get(series.assetId);
+				if (!shareState) {
+					series.points.push({ date: currentDate, monthLabel, value: 0 });
+					continue;
+				}
+				const started =
+					!shareState.startDate || monthsBetweenYearMonths(shareState.startDate, current) >= 0;
+				series.points.push({
+					date: currentDate,
+					monthLabel,
+					value: started ? shareState.currentValue : 0
+				});
+				continue;
+			}
+
+			series.points.push({ date: currentDate, monthLabel, value: 0 });
 		}
 
 		for (const accountId of cashAccountIds) {
@@ -813,6 +1070,7 @@ export const buildProjection = (input: {
 		endDate: toYearMonthInt(endYearMonth),
 		transactions,
 		accounts: accountSeries,
+		assets: assetSeries,
 		events
 	};
 };

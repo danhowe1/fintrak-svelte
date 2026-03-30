@@ -66,6 +66,7 @@ const cashflowFrequencyOptions = [
 
 type ProjectionRange = '1y' | '5y' | '10y' | 'all';
 type AssetPanelTab = 'assets' | 'accounts';
+type ProjectionBalanceSource = 'accounts' | 'assets' | 'net_worth';
 type CashflowDraft = {
 	type: 'income' | 'expense';
 	category:
@@ -90,6 +91,7 @@ const normalizeProjectionRange = (value: unknown): ProjectionRange => {
 };
 
 let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
+let projectionBalanceSource: ProjectionBalanceSource = 'net_worth';
 let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionRange);
 let assetPanelTab: AssetPanelTab = 'assets';
 let isUpdating = false;
@@ -1113,8 +1115,11 @@ const updateMortgageDetails = async (
 		return normalized === null ? null : fromYearMonthInt(normalized);
 	};
 
-	const getBalanceExtent = (accounts: { points: { balance: number }[] }[]) => {
-		const values = accounts.flatMap((account) => account.points.map((point) => point.balance));
+	type ChartPoint = { date: number; monthLabel: string; balance: number };
+	type ChartSeries = { id: string; name: string; points: ChartPoint[] };
+
+	const getBalanceExtent = (seriesList: ChartSeries[]) => {
+		const values = seriesList.flatMap((series) => series.points.map((point) => point.balance));
 		if (!values.length) {
 			return { min: 0, max: 1 };
 		}
@@ -1123,10 +1128,68 @@ const updateMortgageDetails = async (
 		return { min, max: max === min ? min + 1 : max };
 	};
 
+	const normalizeAccountSeries = (series: { accountId: string; accountName: string; points: any[] }) => ({
+		id: series.accountId,
+		name: series.accountName,
+		points: (series.points ?? []).map((point) => ({
+			date: point.date,
+			monthLabel: point.monthLabel,
+			balance: point.balance
+		}))
+	});
+
+	const normalizeAssetSeries = (series: { assetId: string; assetName: string; points: any[] }) => ({
+		id: series.assetId,
+		name: series.assetName,
+		points: (series.points ?? []).map((point) => ({
+			date: point.date,
+			monthLabel: point.monthLabel,
+			balance: point.value
+		}))
+	});
+
 	$: chartProjection = (() => {
+		const accountSeries = (projectionData.accounts ?? []).map(normalizeAccountSeries);
+		const assetSeries = (projectionData.assets ?? []).map(normalizeAssetSeries);
+		const activeSeries =
+			projectionBalanceSource === 'assets'
+				? assetSeries
+				: projectionBalanceSource === 'net_worth'
+					? (() => {
+							const byDate = new Map<number, { monthLabel: string; balance: number }>();
+							for (const series of [...accountSeries, ...assetSeries]) {
+								for (const point of series.points) {
+									const existing = byDate.get(point.date);
+									if (!existing) {
+										byDate.set(point.date, {
+											monthLabel: point.monthLabel,
+											balance: point.balance
+										});
+									} else {
+										existing.balance += point.balance;
+									}
+								}
+							}
+							const points = Array.from(byDate.entries())
+								.sort((a, b) => a[0] - b[0])
+								.map(([date, point]) => ({
+									date,
+									monthLabel: point.monthLabel,
+									balance: point.balance
+								}));
+							return [
+								{
+									id: 'net_worth',
+									name: 'Net worth',
+									points
+								}
+							] as ChartSeries[];
+						})()
+					: accountSeries;
+
 		if (projectionRange === '10y' || projectionRange === 'all') {
 			return {
-				accounts: (projectionData.accounts ?? []).map((series) => ({
+				series: activeSeries.map((series) => ({
 					...series,
 					points: getAnnualPoints(series.points)
 				})),
@@ -1134,19 +1197,19 @@ const updateMortgageDetails = async (
 			};
 		}
 		return {
-			accounts: projectionData.accounts ?? [],
+			series: activeSeries,
 			transactions: projectionData.transactions ?? []
 		};
 	})();
 	$: totalSeries = (() => {
-		const accounts = chartProjection.accounts ?? [];
-		if (!accounts.length) return null;
-		const maxPoints = Math.max(...accounts.map((account) => account.points.length));
+		const seriesList = chartProjection.series ?? [];
+		if (!seriesList.length || projectionBalanceSource === 'net_worth') return null;
+		const maxPoints = Math.max(...seriesList.map((series) => series.points.length));
 		if (maxPoints === 0) return null;
 		const points = Array.from({ length: maxPoints }).map((_, index) => {
-			const sample = accounts[0]?.points[index];
-			const balance = accounts.reduce(
-				(sum, account) => sum + (account.points[index]?.balance ?? 0),
+			const sample = seriesList[0]?.points[index];
+			const balance = seriesList.reduce(
+				(sum, series) => sum + (series.points[index]?.balance ?? 0),
 				0
 			);
 			return {
@@ -1162,21 +1225,27 @@ const updateMortgageDetails = async (
 		};
 	})();
 	$: balanceExtent = getBalanceExtent(
-		totalSeries ? [...chartProjection.accounts, totalSeries] : chartProjection.accounts
+		totalSeries ? [...chartProjection.series, normalizeAccountSeries(totalSeries)] : chartProjection.series
 	);
-	$: chartAxisPoints =
-		chartProjection.accounts[0]?.points?.map((point) => ({
+	$: chartAxisPoints = (() => {
+		const basePointsRaw = projectionData.accounts?.[0]?.points ?? chartProjection.series[0]?.points ?? [];
+		const basePoints =
+			projectionRange === '10y' || projectionRange === 'all'
+				? getAnnualPoints(basePointsRaw)
+				: basePointsRaw;
+		return basePoints.map((point) => ({
 			date: point.date,
 			monthLabel:
 				projectionRange === '10y' || projectionRange === 'all'
 					? String(fromYearMonthInt(point.date)?.year ?? '')
 					: point.monthLabel
-		})) ?? [];
+		}));
+	})();
 
 	$: balanceSheetHeaders = chartAxisPoints.map((point) => point.monthLabel);
 	$: balanceSheetRows = (() => {
-		const accounts = chartProjection.accounts ?? [];
-		if (accounts.length === 0) return [];
+		const seriesList = chartProjection.series ?? [];
+		if (seriesList.length === 0) return [];
 		const rows = [];
 		if (totalSeries) {
 			rows.push({
@@ -1184,10 +1253,10 @@ const updateMortgageDetails = async (
 				values: totalSeries.points.map((point) => point.balance)
 			});
 		}
-		for (const account of accounts) {
+		for (const series of seriesList) {
 			rows.push({
-				name: account.accountName,
-				values: account.points.map((point) => point.balance)
+				name: series.name,
+				values: series.points.map((point) => point.balance)
 			});
 		}
 		return rows;
@@ -1387,9 +1456,9 @@ const updateMortgageDetails = async (
 			});
 		}
 
-		for (const [index, series] of chartProjection.accounts.entries()) {
+		for (const [index, series] of chartProjection.series.entries()) {
 			datasets.push({
-				label: series.accountName,
+				label: series.name,
 				data: series.points.map((point) => point.balance),
 				borderColor: chartColors[index % chartColors.length],
 				backgroundColor: 'transparent',
@@ -1506,7 +1575,7 @@ const updateMortgageDetails = async (
 		chart = null;
 	}
 
-	$: if (chart && projectionVersion) {
+	$: if (chart && projectionView === 'balances' && projectionVersion && projectionBalanceSource) {
 		chart.data = buildChartData();
 		chart.options = buildChartOptions();
 		chart.update();
@@ -1571,6 +1640,43 @@ const updateMortgageDetails = async (
 					Transactions
 				</button>
 			</div>
+			{#if projectionView === 'balances' || projectionView === 'balance_sheet'}
+				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'net_worth'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'net_worth')}
+					>
+						Net worth
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'accounts'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'accounts')}
+					>
+						Accounts
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'assets'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'assets')}
+					>
+						Assets
+					</button>
+				</div>
+			{/if}
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
 					type="button"
@@ -1709,8 +1815,8 @@ const updateMortgageDetails = async (
 	{/if}
 
 	{#if projectionView === 'balances'}
-		{#if chartProjection.accounts.length === 0}
-			<p class="mt-3 text-sm text-slate-600">No accounts available for projection.</p>
+		{#if chartProjection.series.length === 0}
+			<p class="mt-3 text-sm text-slate-600">No series available for projection.</p>
 		{:else}
 			<div class="relative mt-4 h-72">
 				<canvas bind:this={chartCanvas} class="h-full w-full"></canvas>
@@ -1727,8 +1833,8 @@ const updateMortgageDetails = async (
 			</div>
 		{/if}
 	{:else if projectionView === 'balance_sheet'}
-		{#if chartProjection.accounts.length === 0}
-			<p class="mt-3 text-sm text-slate-600">No accounts available for projection.</p>
+		{#if chartProjection.series.length === 0}
+			<p class="mt-3 text-sm text-slate-600">No series available for projection.</p>
 		{:else}
 			<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
 				<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
@@ -1736,7 +1842,7 @@ const updateMortgageDetails = async (
 						class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
 					>
 						<tr>
-							<th class="sticky left-0 top-0 z-20 bg-slate-50 px-4 py-3">Account</th>
+							<th class="sticky left-0 top-0 z-20 bg-slate-50 px-4 py-3">Line item</th>
 							{#each balanceSheetHeaders as header}
 								<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
 							{/each}
@@ -2444,6 +2550,52 @@ const updateMortgageDetails = async (
 							</div>
 						{/if}
 					{/if}
+				</div>
+			{/each}
+			{#each assetsList.filter((asset) => asset.asset_type === 'shares') as share}
+				{@const brokerageLink = assetAccountsList.find(
+					(link) => link.asset_id === share.id && link.relationship_role === 'held_in'
+				)}
+				{@const brokerageAccount = brokerageLink
+					? accountsList.find((account) => account.id === brokerageLink.account_id)
+					: null}
+				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+					<h3 class="truncate text-sm font-semibold text-slate-900">{share.name}</h3>
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Start date</span>
+						<span class="justify-self-end text-slate-900">
+							{formatYearMonthInput(share.details?.startDate)}
+						</span>
+						<span></span>
+					</div>
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Capital growth rate</span>
+						<span class="justify-self-end text-slate-900">
+							{formatRate(Number(share.details?.capitalGrowthRate ?? 0), 2)}%
+						</span>
+						<span></span>
+					</div>
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Dividend yield</span>
+						<span class="justify-self-end text-slate-900">
+							{formatRate(Number(share.details?.dividendYield ?? 0), 2)}%
+						</span>
+						<span></span>
+					</div>
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Dividends taken as income</span>
+						<span class="justify-self-end text-slate-900">
+							{formatYearMonthInput(share.details?.dividendsTakenAsIncomeDate)}
+						</span>
+						<span></span>
+					</div>
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Brokerage account</span>
+						<span class="justify-self-end text-slate-900">
+							{brokerageAccount?.name ?? '—'}
+						</span>
+						<span></span>
+					</div>
 				</div>
 			{/each}
 			{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}

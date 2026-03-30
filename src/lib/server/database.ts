@@ -169,7 +169,7 @@ export async function getScenariosForUser(userId: string) {
 
 export type AssetListItem = {
 	id: string;
-	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation';
+	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation' | 'shares';
 	name: string;
 	details: Record<string, unknown>;
 	property_id?: string | null;
@@ -1203,6 +1203,17 @@ export type CreateMortgageAssetWithAccountsInput = {
 		| { type: 'new'; name: string; interestRate: number; openingBalance: number };
 };
 
+export type CreateShareAssetWithBrokerageInput = {
+	scenarioId: string;
+	name: string;
+	startDate: number;
+	capitalGrowthRate: number;
+	dividendYield: number;
+	dividendsTakenAsIncomeDate: number;
+	brokerageOpeningBalance: number;
+	paysIntoAccountId: string;
+};
+
 export async function createPersonAssetWithCashflows(input: CreatePersonAssetWithCashflowsInput) {
 	const client = await getPool().connect();
 	try {
@@ -1497,6 +1508,64 @@ export async function createMortgageAssetWithAccounts(input: CreateMortgageAsset
 				role: 'offsets'
 			});
 		}
+
+		await client.query('commit');
+		return assetId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+export async function createShareAssetWithBrokerage(input: CreateShareAssetWithBrokerageInput) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+
+		const assetId = await createAsset(
+			{
+				scenarioId: input.scenarioId,
+				assetType: 'shares',
+				name: input.name,
+				details: {
+					startDate: input.startDate,
+					capitalGrowthRate: input.capitalGrowthRate,
+					dividendYield: input.dividendYield,
+					dividendsTakenAsIncomeDate: input.dividendsTakenAsIncomeDate
+				}
+			},
+			client
+		);
+
+		const brokerageAccountId = await createAccount(
+			{
+				scenarioId: input.scenarioId,
+				accountType: 'brokerage',
+				name: `${input.name} Brokerage`,
+				details: {
+					interestRate: 0,
+					openingBalance: input.brokerageOpeningBalance,
+					startDate: input.startDate
+				}
+			},
+			client
+		);
+
+		await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: brokerageAccountId,
+			role: 'held_in'
+		});
+
+		await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: input.paysIntoAccountId,
+			role: 'pays_into'
+		});
 
 		await client.query('commit');
 		return assetId;

@@ -6,6 +6,7 @@ import {
 	createPersonAssetWithCashflows,
 	createPropertyAssetWithExpense,
 	createMortgageAssetWithAccounts,
+	createShareAssetWithBrokerage,
 	getAccountsForScenario,
 	getAssetsForScenario,
 	getScenarioForUserById
@@ -38,7 +39,7 @@ const decimalUpToOnePlaceSchema = z
 const roundToTwo = (value: number) => Number(value.toFixed(2));
 
 const uuidSchema = z.string().uuid();
-const assetTypeSchema = z.enum(['person', 'property', 'mortgage', 'superannuation']);
+const assetTypeSchema = z.enum(['person', 'property', 'mortgage', 'superannuation', 'shares']);
 
 const createAssetSchema = z
 	.object({
@@ -53,6 +54,11 @@ const createAssetSchema = z
 		propertyFixedSellingCosts: z.string().trim().optional(),
 		propertyVariableSellingCosts: z.string().trim().optional(),
 		propertyOwnershipExpense: z.string().trim().optional(),
+		shareCapitalGrowthRate: z.string().trim().optional(),
+		shareDividendYield: z.string().trim().optional(),
+		shareDividendsTakenAsIncomeDate: z.string().trim().optional(),
+		shareBrokerageAccountOpeningBalance: z.string().trim().optional(),
+		sharePaysIntoAccountId: z.string().trim().optional(),
 		mortgagePropertyId: z.string().trim().optional(),
 		mortgageTermYears: z.string().trim().optional(),
 		mortgageTermMonths: z.string().trim().optional(),
@@ -489,6 +495,63 @@ const createAssetSchema = z
 				}
 			}
 		}
+
+		if (data.assetType === 'shares') {
+			if (
+				!data.shareCapitalGrowthRate ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.shareCapitalGrowthRate)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Capital growth rate is required',
+					path: ['shareCapitalGrowthRate']
+				});
+			}
+			if (!data.shareDividendYield || !/^-?\d+(\.\d{1,2})?$/.test(data.shareDividendYield)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Dividend yield is required',
+					path: ['shareDividendYield']
+				});
+			}
+			if (
+				!data.shareDividendsTakenAsIncomeDate ||
+				!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.shareDividendsTakenAsIncomeDate)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Dividend income date must be MM YYYY',
+					path: ['shareDividendsTakenAsIncomeDate']
+				});
+			}
+			if (
+				data.shareBrokerageAccountOpeningBalance === undefined ||
+				data.shareBrokerageAccountOpeningBalance === '' ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.shareBrokerageAccountOpeningBalance)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Brokerage opening balance is required',
+					path: ['shareBrokerageAccountOpeningBalance']
+				});
+			}
+			if (!data.sharePaysIntoAccountId) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select a pays into cash account',
+					path: ['sharePaysIntoAccountId']
+				});
+			} else {
+				const parsed = uuidSchema.safeParse(data.sharePaysIntoAccountId);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Pays into account selection is invalid',
+						path: ['sharePaysIntoAccountId']
+					});
+				}
+			}
+		}
 	});
 
 const normalizeMonth = (value: string) => {
@@ -566,6 +629,11 @@ export const actions: Actions = {
 			propertyFixedSellingCosts: formData.get('propertyFixedSellingCosts') ?? '10000',
 			propertyVariableSellingCosts: formData.get('propertyVariableSellingCosts') ?? '1.65',
 			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
+			shareCapitalGrowthRate: formData.get('shareCapitalGrowthRate') ?? '',
+			shareDividendYield: formData.get('shareDividendYield') ?? '',
+			shareDividendsTakenAsIncomeDate: formData.get('shareDividendsTakenAsIncomeDate') ?? '',
+			shareBrokerageAccountOpeningBalance: formData.get('shareBrokerageAccountOpeningBalance') ?? '',
+			sharePaysIntoAccountId: formData.get('sharePaysIntoAccountId') ?? '',
 			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
 			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
 			mortgageTermMonths: formData.get('mortgageTermMonths') ?? '',
@@ -613,6 +681,11 @@ export const actions: Actions = {
 			propertyFixedSellingCosts,
 			propertyVariableSellingCosts,
 			propertyOwnershipExpense,
+			shareCapitalGrowthRate,
+			shareDividendYield,
+			shareDividendsTakenAsIncomeDate,
+			shareBrokerageAccountOpeningBalance,
+			sharePaysIntoAccountId,
 			mortgagePropertyId,
 			mortgageTermYears,
 			mortgageTermMonths,
@@ -775,6 +848,31 @@ export const actions: Actions = {
 										type: 'existing',
 										accountId: mortgageOffsetChoice ?? ''
 									}
+				});
+			} else if (assetType.data === 'shares') {
+				const cashAccountIds = new Set(
+					(await getAccountsForScenario(scenario.id))
+						.filter((account) => account.account_type === 'cash_account')
+						.map((account) => account.id)
+				);
+				if (!cashAccountIds.has(sharePaysIntoAccountId ?? '')) {
+					const errors: Record<string, string[]> = {
+						sharePaysIntoAccountId: ['Select a valid cash account']
+					};
+					return fail(400, {
+						errors,
+						values: payload
+					});
+				}
+				await createShareAssetWithBrokerage({
+					scenarioId: scenario.id,
+					name,
+					startDate: details.startDate as number,
+					capitalGrowthRate: decimalUpToTwoPlacesSchema.parse(shareCapitalGrowthRate ?? '0'),
+					dividendYield: decimalUpToTwoPlacesSchema.parse(shareDividendYield ?? '0'),
+					dividendsTakenAsIncomeDate: normalizeMonth(shareDividendsTakenAsIncomeDate ?? ''),
+					brokerageOpeningBalance: currencySchema.parse(shareBrokerageAccountOpeningBalance ?? '0'),
+					paysIntoAccountId: sharePaysIntoAccountId ?? ''
 				});
 			} else {
 				await createAsset({

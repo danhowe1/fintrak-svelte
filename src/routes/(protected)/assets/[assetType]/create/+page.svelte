@@ -251,6 +251,42 @@
 			</FormSection>
 		{/if}
 
+		{#if selectedType === 'shares'}
+			<FormSection title={`${assetTypeLabel} DETAILS`}>
+				<div class="grid gap-4 md:grid-cols-3">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Capital growth rate (%)"
+						name="shareCapitalGrowthRate"
+						step="0.01"
+						value={form?.values?.shareCapitalGrowthRate ?? ''}
+						error={form?.errors?.shareCapitalGrowthRate?.[0]}
+						required
+					/>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Dividend yield (%)"
+						name="shareDividendYield"
+						step="0.01"
+						value={form?.values?.shareDividendYield ?? ''}
+						error={form?.errors?.shareDividendYield?.[0]}
+						required
+					/>
+					<FormField
+						type="text"
+						label="Dividends taken as income (MM YYYY)"
+						name="shareDividendsTakenAsIncomeDate"
+						inputmode="numeric"
+						value={form?.values?.shareDividendsTakenAsIncomeDate ?? ''}
+						error={form?.errors?.shareDividendsTakenAsIncomeDate?.[0]}
+						required
+					/>
+				</div>
+			</FormSection>
+		{/if}
+
 		<FormSection title="Cashflows">
 			{#if selectedType === 'person'}
 				<div class="grid gap-4">
@@ -630,6 +666,54 @@
 							/>
 						</div>
 					{/if}
+				</div>
+			{/if}
+
+			{#if selectedType === 'shares'}
+				<div class="grid gap-4">
+					<div class="text-sm text-slate-600">
+						A brokerage account will be created automatically as:
+						<span class="font-semibold text-slate-900">
+							{String(form?.values?.name ?? '').trim() || 'Asset name'} Brokerage
+						</span>
+					</div>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Brokerage opening balance"
+						name="shareBrokerageAccountOpeningBalance"
+						step="0.01"
+						value={form?.values?.shareBrokerageAccountOpeningBalance ?? ''}
+						error={form?.errors?.shareBrokerageAccountOpeningBalance?.[0]}
+						required
+					/>
+					<label class="grid gap-2 text-sm font-medium text-slate-700">
+						Pays into (cash account)
+						<select
+							name="sharePaysIntoAccountId"
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							required
+						>
+							<option
+								value=""
+								disabled
+								selected={(form?.values?.sharePaysIntoAccountId ?? '') === ''}
+							>
+								Select a cash account
+							</option>
+							{#each data.cashAccounts as account}
+								<option
+									value={account.id}
+									selected={(form?.values?.sharePaysIntoAccountId ?? '') === account.id}
+								>
+									{account.name}
+								</option>
+							{/each}
+						</select>
+						{#if form?.errors?.sharePaysIntoAccountId?.[0]}
+							<span class="text-xs text-rose-600">{form.errors.sharePaysIntoAccountId[0]}</span>
+						{/if}
+					</label>
 				</div>
 			{/if}
 		</FormSection>

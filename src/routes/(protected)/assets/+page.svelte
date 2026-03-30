@@ -62,6 +62,12 @@
 		>
 			Create superannuation
 		</a>
+		<a
+			href="/assets/shares/create"
+			class="inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800"
+		>
+			Create shares
+		</a>
 	</div>
 </section>
 
@@ -107,6 +113,10 @@
 										, interest-only until{' '}
 										{formatMonth(asset.details?.interestOnlyEnd)}
 									{/if}
+								{:else if asset.asset_type === 'shares'}
+									Growth {asset.details?.capitalGrowthRate ?? '—'}%, dividend yield{' '}
+									{asset.details?.dividendYield ?? '—'}%, income date{' '}
+									{formatMonth(asset.details?.dividendsTakenAsIncomeDate)}
 								{:else}
 									—
 								{/if}
