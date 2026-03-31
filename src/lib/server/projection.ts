@@ -986,11 +986,30 @@ export const buildProjection = (input: {
 			const quarterlyDividendAmount = state.currentValue * (state.dividendYield / 100 / 4);
 			if (quarterlyDividendAmount === 0) continue;
 			pushTransaction(
-				state.paysIntoAccountId,
+				state.brokerageAccountId,
 				quarterlyDividendAmount,
 				'income',
 				'dividend_income',
 				`shares_dividend_${assetId}`,
+				null,
+				state.assetName
+			);
+			if (!state.paysIntoAccountId) continue;
+			pushTransaction(
+				state.brokerageAccountId,
+				-quarterlyDividendAmount,
+				'transfer',
+				'transfer',
+				`shares_dividend_transfer_out_${assetId}`,
+				null,
+				state.assetName
+			);
+			pushTransaction(
+				state.paysIntoAccountId,
+				quarterlyDividendAmount,
+				'transfer',
+				'transfer',
+				`shares_dividend_transfer_in_${assetId}`,
 				null,
 				state.assetName
 			);
@@ -1018,16 +1037,11 @@ export const buildProjection = (input: {
 				state.monthlyDrawdownAmount = (state.currentValue * 0.04) / 12;
 			}
 
-			if (
-				preservationReached &&
-				state.drawdownMonthsRemaining > 0 &&
-				state.monthlyDrawdownAmount > 0 &&
-				state.paysIntoAccountId
-			) {
+			if (preservationReached && state.drawdownMonthsRemaining > 0 && state.monthlyDrawdownAmount > 0) {
 				const drawdownAmount = Math.min(state.currentValue, state.monthlyDrawdownAmount);
 				if (drawdownAmount > 0) {
 					pushTransaction(
-						state.paysIntoAccountId,
+						state.superAccountId,
 						drawdownAmount,
 						'income',
 						'super_income',
@@ -1035,6 +1049,26 @@ export const buildProjection = (input: {
 						'Mandatory 4% drawdown',
 						state.assetName
 					);
+					if (state.paysIntoAccountId) {
+						pushTransaction(
+							state.superAccountId,
+							-drawdownAmount,
+							'transfer',
+							'transfer',
+							`super_drawdown_transfer_out_${assetId}_${state.drawdownCycleYear ?? current.year}`,
+							null,
+							state.assetName
+						);
+						pushTransaction(
+							state.paysIntoAccountId,
+							drawdownAmount,
+							'transfer',
+							'transfer',
+							`super_drawdown_transfer_in_${assetId}_${state.drawdownCycleYear ?? current.year}`,
+							null,
+							state.assetName
+						);
+					}
 					state.currentValue -= drawdownAmount;
 				}
 				state.drawdownMonthsRemaining -= 1;

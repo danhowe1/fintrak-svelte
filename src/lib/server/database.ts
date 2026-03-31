@@ -1660,7 +1660,7 @@ export async function createSuperannuationAssetWithAccount(
 			{
 				scenarioId: input.scenarioId,
 				accountType: 'super_account',
-				name: `${input.name} Super`,
+				name: `${input.name} Account`,
 				details: {
 					interestRate: 0,
 					openingBalance: input.openingBalance,
