@@ -15,7 +15,9 @@ import {
 	updatePersonRetirementAge,
 	updatePersonDetails,
 	updatePropertyDetails,
+	updateShareDetails,
 	updateAccountInterestRate,
+	updateAccountDetails,
 	updateMortgageDetails
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
@@ -276,6 +278,53 @@ export const actions: Actions = {
 		});
 		return { success: true };
 	},
+	updateShareDetails: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const name = String(formData.get('name') ?? '').trim();
+		const startDate = String(formData.get('startDate') ?? '').trim();
+		const capitalGrowthRateRaw = Number(formData.get('capitalGrowthRate'));
+		const dividendYieldRaw = Number(formData.get('dividendYield'));
+		const dividendsTakenAsIncomeDate = String(formData.get('dividendsTakenAsIncomeDate') ?? '').trim();
+		const capitalGrowthRate = Number.isFinite(capitalGrowthRateRaw)
+			? Math.round(capitalGrowthRateRaw * 100) / 100
+			: Number.NaN;
+		const dividendYield = Number.isFinite(dividendYieldRaw)
+			? Math.round(dividendYieldRaw * 100) / 100
+			: Number.NaN;
+		const normalizedStartDate = parseYearMonthInput(startDate);
+		const normalizedDividendDate = parseYearMonthInput(dividendsTakenAsIncomeDate);
+		if (
+			!scenarioId ||
+			!assetId ||
+			!name ||
+			!startDate ||
+			normalizedStartDate === null ||
+			!dividendsTakenAsIncomeDate ||
+			normalizedDividendDate === null ||
+			!Number.isFinite(capitalGrowthRate) ||
+			!Number.isFinite(dividendYield)
+		) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updateShareDetails(scenarioId, assetId, {
+			name,
+			startDate,
+			capitalGrowthRate,
+			dividendYield,
+			dividendsTakenAsIncomeDate
+		});
+		return { success: true };
+	},
 	updateAccountInterestRate: async (event) => {
 		const userId = event.locals.appUserId;
 		if (!userId) {
@@ -296,6 +345,41 @@ export const actions: Actions = {
 			return fail(404, { error: 'Scenario not found.' });
 		}
 		await updateAccountInterestRate(scenarioId, accountId, interestRate);
+		return { success: true };
+	},
+	updateAccountDetails: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const accountId = String(formData.get('accountId') ?? '');
+		const name = String(formData.get('name') ?? '').trim();
+		const startDateRaw = String(formData.get('startDate') ?? '').trim();
+		const openingBalanceRaw = Number(formData.get('openingBalance'));
+		const startDate = parseYearMonthInput(startDateRaw);
+		const openingBalance = Number.isFinite(openingBalanceRaw)
+			? Math.round(openingBalanceRaw * 100) / 100
+			: Number.NaN;
+		if (
+			!scenarioId ||
+			!accountId ||
+			!name ||
+			startDate === null ||
+			!Number.isFinite(openingBalance)
+		) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updateAccountDetails(scenarioId, accountId, {
+			name,
+			startDate,
+			openingBalance
+		});
 		return { success: true };
 	},
 	updateMortgageDetails: async (event) => {

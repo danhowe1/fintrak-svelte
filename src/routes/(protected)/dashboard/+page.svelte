@@ -110,6 +110,16 @@ let propertyDetails: Record<
 		variableSellingCosts: number;
 	}
 > = {};
+let shareDetails: Record<
+	string,
+	{
+		name: string;
+		startDate: string;
+		capitalGrowthRate: number;
+		dividendYield: number;
+		dividendsTakenAsIncomeDate: string;
+	}
+> = {};
 let accountInterestRates: Record<string, number> = {};
 let propertyErrors: Record<
 	string,
@@ -120,6 +130,16 @@ let propertyErrors: Record<
 		marketValue?: string;
 		fixedSellingCosts?: string;
 		variableSellingCosts?: string;
+	}
+> = {};
+let shareErrors: Record<
+	string,
+	{
+		name?: string;
+		startDate?: string;
+		capitalGrowthRate?: string;
+		dividendYield?: string;
+		dividendsTakenAsIncomeDate?: string;
 	}
 > = {};
 let mortgageDetails: Record<
@@ -156,6 +176,7 @@ let editingCashflowIds = new Set<string>();
 let expandedPersonDetailIds = new Set<string>();
 let expandedPropertyDetailIds = new Set<string>();
 let expandedMortgageDetailIds = new Set<string>();
+let expandedShareDetailIds = new Set<string>();
 let deleteConfirmId: string | null = null;
 let transferFormError = '';
 let transferInlineError = '';
@@ -181,6 +202,15 @@ let transferEditDrafts: Record<
 		description: string;
 	}
 > = {};
+let accountEditDrafts: Record<
+	string,
+	{
+		startDate: string;
+		name: string;
+		openingBalance: string;
+	}
+> = {};
+let accountInlineError = '';
 
 const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 	const details = asset.details ?? {};
@@ -198,8 +228,10 @@ $: if (data.scenario.id !== lastScenarioId) {
 	personDetails = {};
 	cashflowAmounts = {};
 	propertyDetails = {};
+	shareDetails = {};
 	accountInterestRates = {};
 	propertyErrors = {};
+	shareErrors = {};
 	mortgageDetails = {};
 	mortgageErrors = {};
 	personDetailsErrors = {};
@@ -211,8 +243,10 @@ $: if (data.scenario.id !== lastScenarioId) {
 	expandedPersonDetailIds = new Set();
 	expandedPropertyDetailIds = new Set();
 	expandedMortgageDetailIds = new Set();
+	expandedShareDetailIds = new Set();
 	transferFormError = '';
 	transferInlineError = '';
+	accountInlineError = '';
 	transferDraft = {
 		sourceAccountId: '',
 		destinationAccountId: '',
@@ -224,6 +258,7 @@ $: if (data.scenario.id !== lastScenarioId) {
 		inflationAffected: false
 	};
 	transferEditDrafts = {};
+	accountEditDrafts = {};
 	lastScenarioId = data.scenario.id;
 }
 
@@ -318,6 +353,39 @@ $: if (Object.keys(accountInterestRates).length === 0 && (accountsList.length ??
 		next[account.id] = Number.isFinite(rate) ? rate : 0;
 	}
 	accountInterestRates = next;
+}
+
+$: if (Object.keys(shareDetails).length === 0 && (assetsList.length ?? 0) > 0) {
+	const next: Record<
+		string,
+		{
+			name: string;
+			startDate: string;
+			capitalGrowthRate: number;
+			dividendYield: number;
+			dividendsTakenAsIncomeDate: string;
+		}
+	> = {};
+	for (const asset of assetsList) {
+		if (asset.asset_type !== 'shares') continue;
+		const details = asset.details ?? {};
+		const rawCapitalGrowthRate = details.capitalGrowthRate;
+		const rawDividendYield = details.dividendYield;
+		const capitalGrowthRate =
+			typeof rawCapitalGrowthRate === 'number'
+				? rawCapitalGrowthRate
+				: Number(rawCapitalGrowthRate ?? 0);
+		const dividendYield =
+			typeof rawDividendYield === 'number' ? rawDividendYield : Number(rawDividendYield ?? 0);
+		next[asset.id] = {
+			name: asset.name ?? '',
+			startDate: formatYearMonthInput(asset.start_date),
+			capitalGrowthRate: Number.isFinite(capitalGrowthRate) ? capitalGrowthRate : 0,
+			dividendYield: Number.isFinite(dividendYield) ? dividendYield : 0,
+			dividendsTakenAsIncomeDate: formatYearMonthInput(details.dividendsTakenAsIncomeDate)
+		};
+	}
+	shareDetails = next;
 }
 
 $: if (Object.keys(mortgageDetails).length === 0 && (assetsList.length ?? 0) > 0) {
@@ -467,6 +535,29 @@ $: {
 	}
 	if (changed) {
 		transferEditDrafts = nextDrafts;
+	}
+}
+
+$: {
+	const nextDrafts = { ...accountEditDrafts };
+	let changed = false;
+	const accountIds = new Set(accountsList.map((account) => account.id));
+	for (const account of accountsList) {
+		if (nextDrafts[account.id]) continue;
+		nextDrafts[account.id] = {
+			startDate: toMonthYearInput(account.start_date),
+			name: account.name ?? '',
+			openingBalance: String(account.opening_balance ?? 0)
+		};
+		changed = true;
+	}
+	for (const accountId of Object.keys(nextDrafts)) {
+		if (accountIds.has(accountId)) continue;
+		delete nextDrafts[accountId];
+		changed = true;
+	}
+	if (changed) {
+		accountEditDrafts = nextDrafts;
 	}
 }
 
@@ -720,6 +811,37 @@ const toggleMortgageDetails = (id: string) => {
 		next.add(id);
 	}
 	expandedMortgageDetailIds = next;
+};
+
+const toggleShareDetails = (id: string) => {
+	const next = new Set(expandedShareDetailIds);
+	if (next.has(id)) {
+		next.delete(id);
+	} else {
+		next.add(id);
+	}
+	expandedShareDetailIds = next;
+};
+
+const setShareDetails = (
+	id: string,
+	value: {
+		name: string;
+		startDate: string;
+		capitalGrowthRate: number;
+		dividendYield: number;
+		dividendsTakenAsIncomeDate: string;
+	}
+) => {
+	shareDetails = { ...shareDetails, [id]: value };
+};
+
+const setShareError = (
+	id: string,
+	field: 'name' | 'startDate' | 'capitalGrowthRate' | 'dividendYield' | 'dividendsTakenAsIncomeDate',
+	message: string
+) => {
+	shareErrors = { ...shareErrors, [id]: { ...(shareErrors[id] ?? {}), [field]: message } };
 };
 
 const validateMortgageDetails = (
@@ -1256,6 +1378,82 @@ const saveTransferEditDraft = async (cashflowId: string) => {
 	});
 };
 
+const setAccountEditDraft = (
+	accountId: string,
+	updates: Partial<{
+		startDate: string;
+		name: string;
+		openingBalance: string;
+	}>
+) => {
+	accountEditDrafts = {
+		...accountEditDrafts,
+		[accountId]: { ...accountEditDrafts[accountId], ...updates }
+	};
+};
+
+const saveAccountEditDraft = async (accountId: string) => {
+	const draft = accountEditDrafts[accountId];
+	if (!draft) return;
+	const name = draft.name.trim();
+	const openingBalance = Number(draft.openingBalance);
+	const normalizedStartDate = normalizeYearMonthValue(draft.startDate);
+	if (!name) {
+		accountInlineError = 'Account name is required.';
+		return;
+	}
+	if (!isValidMonthYear(draft.startDate) || normalizedStartDate === null) {
+		accountInlineError = 'Account start date must use MM YYYY.';
+		return;
+	}
+	if (!Number.isFinite(openingBalance)) {
+		accountInlineError = 'Opening balance must be a valid number.';
+		return;
+	}
+	await withLock(
+		`account-edit:${accountId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('accountId', accountId);
+			formData.set('name', name);
+			formData.set('startDate', draft.startDate);
+			formData.set('openingBalance', String(openingBalance));
+			const response = await fetch('?/updateAccountDetails', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				throw new Error('Unable to update account details.');
+			}
+			const roundedOpeningBalance = roundToTwo(openingBalance);
+			accountsList = accountsList.map((account) =>
+				account.id === accountId
+					? {
+							...account,
+							name,
+							start_date: normalizedStartDate,
+							opening_balance: roundedOpeningBalance
+						}
+					: account
+			);
+			setAccountEditDraft(accountId, {
+				name,
+				startDate: toMonthYearInput(normalizedStartDate),
+				openingBalance: String(roundedOpeningBalance)
+			});
+			accountInlineError = '';
+			await refreshProjection();
+		},
+		autoRunProjection
+	).catch((error) => {
+		accountInlineError =
+			error instanceof Error ? error.message : 'Unable to update account details.';
+		projectionError = accountInlineError;
+	});
+};
+
 const requestDeleteCashflow = (cashflowId: string) => {
 	deleteConfirmId = cashflowId;
 };
@@ -1335,6 +1533,41 @@ const updatePropertyDetails = async (
 	).catch((error) => {
 		projectionError =
 			error instanceof Error ? error.message : 'Unable to update property details.';
+	});
+};
+
+const updateShareDetails = async (
+	assetId: string,
+	name: string,
+	startDate: string,
+	capitalGrowthRate: number,
+	dividendYield: number,
+	dividendsTakenAsIncomeDate: string
+) => {
+	await withLock(
+		`shares:${assetId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('assetId', assetId);
+			formData.set('name', name);
+			formData.set('startDate', startDate);
+			formData.set('capitalGrowthRate', String(capitalGrowthRate));
+			formData.set('dividendYield', String(dividendYield));
+			formData.set('dividendsTakenAsIncomeDate', dividendsTakenAsIncomeDate);
+			const response = await fetch('?/updateShareDetails', {
+				method: 'POST',
+				body: formData
+			});
+			if (!response.ok) {
+				throw new Error('Unable to update shares details. Please try again.');
+			}
+			await refreshProjection();
+		},
+		autoRunProjection
+	).catch((error) => {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update shares details.';
 	});
 };
 
@@ -1457,7 +1690,7 @@ const updateMortgageDetails = async (
 		const accountSeries = (projectionData.accounts ?? [])
 			.filter((series) => {
 				const account = accountsList.find((item) => item.id === series.accountId);
-				return account?.account_type !== 'brokerage';
+				return account?.account_type !== 'brokerage' && account?.account_type !== 'super_account';
 			})
 			.map(normalizeAccountSeries);
 		const assetSeries = (projectionData.assets ?? []).map(normalizeAssetSeries);
@@ -1921,17 +2154,6 @@ const updateMortgageDetails = async (
 					<button
 						type="button"
 						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'accounts'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'accounts')}
-					>
-						Accounts
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
 							projectionBalanceSource === 'assets'
 								? 'bg-slate-900 text-white'
 								: 'text-slate-600 hover:text-slate-900'
@@ -1939,6 +2161,17 @@ const updateMortgageDetails = async (
 						on:click={() => (projectionBalanceSource = 'assets')}
 					>
 						Assets
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'accounts'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'accounts')}
+					>
+						Accounts
 					</button>
 					<button
 						type="button"
@@ -2357,7 +2590,7 @@ const updateMortgageDetails = async (
 </section>
 
 <section class="not-prose mt-6">
-	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
+	<div class="grid gap-4">
 		<div>
 			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
@@ -2396,9 +2629,9 @@ const updateMortgageDetails = async (
 					</button>
 				</div>
 				{#if assetPanelTab === 'assets'}
-			<div class="assets-cards mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+			<div class="assets-cards mt-5 grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
-				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+				<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">
 						{personDetails[person.id]?.name ?? person.name}
 					</h3>
@@ -2890,54 +3123,310 @@ const updateMortgageDetails = async (
 				</div>
 			{/each}
 			{#each assetsList.filter((asset) => asset.asset_type === 'shares') as share}
-				{@const brokerageLink = assetAccountsList.find(
-					(link) => link.asset_id === share.id && link.relationship_role === 'held_in'
-				)}
-				{@const brokerageAccount = brokerageLink
-					? accountsList.find((account) => account.id === brokerageLink.account_id)
-					: null}
-				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
-					<h3 class="truncate text-sm font-semibold text-slate-900">{share.name}</h3>
-					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
-						<span class="truncate text-slate-500">Start date</span>
-						<span class="justify-self-end text-slate-900">
-							{formatYearMonthInput(share.start_date)}
-						</span>
-						<span></span>
-					</div>
-					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+				<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
+					<h3 class="truncate text-sm font-semibold text-slate-900">
+						{shareDetails[share.id]?.name ?? share.name}
+					</h3>
+					<div class="mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Capital growth rate</span>
-						<span class="justify-self-end text-slate-900">
-							{formatRate(Number(share.details?.capitalGrowthRate ?? 0), 2)}%
-						</span>
+						<div class="justify-self-end flex flex-col items-end">
+							<input
+								type="number"
+								class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={formatRate(shareDetails[share.id]?.capitalGrowthRate ?? 0, 2)}
+								step="0.01"
+								on:input={(event) => {
+									const next = Number((event.currentTarget as HTMLInputElement).value);
+									const current = shareDetails[share.id];
+									if (!current) return;
+									setShareDetails(share.id, {
+										...current,
+										capitalGrowthRate: Number.isFinite(next) ? next : 0
+									});
+								}}
+								on:change={(event) => {
+									const next = Number((event.currentTarget as HTMLInputElement).value);
+									const current = shareDetails[share.id];
+									if (!current) return;
+									if (!Number.isFinite(next)) {
+										setShareError(share.id, 'capitalGrowthRate', 'Use a valid number.');
+										return;
+									}
+									setShareError(share.id, 'capitalGrowthRate', '');
+									setShareDetails(share.id, { ...current, capitalGrowthRate: roundToTwo(next) });
+									scheduleUpdate(`shares:${share.id}`, () =>
+										updateShareDetails(
+											share.id,
+											current.name,
+											current.startDate,
+											roundToTwo(next),
+											current.dividendYield,
+											current.dividendsTakenAsIncomeDate
+										)
+									);
+								}}
+							/>
+							{#if shareErrors[share.id]?.capitalGrowthRate}
+								<span class="mt-1 text-[10px] text-rose-600">
+									{shareErrors[share.id]?.capitalGrowthRate}
+								</span>
+							{/if}
+						</div>
 						<span></span>
 					</div>
 					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Dividend yield</span>
-						<span class="justify-self-end text-slate-900">
-							{formatRate(Number(share.details?.dividendYield ?? 0), 2)}%
-						</span>
+						<div class="justify-self-end flex flex-col items-end">
+							<input
+								type="number"
+								class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={formatRate(shareDetails[share.id]?.dividendYield ?? 0, 2)}
+								step="0.01"
+								on:input={(event) => {
+									const next = Number((event.currentTarget as HTMLInputElement).value);
+									const current = shareDetails[share.id];
+									if (!current) return;
+									setShareDetails(share.id, {
+										...current,
+										dividendYield: Number.isFinite(next) ? next : 0
+									});
+								}}
+								on:change={(event) => {
+									const next = Number((event.currentTarget as HTMLInputElement).value);
+									const current = shareDetails[share.id];
+									if (!current) return;
+									if (!Number.isFinite(next)) {
+										setShareError(share.id, 'dividendYield', 'Use a valid number.');
+										return;
+									}
+									setShareError(share.id, 'dividendYield', '');
+									setShareDetails(share.id, { ...current, dividendYield: roundToTwo(next) });
+									scheduleUpdate(`shares:${share.id}`, () =>
+										updateShareDetails(
+											share.id,
+											current.name,
+											current.startDate,
+											current.capitalGrowthRate,
+											roundToTwo(next),
+											current.dividendsTakenAsIncomeDate
+										)
+									);
+								}}
+							/>
+							{#if shareErrors[share.id]?.dividendYield}
+								<span class="mt-1 text-[10px] text-rose-600">
+									{shareErrors[share.id]?.dividendYield}
+								</span>
+							{/if}
+						</div>
 						<span></span>
 					</div>
 					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Dividends taken as income</span>
-						<span class="justify-self-end text-slate-900">
-							{formatYearMonthInput(share.details?.dividendsTakenAsIncomeDate)}
-						</span>
-						<span></span>
+						<div class="justify-self-end flex flex-col items-end">
+							<input
+								type="text"
+								inputmode="numeric"
+								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+								class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={shareDetails[share.id]?.dividendsTakenAsIncomeDate ?? ''}
+								on:input={(event) => {
+									const next = (event.currentTarget as HTMLInputElement).value;
+									const current = shareDetails[share.id];
+									if (!current) return;
+									setShareDetails(share.id, { ...current, dividendsTakenAsIncomeDate: next });
+									if (next.trim().length === 0 || isValidMonthYear(next)) {
+										setShareError(share.id, 'dividendsTakenAsIncomeDate', '');
+									}
+								}}
+								on:change={(event) => {
+									const next = (event.currentTarget as HTMLInputElement).value;
+									const current = shareDetails[share.id];
+									if (!current) return;
+									if (next.trim().length === 0 || !isValidMonthYear(next)) {
+										setShareError(
+											share.id,
+											'dividendsTakenAsIncomeDate',
+											'Use MM YYYY format.'
+										);
+										return;
+									}
+									setShareError(share.id, 'dividendsTakenAsIncomeDate', '');
+									setShareDetails(share.id, { ...current, dividendsTakenAsIncomeDate: next });
+									scheduleUpdate(`shares:${share.id}`, () =>
+										updateShareDetails(
+											share.id,
+											current.name,
+											current.startDate,
+											current.capitalGrowthRate,
+											current.dividendYield,
+											next
+										)
+									);
+								}}
+							/>
+							{#if shareErrors[share.id]?.dividendsTakenAsIncomeDate}
+								<span class="mt-1 text-[10px] text-rose-600">
+									{shareErrors[share.id]?.dividendsTakenAsIncomeDate}
+								</span>
+							{/if}
+						</div>
+						<button
+							type="button"
+							class="flex items-center justify-end text-slate-500 hover:text-slate-700"
+							aria-label={expandedShareDetailIds.has(share.id) ? 'Hide details' : 'Show details'}
+							title={expandedShareDetailIds.has(share.id) ? 'Hide details' : 'Show details'}
+							on:click={() => toggleShareDetails(share.id)}
+						>
+							<svg
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								class="h-4 w-4"
+							>
+								<path d="M5 12h14" />
+								{#if !expandedShareDetailIds.has(share.id)}
+									<path d="M12 5v14" />
+								{/if}
+							</svg>
+						</button>
 					</div>
-					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
-						<span class="truncate text-slate-500">Brokerage account</span>
-						<span class="justify-self-end text-slate-900">
-							{brokerageAccount?.name ?? '—'}
-						</span>
-						<span></span>
-					</div>
+					{#if expandedShareDetailIds.has(share.id)}
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Start date (MM YYYY)</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									inputmode="numeric"
+									pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={shareDetails[share.id]?.startDate ?? ''}
+									on:input={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = shareDetails[share.id];
+										if (!current) return;
+										setShareDetails(share.id, { ...current, startDate: next });
+										if (next.trim().length === 0 || isValidMonthYear(next)) {
+											setShareError(share.id, 'startDate', '');
+										}
+									}}
+									on:change={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = shareDetails[share.id];
+										if (!current) return;
+										if (next.trim().length === 0 || !isValidMonthYear(next)) {
+											setShareError(share.id, 'startDate', 'Use MM YYYY format.');
+											return;
+										}
+										if (!current.name.trim()) {
+											setShareError(share.id, 'name', 'Name is required.');
+											return;
+										}
+										if (
+											current.dividendsTakenAsIncomeDate.trim().length === 0 ||
+											!isValidMonthYear(current.dividendsTakenAsIncomeDate)
+										) {
+											setShareError(
+												share.id,
+												'dividendsTakenAsIncomeDate',
+												'Use MM YYYY format.'
+											);
+											return;
+										}
+										setShareError(share.id, 'startDate', '');
+										setShareDetails(share.id, { ...current, startDate: next });
+										scheduleUpdate(`shares:${share.id}`, () =>
+											updateShareDetails(
+												share.id,
+												current.name,
+												next,
+												current.capitalGrowthRate,
+												current.dividendYield,
+												current.dividendsTakenAsIncomeDate
+											)
+										);
+									}}
+								/>
+								{#if shareErrors[share.id]?.startDate}
+									<span class="mt-1 text-[10px] text-rose-600">{shareErrors[share.id]?.startDate}</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+						<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+							<span class="truncate text-slate-500">Name</span>
+							<div class="justify-self-end flex flex-col items-end">
+								<input
+									type="text"
+									class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={shareDetails[share.id]?.name ?? share.name}
+									on:input={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value;
+										const current = shareDetails[share.id];
+										if (!current) return;
+										setShareDetails(share.id, { ...current, name: next });
+										if (next.trim().length > 0) {
+											setShareError(share.id, 'name', '');
+										}
+									}}
+									on:change={(event) => {
+										const next = (event.currentTarget as HTMLInputElement).value.trim();
+										const current = shareDetails[share.id];
+										if (!current) return;
+										if (!next) {
+											setShareError(share.id, 'name', 'Name is required.');
+											return;
+										}
+										if (
+											current.startDate.trim().length === 0 ||
+											!isValidMonthYear(current.startDate)
+										) {
+											setShareError(share.id, 'startDate', 'Use MM YYYY format.');
+											return;
+										}
+										if (
+											current.dividendsTakenAsIncomeDate.trim().length === 0 ||
+											!isValidMonthYear(current.dividendsTakenAsIncomeDate)
+										) {
+											setShareError(
+												share.id,
+												'dividendsTakenAsIncomeDate',
+												'Use MM YYYY format.'
+											);
+											return;
+										}
+										setShareError(share.id, 'name', '');
+										setShareDetails(share.id, { ...current, name: next });
+										assetsList = assetsList.map((asset) =>
+											asset.id === share.id ? { ...asset, name: next } : asset
+										);
+										scheduleUpdate(`shares:${share.id}`, () =>
+											updateShareDetails(
+												share.id,
+												next,
+												current.startDate,
+												current.capitalGrowthRate,
+												current.dividendYield,
+												current.dividendsTakenAsIncomeDate
+											)
+										);
+									}}
+								/>
+								{#if shareErrors[share.id]?.name}
+									<span class="mt-1 text-[10px] text-rose-600">{shareErrors[share.id]?.name}</span>
+								{/if}
+							</div>
+							<span></span>
+						</div>
+					{/if}
 				</div>
 			{/each}
 			{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
-				<div class="flex w-fit max-w-xs flex-col gap-0.5">
-				<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+				<div class="flex w-full flex-col gap-3">
+				<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
 					<h3 class="text-sm font-semibold text-slate-900">
 						{propertyDetails[property.id]?.name ?? property.name}
 					</h3>
@@ -2991,6 +3480,70 @@ const updateMortgageDetails = async (
 								);
 							}}
 						/>
+						<span></span>
+					</div>
+					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
+						<span class="truncate text-slate-500">Sale date (MM YYYY)</span>
+						<div class="justify-self-end flex flex-col items-end">
+							<input
+								type="text"
+								inputmode="numeric"
+								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+								class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={propertyDetails[property.id]?.saleDate ?? ''}
+								on:input={(event) => {
+									const next = (event.currentTarget as HTMLInputElement).value;
+									const current = propertyDetails[property.id] ?? {
+										name: property.name,
+										startDate: formatYearMonthInput(property.start_date),
+										marketValue: Number(property.details?.marketValue) || 0,
+										marketGrowthRate: 0,
+										saleDate: '',
+										fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
+										variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
+									};
+									setPropertyDetails(property.id, { ...current, saleDate: next });
+									if (next.trim().length === 0 || isValidMonthYear(next)) {
+										setPropertyError(property.id, 'saleDate', '');
+									}
+								}}
+								on:change={(event) => {
+									const next = (event.currentTarget as HTMLInputElement).value;
+									const current = propertyDetails[property.id] ?? {
+										name: property.name,
+										startDate: formatYearMonthInput(property.start_date),
+										marketValue: Number(property.details?.marketValue) || 0,
+										marketGrowthRate: 0,
+										saleDate: '',
+										fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
+										variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
+									};
+									if (next.trim().length > 0 && !isValidMonthYear(next)) {
+										setPropertyError(property.id, 'saleDate', 'Use MM YYYY format.');
+										return;
+									}
+									setPropertyError(property.id, 'saleDate', '');
+									setPropertyDetails(property.id, { ...current, saleDate: next });
+									scheduleUpdate(`property:${property.id}`, () =>
+										updatePropertyDetails(
+											property.id,
+											current.name,
+											current.startDate,
+											current.marketValue ?? 0,
+											current.marketGrowthRate ?? 0,
+											next,
+											current.fixedSellingCosts ?? 0,
+											current.variableSellingCosts ?? 0
+										)
+									);
+								}}
+							/>
+							{#if propertyErrors[property.id]?.saleDate}
+								<span class="mt-1 text-[10px] text-rose-600">
+									{propertyErrors[property.id]?.saleDate}
+								</span>
+							{/if}
+						</div>
 						<button
 							type="button"
 							class="flex items-center justify-end text-slate-500 hover:text-slate-700"
@@ -3272,70 +3825,6 @@ const updateMortgageDetails = async (
 							<span></span>
 						</div>
 					{/if}
-					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
-						<span class="truncate text-slate-500">Sale date (MM YYYY)</span>
-						<div class="justify-self-end flex flex-col items-end">
-							<input
-								type="text"
-								inputmode="numeric"
-								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-								class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-								value={propertyDetails[property.id]?.saleDate ?? ''}
-								on:input={(event) => {
-									const next = (event.currentTarget as HTMLInputElement).value;
-									const current = propertyDetails[property.id] ?? {
-										name: property.name,
-										startDate: formatYearMonthInput(property.start_date),
-										marketValue: Number(property.details?.marketValue) || 0,
-										marketGrowthRate: 0,
-										saleDate: '',
-										fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
-										variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
-									};
-									setPropertyDetails(property.id, { ...current, saleDate: next });
-									if (next.trim().length === 0 || isValidMonthYear(next)) {
-										setPropertyError(property.id, 'saleDate', '');
-									}
-								}}
-								on:change={(event) => {
-									const next = (event.currentTarget as HTMLInputElement).value;
-									const current = propertyDetails[property.id] ?? {
-										name: property.name,
-										startDate: formatYearMonthInput(property.start_date),
-										marketValue: Number(property.details?.marketValue) || 0,
-										marketGrowthRate: 0,
-										saleDate: '',
-										fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
-										variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
-									};
-									if (next.trim().length > 0 && !isValidMonthYear(next)) {
-										setPropertyError(property.id, 'saleDate', 'Use MM YYYY format.');
-										return;
-									}
-									setPropertyError(property.id, 'saleDate', '');
-									setPropertyDetails(property.id, { ...current, saleDate: next });
-									scheduleUpdate(`property:${property.id}`, () =>
-										updatePropertyDetails(
-											property.id,
-											current.name,
-											current.startDate,
-											current.marketValue ?? 0,
-											current.marketGrowthRate ?? 0,
-											next,
-											current.fixedSellingCosts ?? 0,
-											current.variableSellingCosts ?? 0
-										)
-									);
-								}}
-							/>
-							{#if propertyErrors[property.id]?.saleDate}
-								<span class="mt-1 text-[10px] text-rose-600">
-									{propertyErrors[property.id]?.saleDate}
-								</span>
-							{/if}
-						</div>
-						<span></span>
-					</div>
 					<div class="mt-3 space-y-2">
 						{#each cashflowsByAssetId[property.id] ?? [] as cashflow}
 							<div
@@ -3612,7 +4101,7 @@ const updateMortgageDetails = async (
 					{@const mortgageAccountLink = assetAccountsList.find(
 						(link) => link.asset_id === mortgage.id && link.relationship_role === 'held_in'
 					)}
-					<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
+					<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
 						<div class="flex items-center justify-between gap-2">
 							<h3 class="truncate text-sm font-semibold text-slate-900">
 								{mortgageDetails[mortgage.id]?.name ?? mortgage.name}
@@ -3963,15 +4452,136 @@ const updateMortgageDetails = async (
 				{/each}
 			</div>
 				{:else if assetPanelTab === 'accounts'}
-					<div class="accounts-cards mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
+					<div class="mt-5 rounded-xl border border-slate-200 bg-white p-3">
 						{#if accountsList.length > 0}
-							{#each accountsList as account}
-								<div class="w-fit max-w-xs rounded-xl border border-slate-200 bg-slate-50 p-3">
-									<h3 class="truncate text-sm font-semibold text-slate-900">{account.name}</h3>
-									<div class="mt-3 text-xs text-slate-500">Account type</div>
-									<div class="text-xs text-slate-700">{formatLabel(account.account_type)}</div>
-								</div>
-							{/each}
+							<div class="overflow-x-auto">
+								<table class="min-w-full divide-y divide-slate-200 text-xs">
+									<thead class="bg-slate-50 text-left text-slate-500 uppercase">
+										<tr>
+											<th class="px-2 py-2">Start</th>
+											<th class="px-2 py-2">Name</th>
+											<th class="px-2 py-2">Opening balance</th>
+											<th class="px-2 py-2">Interest rate</th>
+											<th class="px-2 py-2">Account type</th>
+										</tr>
+									</thead>
+									<tbody class="divide-y divide-slate-100 text-slate-700">
+										{#each accountsList as account}
+											{@const draft = accountEditDrafts[account.id]}
+											<tr>
+												<td class="px-2 py-2">
+													<input
+														type="text"
+														inputmode="numeric"
+														pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+														class="w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+														value={draft?.startDate ?? toMonthYearInput(account.start_date)}
+														on:input={(event) =>
+															setAccountEditDraft(account.id, {
+																startDate: (event.currentTarget as HTMLInputElement).value
+															})}
+														on:change={() =>
+															scheduleUpdate(`account-edit:${account.id}`, () =>
+																saveAccountEditDraft(account.id)
+															)}
+													/>
+												</td>
+												<td class="px-2 py-2">
+													<input
+														type="text"
+														class="w-44 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+														value={draft?.name ?? account.name}
+														on:input={(event) =>
+															setAccountEditDraft(account.id, {
+																name: (event.currentTarget as HTMLInputElement).value
+															})}
+														on:change={() =>
+															scheduleUpdate(`account-edit:${account.id}`, () =>
+																saveAccountEditDraft(account.id)
+															)}
+													/>
+												</td>
+												<td class="px-2 py-2">
+													<input
+														type="number"
+														step="0.01"
+														class="no-spin w-32 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+														value={draft?.openingBalance ?? String(account.opening_balance)}
+														on:input={(event) =>
+															setAccountEditDraft(account.id, {
+																openingBalance: (event.currentTarget as HTMLInputElement).value
+															})}
+														on:change={() =>
+															scheduleUpdate(`account-edit:${account.id}`, () =>
+																saveAccountEditDraft(account.id)
+															)}
+													/>
+												</td>
+												<td class="px-2 py-2">
+													{#if account.account_type === 'super_account' || account.account_type === 'brokerage'}
+														<span class="text-slate-400">—</span>
+													{:else}
+														<div class="flex items-center gap-1">
+															<input
+																type="number"
+																class="no-spin w-20 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+																value={formatRate(accountInterestRates[account.id] ?? 0, 2)}
+																step="0.01"
+																on:input={(event) => {
+																	const next = Number((event.currentTarget as HTMLInputElement).value);
+																	const value = Number.isFinite(next) ? next : 0;
+																	setAccountInterestRate(account.id, value);
+																}}
+																on:keydown={(event) => {
+																	const keyboardEvent = event as KeyboardEvent;
+																	if (keyboardEvent.key === 'ArrowUp') {
+																		keyboardEvent.preventDefault();
+																		adjustAccountInterestRate(account.id, 0.25);
+																	}
+																	if (keyboardEvent.key === 'ArrowDown') {
+																		keyboardEvent.preventDefault();
+																		adjustAccountInterestRate(account.id, -0.25);
+																	}
+																}}
+																on:change={(event) => {
+																	const next = Number((event.currentTarget as HTMLInputElement).value);
+																	const value = Number.isFinite(next) ? roundToTwo(next) : 0;
+																	setAccountInterestRate(account.id, value);
+																	scheduleUpdate(`account:${account.id}`, () =>
+																		updateAccountInterestRate(account.id, value)
+																	);
+																}}
+															/>
+															<div class="flex flex-col items-end gap-0.5">
+																<button
+																	type="button"
+																	class="grid h-3.5 w-5 place-items-center rounded border border-slate-200 bg-white text-[10px] leading-none text-slate-600 hover:bg-slate-50"
+																	aria-label={`Increase ${account.name} interest rate`}
+																	on:click={() => adjustAccountInterestRate(account.id, 0.25)}
+																>
+																	▲
+																</button>
+																<button
+																	type="button"
+																	class="grid h-3.5 w-5 place-items-center rounded border border-slate-200 bg-white text-[10px] leading-none text-slate-600 hover:bg-slate-50"
+																	aria-label={`Decrease ${account.name} interest rate`}
+																	on:click={() => adjustAccountInterestRate(account.id, -0.25)}
+																>
+																	▼
+																</button>
+															</div>
+														</div>
+													{/if}
+												</td>
+												<td class="px-2 py-2">{formatLabel(account.account_type)}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+							{#if accountInlineError}
+								<div class="mt-2 text-xs text-rose-600">{accountInlineError}</div>
+							{/if}
 						{:else}
 							<div class="text-sm text-slate-600">No accounts to show yet.</div>
 						{/if}
@@ -4317,68 +4927,6 @@ const updateMortgageDetails = async (
 					</div>
 				{/if}
 			</div>
-		</div>
-		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-			<h3 class="text-sm font-semibold text-slate-900">Interest Rates</h3>
-			{#if accountsList.length > 0}
-				<div class="mt-3 space-y-2">
-					{#each accountsList as account}
-						<div class="grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
-							<span class="truncate text-slate-500">{account.name}</span>
-							<input
-								type="number"
-								class="no-spin justify-self-end w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-								value={formatRate(accountInterestRates[account.id] ?? 0, 2)}
-								step="0.01"
-								on:input={(event) => {
-									const next = Number((event.currentTarget as HTMLInputElement).value);
-									const value = Number.isFinite(next) ? next : 0;
-									setAccountInterestRate(account.id, value);
-								}}
-								on:keydown={(event) => {
-									const keyboardEvent = event as KeyboardEvent;
-									if (keyboardEvent.key === 'ArrowUp') {
-										keyboardEvent.preventDefault();
-										adjustAccountInterestRate(account.id, 0.25);
-									}
-									if (keyboardEvent.key === 'ArrowDown') {
-										keyboardEvent.preventDefault();
-										adjustAccountInterestRate(account.id, -0.25);
-									}
-								}}
-								on:change={(event) => {
-									const next = Number((event.currentTarget as HTMLInputElement).value);
-									const value = Number.isFinite(next) ? roundToTwo(next) : 0;
-									setAccountInterestRate(account.id, value);
-									scheduleUpdate(`account:${account.id}`, () =>
-										updateAccountInterestRate(account.id, value)
-									);
-								}}
-							/>
-							<div class="flex flex-col items-end gap-0.5">
-								<button
-									type="button"
-									class="grid h-3.5 w-6 place-items-center rounded border border-slate-200 bg-white text-[10px] leading-none text-slate-600 hover:bg-slate-50"
-									aria-label={`Increase ${account.name} interest rate`}
-									on:click={() => adjustAccountInterestRate(account.id, 0.25)}
-								>
-									▲
-								</button>
-								<button
-									type="button"
-									class="grid h-3.5 w-6 place-items-center rounded border border-slate-200 bg-white text-[10px] leading-none text-slate-600 hover:bg-slate-50"
-									aria-label={`Decrease ${account.name} interest rate`}
-									on:click={() => adjustAccountInterestRate(account.id, -0.25)}
-								>
-									▼
-								</button>
-							</div>
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="mt-3 text-sm text-slate-600">No accounts to show yet.</div>
-			{/if}
 		</div>
 	</div>
 </section>

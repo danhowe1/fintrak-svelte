@@ -418,6 +418,65 @@ export async function updatePropertyDetails(
 	);
 }
 
+export async function updateShareDetails(
+	scenarioId: string,
+	assetId: string,
+	input: {
+		name: string;
+		startDate: string;
+		capitalGrowthRate: number;
+		dividendYield: number;
+		dividendsTakenAsIncomeDate: string;
+	}
+) {
+	const startDate = input.startDate.trim();
+	const dividendsTakenAsIncomeDate = input.dividendsTakenAsIncomeDate.trim();
+	const normalizedStartDate = parseYearMonthInput(startDate);
+	const normalizedDividendIncomeDate = parseYearMonthInput(dividendsTakenAsIncomeDate);
+	if (normalizedStartDate === null) {
+		throw new Error('Invalid shares start date');
+	}
+	if (normalizedDividendIncomeDate === null) {
+		throw new Error('Invalid shares dividend income date');
+	}
+
+	await getPool().query(
+		`
+			update assets
+			set name = $3::text,
+				start_date = $4::int,
+				details = jsonb_set(
+					jsonb_set(
+						jsonb_set(
+							coalesce(details, '{}'::jsonb),
+							'{capitalGrowthRate}',
+							to_jsonb($5::numeric),
+							true
+						),
+						'{dividendYield}',
+						to_jsonb($6::numeric),
+						true
+					),
+					'{dividendsTakenAsIncomeDate}',
+					to_jsonb($7::int),
+					true
+				)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+			  and asset_type = 'shares'
+		`,
+		[
+			scenarioId,
+			assetId,
+			input.name,
+			normalizedStartDate,
+			input.capitalGrowthRate,
+			input.dividendYield,
+			normalizedDividendIncomeDate
+		]
+	);
+}
+
 export async function updateAccountInterestRate(
 	scenarioId: string,
 	accountId: string,
@@ -436,6 +495,28 @@ export async function updateAccountInterestRate(
 			  and scenario_id = $1::uuid
 		`,
 		[scenarioId, accountId, interestRate]
+	);
+}
+
+export async function updateAccountDetails(
+	scenarioId: string,
+	accountId: string,
+	input: {
+		name: string;
+		startDate: number;
+		openingBalance: number;
+	}
+) {
+	await getPool().query(
+		`
+			update accounts
+			set name = $3::text,
+				start_date = $4::int,
+				opening_balance = round($5::numeric, 2)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+		`,
+		[scenarioId, accountId, input.name, input.startDate, input.openingBalance]
 	);
 }
 
