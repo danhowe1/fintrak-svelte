@@ -19,9 +19,11 @@ export type ProjectionTransaction = {
 		| 'rental_income'
 		| 'asset_ownership'
 		| 'asset_sale'
+		| 'shares_purchase'
+		| 'shares_sale'
 		| 'capital_growth'
 		| 'mortgage_repayment'
-		| 'other'
+		| 'transfer'
 		| 'interest';
 	assetName?: string | null;
 	description?: string | null;
@@ -72,7 +74,14 @@ export type ProjectionResult = {
 type ProjectionCashflow = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'rental_income' | 'other';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'rental_income'
+		| 'transfer'
+		| 'shares_purchase'
+		| 'shares_sale';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	inflation_affected: boolean;
@@ -671,30 +680,31 @@ export const buildProjection = (input: {
 					sourceShareAssetId !== null;
 
 				if (isShareBuyTransfer && sourceId && destinationId && destinationShareAssetId) {
+					const shareState = shareStates.get(destinationShareAssetId);
+					const shareAssetName = shareState?.assetName ?? null;
 					pushTransaction(
 						sourceId,
 						-rawAmount,
 						cashflow.cashflow_type,
-						cashflow.category,
+						'shares_purchase',
 						cashflow.id,
 						cashflow.description ?? null,
-						assetName
+						shareAssetName
 					);
 					pushTransaction(
 						destinationId,
 						rawAmount,
 						cashflow.cashflow_type,
-						cashflow.category,
+						'shares_purchase',
 						cashflow.id,
 						cashflow.description ?? null,
-						assetName
+						shareAssetName
 					);
 					const brokerageAccount = accountMap.get(destinationId);
 					if (brokerageAccount) {
 						// Brokerage is a routing link account in projection; buys become asset value directly.
 						brokerageAccount.balance -= rawAmount;
 					}
-					const shareState = shareStates.get(destinationShareAssetId);
 					if (shareState) {
 						shareState.currentValue += rawAmount;
 					}
@@ -704,6 +714,7 @@ export const buildProjection = (input: {
 				if (isShareSellTransfer && sourceId && destinationId && sourceShareAssetId) {
 					const shareState = shareStates.get(sourceShareAssetId);
 					if (!shareState) continue;
+					const shareAssetName = shareState.assetName ?? null;
 					const tradeAmount = Math.min(rawAmount, Math.max(0, shareState.currentValue));
 					if (tradeAmount <= 0) continue;
 
@@ -711,19 +722,19 @@ export const buildProjection = (input: {
 						sourceId,
 						-tradeAmount,
 						cashflow.cashflow_type,
-						cashflow.category,
+						'shares_sale',
 						cashflow.id,
 						cashflow.description ?? null,
-						assetName
+						shareAssetName
 					);
 					pushTransaction(
 						destinationId,
 						tradeAmount,
 						cashflow.cashflow_type,
-						cashflow.category,
+						'shares_sale',
 						cashflow.id,
 						cashflow.description ?? null,
-						assetName
+						shareAssetName
 					);
 					const brokerageAccount = accountMap.get(sourceId);
 					if (brokerageAccount) {
@@ -960,7 +971,9 @@ export const buildProjection = (input: {
 					-interestAmount,
 					'expense',
 					'interest',
-					`mortgage_interest_${assetId}`
+					`mortgage_interest_${assetId}`,
+					null,
+					state.propertyName
 				);
 			}
 

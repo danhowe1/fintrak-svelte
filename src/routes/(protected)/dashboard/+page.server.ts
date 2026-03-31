@@ -11,6 +11,7 @@ import {
 	getScenarioForUserById,
 	getSingleScenarioForUser,
 	updateCashflowAmount,
+	updateCashflowInflationAffected,
 	updatePersonRetirementAge,
 	updatePersonDetails,
 	updatePropertyDetails,
@@ -350,6 +351,243 @@ export const actions: Actions = {
 		});
 		return { success: true };
 	},
+	createTransferCashflow: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const sourceAccountId = String(formData.get('sourceAccountId') ?? '');
+		const destinationAccountId = String(formData.get('destinationAccountId') ?? '');
+		const frequency = String(formData.get('frequency') ?? '');
+		const amount = Number(formData.get('amount'));
+		const inflationAffected = formData.get('inflationAffected') === 'on';
+		const startMonth = String(formData.get('startDate') ?? '');
+		const endMonth = String(formData.get('endDate') ?? '');
+		const description = String(formData.get('description') ?? '').trim();
+
+		const isMonth = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
+		const normalizeMonth = (value: string) => {
+			const parsedValue = parseYearMonthInput(value);
+			if (parsedValue === null) {
+				throw new Error('Invalid month format');
+			}
+			return parsedValue;
+		};
+
+		if (
+			!scenarioId ||
+			!sourceAccountId ||
+			!destinationAccountId ||
+			sourceAccountId === destinationAccountId ||
+			(frequency !== 'monthly' &&
+				frequency !== 'quarterly' &&
+				frequency !== 'annually' &&
+				frequency !== 'one_time') ||
+			!Number.isFinite(amount) ||
+			amount <= 0 ||
+			!isMonth(startMonth) ||
+			(endMonth.trim().length > 0 && !isMonth(endMonth))
+		) {
+			return fail(400, { error: 'Invalid transfer input.' });
+		}
+		const transferFrequency = frequency as 'monthly' | 'quarterly' | 'annually' | 'one_time';
+
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+
+		const [assetAccounts, accounts, assets] = await Promise.all([
+			getAssetAccountsForScenario(scenarioId),
+			getAccountsForScenario(scenarioId),
+			getAssetsForScenario(scenarioId)
+		]);
+		const sourceLink =
+			assetAccounts.find(
+				(link) =>
+					link.account_id === sourceAccountId && link.relationship_role === 'held_in'
+			) ?? assetAccounts.find((link) => link.account_id === sourceAccountId);
+		const destinationLink =
+			assetAccounts.find(
+				(link) =>
+					link.account_id === destinationAccountId && link.relationship_role === 'held_in'
+			) ?? assetAccounts.find((link) => link.account_id === destinationAccountId);
+
+		if (!sourceLink || !destinationLink) {
+			return fail(400, { error: 'Account linkage is invalid for transfer.' });
+		}
+		const sourceAccount = accounts.find((account) => account.id === sourceAccountId) ?? null;
+		const destinationAccount =
+			accounts.find((account) => account.id === destinationAccountId) ?? null;
+		const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+		const shareAssetByAccountId = new Map<string, string>();
+		for (const link of assetAccounts) {
+			if (link.relationship_role !== 'held_in') continue;
+			const linkedAsset = assetsById.get(link.asset_id);
+			if (!linkedAsset || linkedAsset.asset_type !== 'shares') continue;
+			if (!shareAssetByAccountId.has(link.account_id)) {
+				shareAssetByAccountId.set(link.account_id, link.asset_id);
+			}
+		}
+		const isAllowedTransferAccount = (accountId: string, accountType: string | undefined) =>
+			accountType === 'cash_account' ||
+			(accountType === 'brokerage' && shareAssetByAccountId.has(accountId));
+		if (
+			!isAllowedTransferAccount(sourceAccountId, sourceAccount?.account_type) ||
+			!isAllowedTransferAccount(destinationAccountId, destinationAccount?.account_type)
+		) {
+			return fail(400, {
+				error: 'Transfers currently only support cash accounts and shares brokerage accounts.'
+			});
+		}
+		const destinationHasSharesAsset = shareAssetByAccountId.has(destinationAccountId);
+		const sourceHasSharesAsset = shareAssetByAccountId.has(sourceAccountId);
+		const cashflowCategory =
+			sourceAccount?.account_type === 'cash_account' &&
+			destinationAccount?.account_type === 'brokerage' &&
+			destinationHasSharesAsset
+				? 'shares_purchase'
+				: sourceAccount?.account_type === 'brokerage' &&
+					  destinationAccount?.account_type === 'cash_account' &&
+					  sourceHasSharesAsset
+					? 'shares_sale'
+					: 'transfer';
+
+		try {
+			await createCashflow({
+				scenarioId,
+				type: 'transfer',
+				frequency: transferFrequency,
+				category: cashflowCategory,
+				amount,
+				inflationAffected,
+				startDate: normalizeMonth(startMonth),
+				endDate:
+					transferFrequency === 'one_time'
+						? null
+						: endMonth.trim().length > 0
+							? normalizeMonth(endMonth)
+							: null,
+				sourceAssetAccountId: sourceLink.id,
+				destinationAssetAccountId: destinationLink.id,
+				description,
+				createdBy: userId
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : 'Unable to create transfer.';
+			if (message.includes('invalid input value for enum cashflow_category')) {
+				return fail(500, {
+					error:
+						'Database category enum is out of date. Please run migration 0006_align_cashflow_categories.sql.'
+				});
+			}
+			return fail(500, { error: message });
+		}
+
+		const cashflows = await getCashflowsForScenario(scenarioId);
+		return { success: true, cashflows };
+	},
+	updateTransferInflationAffected: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const cashflowId = String(formData.get('cashflowId') ?? '');
+		const inflationAffected = formData.get('inflationAffected') === 'on';
+		if (!scenarioId || !cashflowId) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		const cashflows = await getCashflowsForScenario(scenarioId);
+		const cashflow = cashflows.find((item) => item.id === cashflowId);
+		if (!cashflow || cashflow.cashflow_type !== 'transfer') {
+			return fail(400, { error: 'Transfer not found.' });
+		}
+		await updateCashflowInflationAffected(scenarioId, cashflowId, inflationAffected);
+		const nextCashflows = await getCashflowsForScenario(scenarioId);
+		return { success: true, cashflows: nextCashflows };
+	},
+	updateTransferCashflow: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const cashflowId = String(formData.get('cashflowId') ?? '');
+		const amount = Number(formData.get('amount'));
+		const frequency = String(formData.get('frequency') ?? '');
+		const startMonth = String(formData.get('startDate') ?? '');
+		const endMonth = String(formData.get('endDate') ?? '');
+		const description = String(formData.get('description') ?? '').trim();
+
+		const isMonth = (value: string) => /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(value.trim());
+		const normalizeMonth = (value: string) => {
+			const parsedValue = parseYearMonthInput(value);
+			if (parsedValue === null) {
+				throw new Error('Invalid month format');
+			}
+			return parsedValue;
+		};
+
+		if (
+			!scenarioId ||
+			!cashflowId ||
+			!Number.isFinite(amount) ||
+			amount <= 0 ||
+			(frequency !== 'monthly' &&
+				frequency !== 'quarterly' &&
+				frequency !== 'annually' &&
+				frequency !== 'one_time') ||
+			!isMonth(startMonth) ||
+			(endMonth.trim().length > 0 && !isMonth(endMonth))
+		) {
+			return fail(400, { error: 'Invalid transfer input.' });
+		}
+
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		const cashflows = await getCashflowsForScenario(scenarioId);
+		const transfer = cashflows.find((item) => item.id === cashflowId);
+		if (!transfer || transfer.cashflow_type !== 'transfer') {
+			return fail(400, { error: 'Transfer not found.' });
+		}
+		if (!transfer.source_asset_account_id || !transfer.destination_asset_account_id) {
+			return fail(400, { error: 'Transfer account links are missing.' });
+		}
+
+		await updateCashflow({
+			scenarioId,
+			cashflowId,
+			type: 'transfer',
+			frequency: frequency as 'monthly' | 'quarterly' | 'annually' | 'one_time',
+			category: transfer.category,
+			amount,
+			inflationAffected: transfer.inflation_affected,
+			startDate: normalizeMonth(startMonth),
+			endDate:
+				frequency === 'one_time'
+					? null
+					: endMonth.trim().length > 0
+						? normalizeMonth(endMonth)
+						: null,
+			sourceAssetAccountId: transfer.source_asset_account_id,
+			destinationAssetAccountId: transfer.destination_asset_account_id,
+			description
+		});
+
+		const nextCashflows = await getCashflowsForScenario(scenarioId);
+		return { success: true, cashflows: nextCashflows };
+	},
 	createCashflow: async (event) => {
 		const userId = event.locals.appUserId;
 		if (!userId) {
@@ -384,8 +622,7 @@ export const actions: Actions = {
 			(category !== 'living_expenses' &&
 				category !== 'employment_income' &&
 				category !== 'asset_ownership' &&
-				category !== 'rental_income' &&
-				category !== 'other') ||
+				category !== 'rental_income') ||
 			(frequency !== 'monthly' &&
 				frequency !== 'quarterly' &&
 				frequency !== 'annually' &&
@@ -424,8 +661,7 @@ export const actions: Actions = {
 			}
 			if (
 				type === 'income' &&
-				category !== 'employment_income' &&
-				category !== 'other'
+				category !== 'employment_income'
 			) {
 				return fail(400, { error: 'Invalid category for person income.' });
 			}
@@ -512,8 +748,7 @@ export const actions: Actions = {
 			(category !== 'living_expenses' &&
 				category !== 'employment_income' &&
 				category !== 'asset_ownership' &&
-				category !== 'rental_income' &&
-				category !== 'other') ||
+				category !== 'rental_income') ||
 			(frequency !== 'monthly' &&
 				frequency !== 'quarterly' &&
 				frequency !== 'annually' &&
@@ -552,8 +787,7 @@ export const actions: Actions = {
 			}
 			if (
 				type === 'income' &&
-				category !== 'employment_income' &&
-				category !== 'other'
+				category !== 'employment_income'
 			) {
 				return fail(400, { error: 'Invalid category for person income.' });
 			}

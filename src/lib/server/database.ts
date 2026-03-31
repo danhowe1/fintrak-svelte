@@ -326,6 +326,22 @@ export async function updateCashflowAmount(
 	);
 }
 
+export async function updateCashflowInflationAffected(
+	scenarioId: string,
+	cashflowId: string,
+	inflationAffected: boolean
+) {
+	await getPool().query(
+		`
+			update cashflows
+			set inflation_affected = $3::boolean
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+		`,
+		[scenarioId, cashflowId, inflationAffected]
+	);
+}
+
 export async function updatePropertyDetails(
 	scenarioId: string,
 	assetId: string,
@@ -524,7 +540,9 @@ export async function createCashflow(input: {
 		| 'employment_income'
 		| 'asset_ownership'
 		| 'rental_income'
-		| 'other';
+		| 'transfer'
+		| 'shares_purchase'
+		| 'shares_sale';
 	amount: number;
 	inflationAffected: boolean;
 	startDate: number;
@@ -603,7 +621,9 @@ export async function updateCashflow(input: {
 		| 'employment_income'
 		| 'asset_ownership'
 		| 'rental_income'
-		| 'other';
+		| 'transfer'
+		| 'shares_purchase'
+		| 'shares_sale';
 	amount: number;
 	inflationAffected: boolean;
 	startDate: number;
@@ -648,7 +668,14 @@ export async function updateCashflow(input: {
 export type CashflowSummary = {
 	id: string;
 	cashflow_type: 'expense' | 'income' | 'transfer';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'rental_income' | 'other';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'rental_income'
+		| 'transfer'
+		| 'shares_purchase'
+		| 'shares_sale';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: number;
 	inflation_affected: boolean;
@@ -1093,7 +1120,14 @@ type InsertCashflowInput = {
 	scenarioId: string;
 	type: 'expense' | 'income' | 'transfer';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
-	category: 'living_expenses' | 'employment_income' | 'asset_ownership' | 'other';
+	category:
+		| 'living_expenses'
+		| 'employment_income'
+		| 'asset_ownership'
+		| 'rental_income'
+		| 'transfer'
+		| 'shares_purchase'
+		| 'shares_sale';
 	amount: number;
 	inflationAffected?: boolean;
 	startDate: number;

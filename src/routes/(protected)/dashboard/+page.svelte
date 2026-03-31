@@ -44,13 +44,9 @@ const cashflowCategoryOptions = [
 	{ value: 'living_expenses', label: 'Living expenses' },
 	{ value: 'employment_income', label: 'Employment income' },
 	{ value: 'rental_income', label: 'Rental income' },
-	{ value: 'asset_ownership', label: 'Asset ownership' },
-	{ value: 'other', label: 'Other' }
+	{ value: 'asset_ownership', label: 'Asset ownership' }
 ];
-const personIncomeCategoryOptions = [
-	{ value: 'employment_income', label: 'Employment income' },
-	{ value: 'other', label: 'Misc income' }
-];
+const personIncomeCategoryOptions = [{ value: 'employment_income', label: 'Employment income' }];
 const propertyIncomeCategoryOptions = [
 	{ value: 'rental_income', label: 'Rental income' }
 ];
@@ -65,7 +61,7 @@ const cashflowFrequencyOptions = [
 ];
 
 type ProjectionRange = '1y' | '5y' | '10y' | 'all';
-type AssetPanelTab = 'assets' | 'accounts';
+type AssetPanelTab = 'assets' | 'accounts' | 'transfers';
 type ProjectionBalanceSource = 'accounts' | 'assets' | 'net_worth';
 type CashflowDraft = {
 	type: 'income' | 'expense';
@@ -73,8 +69,7 @@ type CashflowDraft = {
 		| 'living_expenses'
 		| 'employment_income'
 		| 'asset_ownership'
-		| 'rental_income'
-		| 'other';
+		| 'rental_income';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 	amount: string;
 	description: string;
@@ -91,7 +86,7 @@ const normalizeProjectionRange = (value: unknown): ProjectionRange => {
 };
 
 let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
-let projectionBalanceSource: ProjectionBalanceSource = 'net_worth';
+let projectionBalanceSource: ProjectionBalanceSource = 'accounts';
 let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionRange);
 let assetPanelTab: AssetPanelTab = 'assets';
 let isUpdating = false;
@@ -162,6 +157,30 @@ let expandedPersonDetailIds = new Set<string>();
 let expandedPropertyDetailIds = new Set<string>();
 let expandedMortgageDetailIds = new Set<string>();
 let deleteConfirmId: string | null = null;
+let transferFormError = '';
+let transferInlineError = '';
+let transferDraft = {
+	sourceAccountId: '',
+	destinationAccountId: '',
+	amount: '',
+	frequency: 'monthly' as 'monthly' | 'quarterly' | 'annually' | 'one_time',
+	startDate: '',
+	endDate: '',
+	description: '',
+	inflationAffected: false
+};
+let transferCashflows: typeof cashflows = [];
+let transferAccountOptions: { id: string; name: string }[] = [];
+let transferEditDrafts: Record<
+	string,
+	{
+		amount: string;
+		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
+		startDate: string;
+		endDate: string;
+		description: string;
+	}
+> = {};
 
 const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 	const details = asset.details ?? {};
@@ -192,6 +211,19 @@ $: if (data.scenario.id !== lastScenarioId) {
 	expandedPersonDetailIds = new Set();
 	expandedPropertyDetailIds = new Set();
 	expandedMortgageDetailIds = new Set();
+	transferFormError = '';
+	transferInlineError = '';
+	transferDraft = {
+		sourceAccountId: '',
+		destinationAccountId: '',
+		amount: '',
+		frequency: 'monthly',
+		startDate: '',
+		endDate: '',
+		description: '',
+		inflationAffected: false
+	};
+	transferEditDrafts = {};
 	lastScenarioId = data.scenario.id;
 }
 
@@ -381,6 +413,76 @@ $: cashflowsByAssetId = (() => {
 	return next;
 })();
 
+$: transferCashflows = (cashflows ?? []).filter((cashflow) => cashflow.cashflow_type === 'transfer');
+
+$: transferAccountOptions = (() => {
+	const accountIdsWithAssetLinks = new Set(assetAccountsList.map((link) => link.account_id));
+	const assetsById = new Map(assetsList.map((asset) => [asset.id, asset]));
+	const sharesBrokerageAccountIds = new Set(
+		assetAccountsList
+			.filter((link) => {
+				if (link.relationship_role !== 'held_in') return false;
+				const linkedAsset = assetsById.get(link.asset_id);
+				return linkedAsset?.asset_type === 'shares';
+			})
+			.map((link) => link.account_id)
+	);
+	return accountsList
+		.filter(
+			(account) =>
+				accountIdsWithAssetLinks.has(account.id) &&
+				(account.account_type === 'cash_account' ||
+					(account.account_type === 'brokerage' &&
+						sharesBrokerageAccountIds.has(account.id)))
+		)
+		.map((account) => ({ id: account.id, name: account.name }))
+		.sort((a, b) => a.name.localeCompare(b.name));
+})();
+
+$: if (!transferDraft.startDate) {
+	transferDraft = {
+		...transferDraft,
+		startDate:
+			toMonthYearInput(projectionData.startDate) ||
+			toMonthYearInput(assetsList[0]?.details?.startDate) ||
+			toMonthYearInput(accountsList[0]?.details?.startDate) ||
+			''
+	};
+}
+
+$: {
+	const nextDrafts = { ...transferEditDrafts };
+	let changed = false;
+	for (const transfer of transferCashflows) {
+		if (nextDrafts[transfer.id]) continue;
+		nextDrafts[transfer.id] = {
+			amount: String(transfer.amount ?? ''),
+			frequency: transfer.frequency,
+			startDate: toMonthYearInput(transfer.start_date),
+			endDate: transfer.end_date ? toMonthYearInput(transfer.end_date) : '',
+			description: transfer.description ?? ''
+		};
+		changed = true;
+	}
+	if (changed) {
+		transferEditDrafts = nextDrafts;
+	}
+}
+
+$: if (
+	transferDraft.sourceAccountId &&
+	!transferAccountOptions.some((option) => option.id === transferDraft.sourceAccountId)
+) {
+	transferDraft = { ...transferDraft, sourceAccountId: '' };
+}
+
+$: if (
+	transferDraft.destinationAccountId &&
+	!transferAccountOptions.some((option) => option.id === transferDraft.destinationAccountId)
+) {
+	transferDraft = { ...transferDraft, destinationAccountId: '' };
+}
+
 const setCashflowAmount = (id: string, value: number) => {
 	cashflowAmounts = { ...cashflowAmounts, [id]: value };
 };
@@ -448,12 +550,12 @@ const getDefaultDraft = (
 			? type === 'expense'
 				? 'living_expenses'
 				: 'employment_income'
-			: assetType === 'property'
-				? type === 'income'
-					? 'rental_income'
-					: 'asset_ownership'
+				: assetType === 'property'
+					? type === 'income'
+						? 'rental_income'
+						: 'asset_ownership'
 				: type === 'income'
-					? 'other'
+					? 'employment_income'
 					: 'living_expenses';
 	return {
 		type,
@@ -503,9 +605,18 @@ const openCashflowFormForEdit = (assetId: string, cashflow: (typeof cashflows)[n
 	const key = getDraftKey(assetId, type, cashflow.id);
 	activeCashflowForm = { assetId, type, cashflowId: cashflow.id };
 	const assetType = getAssetType(assetId);
+	const category: CashflowDraft['category'] =
+		cashflow.category === 'living_expenses' ||
+		cashflow.category === 'employment_income' ||
+		cashflow.category === 'asset_ownership' ||
+		cashflow.category === 'rental_income'
+			? cashflow.category
+			: type === 'income'
+				? 'employment_income'
+				: 'living_expenses';
 	const draft = {
 		type,
-		category: cashflow.category,
+		category,
 		frequency: cashflow.frequency,
 		amount: String(cashflow.amount ?? ''),
 		description: cashflow.description ?? '',
@@ -951,6 +1062,199 @@ const updateAssetCashflow = async (
 	});
 };
 
+const createTransferCashflow = async () => {
+	const draft = transferDraft;
+	if (
+		!draft.sourceAccountId ||
+		!draft.destinationAccountId ||
+		draft.sourceAccountId === draft.destinationAccountId ||
+		!draft.amount.trim() ||
+		!isValidMonthYear(draft.startDate) ||
+		(draft.endDate.trim().length > 0 && !isValidMonthYear(draft.endDate))
+	) {
+		transferFormError =
+			'Choose different source and destination accounts, use a valid amount, and use MM YYYY dates.';
+		return;
+	}
+	const amountValue = Number(draft.amount);
+	if (!Number.isFinite(amountValue) || amountValue <= 0) {
+		transferFormError = 'Amount must be greater than 0.';
+		return;
+	}
+
+	await withLock(
+		'createTransferCashflow',
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('sourceAccountId', draft.sourceAccountId);
+			formData.set('destinationAccountId', draft.destinationAccountId);
+			formData.set('amount', String(amountValue));
+			formData.set('frequency', draft.frequency);
+			formData.set('startDate', draft.startDate);
+			formData.set('endDate', draft.endDate);
+			formData.set('description', draft.description.trim());
+			if (draft.inflationAffected) {
+				formData.set('inflationAffected', 'on');
+			}
+			const response = await fetch('?/createTransferCashflow', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				let message = 'Unable to create transfer. Please check the form.';
+				try {
+					const payload = await response.json();
+					message =
+						payload?.error ??
+						payload?.data?.error ??
+						payload?.message ??
+						message;
+				} catch {
+					// Fall back to generic message when response body is not JSON.
+				}
+				throw new Error(message);
+			}
+			const payload = await response.json();
+			const nextCashflows = payload?.cashflows ?? payload?.data?.cashflows;
+			if (nextCashflows) {
+				cashflows = [...nextCashflows];
+				syncCashflowAmounts(nextCashflows);
+			} else {
+				await refreshProjection({ includeCashflows: true });
+			}
+			transferFormError = '';
+			transferDraft = {
+				...transferDraft,
+				amount: '',
+				description: '',
+				endDate: ''
+			};
+			await refreshProjection();
+		},
+		autoRunProjection
+	).catch((error) => {
+		transferFormError =
+			error instanceof Error ? error.message : 'Unable to create transfer.';
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to create transfer.';
+	});
+};
+
+const updateTransferInflationAffected = async (cashflowId: string, inflationAffected: boolean) => {
+	await withLock(
+		`transfer-inflation:${cashflowId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('cashflowId', cashflowId);
+			if (inflationAffected) {
+				formData.set('inflationAffected', 'on');
+			}
+			const response = await fetch('?/updateTransferInflationAffected', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				throw new Error('Unable to update transfer inflation setting.');
+			}
+			const payload = await response.json();
+			const nextCashflows = payload?.cashflows ?? payload?.data?.cashflows;
+			if (nextCashflows) {
+				cashflows = [...nextCashflows];
+				syncCashflowAmounts(nextCashflows);
+			}
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		projectionError =
+			error instanceof Error ? error.message : 'Unable to update transfer inflation setting.';
+	});
+};
+
+const setTransferEditDraft = (
+	cashflowId: string,
+	updates: Partial<{
+		amount: string;
+		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
+		startDate: string;
+		endDate: string;
+		description: string;
+	}>
+) => {
+	transferEditDrafts = {
+		...transferEditDrafts,
+		[cashflowId]: { ...transferEditDrafts[cashflowId], ...updates }
+	};
+};
+
+const saveTransferEditDraft = async (cashflowId: string) => {
+	const draft = transferEditDrafts[cashflowId];
+	if (!draft) return;
+	const amountValue = Number(draft.amount);
+	if (!Number.isFinite(amountValue) || amountValue <= 0) {
+		transferInlineError = 'Transfer amount must be greater than 0.';
+		return;
+	}
+	if (!isValidMonthYear(draft.startDate)) {
+		transferInlineError = 'Transfer start date must use MM YYYY.';
+		return;
+	}
+	if (draft.frequency !== 'one_time' && draft.endDate.trim() && !isValidMonthYear(draft.endDate)) {
+		transferInlineError = 'Transfer end date must use MM YYYY.';
+		return;
+	}
+
+	await withLock(
+		`transfer-edit:${cashflowId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('cashflowId', cashflowId);
+			formData.set('amount', String(amountValue));
+			formData.set('frequency', draft.frequency);
+			formData.set('startDate', draft.startDate);
+			formData.set('endDate', draft.frequency === 'one_time' ? '' : draft.endDate);
+			formData.set('description', draft.description.trim());
+			const response = await fetch('?/updateTransferCashflow', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				throw new Error('Unable to update transfer.');
+			}
+			const payload = await response.json();
+			const nextCashflows = payload?.cashflows ?? payload?.data?.cashflows;
+			if (nextCashflows) {
+				cashflows = [...nextCashflows];
+				syncCashflowAmounts(nextCashflows);
+				const refreshedTransfer = (nextCashflows as typeof cashflows).find(
+					(item) => item.id === cashflowId
+				);
+				if (refreshedTransfer) {
+					setTransferEditDraft(cashflowId, {
+						amount: String(refreshedTransfer.amount ?? ''),
+						frequency: refreshedTransfer.frequency,
+						startDate: toMonthYearInput(refreshedTransfer.start_date),
+						endDate: refreshedTransfer.end_date ? toMonthYearInput(refreshedTransfer.end_date) : '',
+						description: refreshedTransfer.description ?? ''
+					});
+				}
+			}
+			transferInlineError = '';
+			await refreshProjection({ includeCashflows: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		transferInlineError = error instanceof Error ? error.message : 'Unable to update transfer.';
+		projectionError = transferInlineError;
+	});
+};
+
 const requestDeleteCashflow = (cashflowId: string) => {
 	deleteConfirmId = cashflowId;
 };
@@ -1149,7 +1453,12 @@ const updateMortgageDetails = async (
 	});
 
 	$: chartProjection = (() => {
-		const accountSeries = (projectionData.accounts ?? []).map(normalizeAccountSeries);
+		const accountSeries = (projectionData.accounts ?? [])
+			.filter((series) => {
+				const account = accountsList.find((item) => item.id === series.accountId);
+				return account?.account_type !== 'brokerage';
+			})
+			.map(normalizeAccountSeries);
 		const assetSeries = (projectionData.assets ?? []).map(normalizeAssetSeries);
 		const activeSeries =
 			projectionBalanceSource === 'assets'
@@ -1606,6 +1915,43 @@ const updateMortgageDetails = async (
 			Projections for {data.scenario.name} ({formatYearMonthInput(projectionData.startDate)})
 		</h2>
 		<div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
+			{#if projectionView === 'balances' || projectionView === 'balance_sheet'}
+				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'accounts'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'accounts')}
+					>
+						Accounts
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'assets'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'assets')}
+					>
+						Assets
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							projectionBalanceSource === 'net_worth'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (projectionBalanceSource = 'net_worth')}
+					>
+						Net worth
+					</button>
+				</div>
+			{/if}
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
 					type="button"
@@ -1652,43 +1998,6 @@ const updateMortgageDetails = async (
 					Transactions
 				</button>
 			</div>
-			{#if projectionView === 'balances' || projectionView === 'balance_sheet'}
-				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'net_worth'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'net_worth')}
-					>
-						Net worth
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'accounts'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'accounts')}
-					>
-						Accounts
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'assets'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'assets')}
-					>
-						Assets
-					</button>
-				</div>
-			{/if}
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
 					type="button"
@@ -1990,7 +2299,11 @@ const updateMortgageDetails = async (
 					{#each projectionData.transactions as transaction}
 						<tr
 							class={`whitespace-nowrap ${
-								transaction.amount >= 0 ? 'text-emerald-600' : 'text-rose-600'
+								transaction.cashflowType === 'transfer'
+									? 'text-amber-600'
+									: transaction.amount >= 0
+										? 'text-emerald-600'
+										: 'text-rose-600'
 							}`}
 						>
 							<td class="px-4 py-3">{transaction.monthLabel}</td>
@@ -2068,6 +2381,17 @@ const updateMortgageDetails = async (
 						on:click={() => (assetPanelTab = 'accounts')}
 					>
 						Accounts
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							assetPanelTab === 'transfers'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (assetPanelTab = 'transfers')}
+					>
+						Transfers
 					</button>
 				</div>
 				{#if assetPanelTab === 'assets'}
@@ -3637,7 +3961,7 @@ const updateMortgageDetails = async (
 				</div>
 				{/each}
 			</div>
-				{:else}
+				{:else if assetPanelTab === 'accounts'}
 					<div class="accounts-cards mt-5 grid gap-0.5 sm:grid-cols-2 lg:grid-cols-3">
 						{#if accountsList.length > 0}
 							{#each accountsList as account}
@@ -3650,6 +3974,345 @@ const updateMortgageDetails = async (
 						{:else}
 							<div class="text-sm text-slate-600">No accounts to show yet.</div>
 						{/if}
+					</div>
+				{:else}
+					<div class="mt-5 space-y-4">
+						<div class="rounded-xl border border-slate-200 bg-white p-3">
+							<h3 class="text-sm font-semibold text-slate-900">Existing transfers</h3>
+							{#if transferCashflows.length === 0}
+								<div class="mt-2 text-sm text-slate-600">No transfers configured.</div>
+							{:else}
+								<div class="mt-2 overflow-x-auto">
+									<table class="min-w-full divide-y divide-slate-200 text-xs">
+										<thead class="bg-slate-50 text-left text-slate-500 uppercase">
+											<tr>
+												<th class="px-2 py-2">From</th>
+												<th class="px-2 py-2">To</th>
+												<th class="px-2 py-2">Category</th>
+												<th class="px-2 py-2">Inflation</th>
+												<th class="px-2 py-2">Amount</th>
+												<th class="px-2 py-2">Frequency</th>
+												<th class="px-2 py-2">Start</th>
+												<th class="px-2 py-2">End</th>
+												<th class="px-2 py-2">Description</th>
+												<th class="px-2 py-2"></th>
+											</tr>
+										</thead>
+										<tbody class="divide-y divide-slate-100 text-slate-700">
+											{#each transferCashflows as transfer}
+												{@const transferDraftRow = transferEditDrafts[transfer.id]}
+												<tr>
+													<td class="px-2 py-2">{transfer.source_account_name ?? '—'}</td>
+													<td class="px-2 py-2">{transfer.destination_account_name ?? '—'}</td>
+													<td class="px-2 py-2">{formatLabel(transfer.category)}</td>
+													<td class="px-2 py-2">
+														<input
+															type="checkbox"
+															class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+															checked={transfer.inflation_affected}
+															on:change={(event) => {
+																const checked = (event.currentTarget as HTMLInputElement).checked;
+																cashflows = cashflows.map((item) =>
+																	item.id === transfer.id
+																		? { ...item, inflation_affected: checked }
+																		: item
+																);
+																updateTransferInflationAffected(transfer.id, checked);
+															}}
+														/>
+													</td>
+													<td class="px-2 py-2">
+														<input
+															type="number"
+															min="0"
+															step="0.01"
+															class="no-spin w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+															value={transferDraftRow?.amount ?? String(transfer.amount)}
+															on:input={(event) =>
+																setTransferEditDraft(transfer.id, {
+																	amount: (event.currentTarget as HTMLInputElement).value
+																})}
+															on:change={() =>
+																scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																	saveTransferEditDraft(transfer.id)
+																)}
+														/>
+													</td>
+													<td class="px-2 py-2">
+														<select
+															class="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+															value={transferDraftRow?.frequency ?? transfer.frequency}
+															on:change={(event) => {
+																const nextFrequency = (event.currentTarget as HTMLSelectElement)
+																	.value as
+																	| 'monthly'
+																	| 'quarterly'
+																	| 'annually'
+																	| 'one_time';
+																setTransferEditDraft(transfer.id, {
+																	frequency: nextFrequency,
+																	endDate:
+																		nextFrequency === 'one_time'
+																			? ''
+																			: transferDraftRow?.endDate ?? ''
+																});
+																scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																	saveTransferEditDraft(transfer.id)
+																);
+															}}
+														>
+															{#each cashflowFrequencyOptions as option}
+																<option value={option.value}>{option.label}</option>
+															{/each}
+														</select>
+													</td>
+													<td class="px-2 py-2">
+														<input
+															type="text"
+															inputmode="numeric"
+															pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+															class="w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+															value={transferDraftRow?.startDate ?? toMonthYearInput(transfer.start_date)}
+															on:input={(event) =>
+																setTransferEditDraft(transfer.id, {
+																	startDate: (event.currentTarget as HTMLInputElement).value
+																})}
+															on:change={() =>
+																scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																	saveTransferEditDraft(transfer.id)
+																)}
+														/>
+													</td>
+													<td class="px-2 py-2">
+														{#if (transferDraftRow?.frequency ?? transfer.frequency) === 'one_time'}
+															<span class="text-slate-400">—</span>
+														{:else}
+															<input
+																type="text"
+																inputmode="numeric"
+																pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+																class="w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+																value={transferDraftRow?.endDate ?? toMonthYearInput(transfer.end_date)}
+																on:input={(event) =>
+																	setTransferEditDraft(transfer.id, {
+																		endDate: (event.currentTarget as HTMLInputElement).value
+																	})}
+																on:change={() =>
+																	scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																		saveTransferEditDraft(transfer.id)
+																	)}
+															/>
+														{/if}
+													</td>
+													<td class="px-2 py-2">
+														<input
+															type="text"
+															class="w-40 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+															value={transferDraftRow?.description ?? transfer.description ?? ''}
+															on:input={(event) =>
+																setTransferEditDraft(transfer.id, {
+																	description: (event.currentTarget as HTMLInputElement).value
+																})}
+															on:change={() =>
+																scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																	saveTransferEditDraft(transfer.id)
+																)}
+														/>
+													</td>
+													<td class="px-2 py-2 text-right">
+														<button
+															type="button"
+															class="text-rose-500 hover:text-rose-600"
+															aria-label="Delete transfer"
+															title="Delete transfer"
+															on:click={() => requestDeleteCashflow(transfer.id)}
+														>
+															<svg
+																viewBox="0 0 24 24"
+																fill="none"
+																stroke="currentColor"
+																stroke-width="2"
+																stroke-linecap="round"
+																stroke-linejoin="round"
+																class="h-4 w-4"
+															>
+																<path d="M3 6h18" />
+																<path d="M8 6V4h8v2" />
+																<path d="M6 6l1 14h10l1-14" />
+																<path d="M10 11v6" />
+																<path d="M14 11v6" />
+															</svg>
+														</button>
+													</td>
+												</tr>
+											{/each}
+										</tbody>
+									</table>
+								</div>
+								{#if transferInlineError}
+									<div class="mt-2 text-xs text-rose-600">{transferInlineError}</div>
+								{/if}
+							{/if}
+						</div>
+
+						<div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+							<h3 class="text-sm font-semibold text-slate-900">New transfer</h3>
+							<div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+								<label class="text-xs text-slate-600">
+									<span class="mb-1 block text-slate-500">From account</span>
+									<select
+										class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={transferDraft.sourceAccountId}
+										on:change={(event) => {
+											transferDraft = {
+												...transferDraft,
+												sourceAccountId: (event.currentTarget as HTMLSelectElement).value
+											};
+										}}
+									>
+										<option value="">Select account</option>
+										{#each transferAccountOptions as option}
+											<option value={option.id}>{option.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label class="text-xs text-slate-600">
+									<span class="mb-1 block text-slate-500">To account</span>
+									<select
+										class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={transferDraft.destinationAccountId}
+										on:change={(event) => {
+											transferDraft = {
+												...transferDraft,
+												destinationAccountId: (event.currentTarget as HTMLSelectElement).value
+											};
+										}}
+									>
+										<option value="">Select account</option>
+										{#each transferAccountOptions as option}
+											<option value={option.id}>{option.name}</option>
+										{/each}
+									</select>
+								</label>
+								<label class="text-xs text-slate-600">
+									<span class="mb-1 block text-slate-500">Amount</span>
+									<input
+										type="number"
+										min="0"
+										step="0.01"
+										class="no-spin w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={transferDraft.amount}
+										on:input={(event) => {
+											transferDraft = {
+												...transferDraft,
+												amount: (event.currentTarget as HTMLInputElement).value
+											};
+										}}
+									/>
+								</label>
+								<label class="text-xs text-slate-600">
+									<span class="mb-1 block text-slate-500">Frequency</span>
+									<select
+										class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={transferDraft.frequency}
+										on:change={(event) => {
+											const nextFrequency = (event.currentTarget as HTMLSelectElement).value as
+												| 'monthly'
+												| 'quarterly'
+												| 'annually'
+												| 'one_time';
+											transferDraft = {
+												...transferDraft,
+												frequency: nextFrequency,
+												endDate: nextFrequency === 'one_time' ? '' : transferDraft.endDate
+											};
+										}}
+									>
+										{#each cashflowFrequencyOptions as option}
+											<option value={option.value}>{option.label}</option>
+										{/each}
+									</select>
+								</label>
+								<label class="text-xs text-slate-600">
+									<span class="mb-1 block text-slate-500">Start date (MM YYYY)</span>
+									<input
+										type="text"
+										inputmode="numeric"
+										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+										class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={transferDraft.startDate}
+										on:input={(event) => {
+											transferDraft = {
+												...transferDraft,
+												startDate: (event.currentTarget as HTMLInputElement).value
+											};
+										}}
+									/>
+								</label>
+								{#if transferDraft.frequency !== 'one_time'}
+									<label class="text-xs text-slate-600">
+										<span class="mb-1 block text-slate-500">End date (optional)</span>
+										<input
+											type="text"
+											inputmode="numeric"
+											pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+											class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+											value={transferDraft.endDate}
+											on:input={(event) => {
+												transferDraft = {
+													...transferDraft,
+													endDate: (event.currentTarget as HTMLInputElement).value
+												};
+											}}
+										/>
+									</label>
+								{/if}
+								<label class="text-xs text-slate-600 sm:col-span-2 lg:col-span-3">
+									<span class="mb-1 block text-slate-500">Inflation affected</span>
+									<label class="inline-flex items-center gap-2">
+										<input
+											type="checkbox"
+											class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+											checked={transferDraft.inflationAffected}
+											on:change={(event) => {
+												transferDraft = {
+													...transferDraft,
+													inflationAffected: (event.currentTarget as HTMLInputElement).checked
+												};
+											}}
+										/>
+										<span class="text-xs text-slate-700">Apply inflation over time</span>
+									</label>
+								</label>
+								<label class="text-xs text-slate-600 sm:col-span-2 lg:col-span-3">
+									<span class="mb-1 block text-slate-500">Description (optional)</span>
+									<input
+										type="text"
+										class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+										value={transferDraft.description}
+										on:input={(event) => {
+											transferDraft = {
+												...transferDraft,
+												description: (event.currentTarget as HTMLInputElement).value
+											};
+										}}
+									/>
+								</label>
+							</div>
+							{#if transferFormError}
+								<div class="mt-2 text-xs text-rose-600">{transferFormError}</div>
+							{/if}
+							<div class="mt-3 flex justify-end">
+								<button
+									type="button"
+									class="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+									disabled={transferAccountOptions.length < 2}
+									on:click={createTransferCashflow}
+								>
+									Add transfer
+								</button>
+							</div>
+						</div>
 					</div>
 				{/if}
 			</div>

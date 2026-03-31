@@ -36,7 +36,9 @@ export type CashflowCategory =
 	| 'employment_income'
 	| 'asset_ownership'
 	| 'rental_income'
-	| 'other';
+	| 'transfer'
+	| 'shares_purchase'
+	| 'shares_sale';
 
 export type Cashflow = {
 	id: string;
