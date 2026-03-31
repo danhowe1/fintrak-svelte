@@ -55,7 +55,6 @@ export const GET: RequestHandler = async (event) => {
 	const projectionRange = parseProjectionRange(event.cookies.get('projectionRange'));
 	const projectionMonths = projectionMonthsForRange(projectionRange);
 	const inflationRate = parseRate(event.cookies.get('inflationRate'), 2.0);
-	const interestRateChange = parseRate(event.cookies.get('interestRateChange'), 0.0);
 
 	const [cashflows, accounts, assets, assetAccounts] = await Promise.all([
 		getCashflowsForScenario(scenario.id),
@@ -67,7 +66,6 @@ export const GET: RequestHandler = async (event) => {
 
 	const projection = buildProjection({
 		inflationRate,
-		interestRateChange,
 		projectionRange,
 		maxMonths: projectionMonths,
 		cashflows,
@@ -81,8 +79,7 @@ export const GET: RequestHandler = async (event) => {
 		...(includeCashflows ? { cashflows } : {}),
 		projectionRange,
 		sessionRates: {
-			inflationRate,
-			interestRateChange
+			inflationRate
 		}
 	});
 };

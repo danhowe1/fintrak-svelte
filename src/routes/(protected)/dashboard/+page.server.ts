@@ -95,7 +95,6 @@ export const load: PageServerLoad = async (event) => {
 
 	const projection = buildProjection({
 		inflationRate: parentData.sessionRates.inflationRate,
-		interestRateChange: parentData.sessionRates.interestRateChange,
 		projectionRange,
 		maxMonths: projectionMonths,
 		cashflows,
@@ -117,26 +116,16 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	updateRates: async (event) => {
+	updateInflationRate: async (event) => {
 		const formData = await event.request.formData();
 		const inflationRate = Number(formData.get('inflationRate'));
-		const interestRateChange = Number(formData.get('interestRateChange'));
 		const deltaInflation = Number(formData.get('deltaInflation') ?? 0);
-		const deltaInterest = Number(formData.get('deltaInterest') ?? 0);
 
 		const nextInflation = Number.isFinite(inflationRate)
 			? Math.round((inflationRate + deltaInflation) * 10) / 10
 			: 2.0;
-		const nextInterest = Number.isFinite(interestRateChange)
-			? Math.round((interestRateChange + deltaInterest) * 100) / 100
-			: 0.0;
 
 		event.cookies.set('inflationRate', nextInflation.toFixed(1), {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax'
-		});
-		event.cookies.set('interestRateChange', nextInterest.toFixed(2), {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax'

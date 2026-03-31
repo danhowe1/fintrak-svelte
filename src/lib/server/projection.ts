@@ -197,7 +197,6 @@ const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 
 export const buildProjection = (input: {
 	inflationRate?: number | null;
-	interestRateChange?: number | null;
 	projectionRange?: '1y' | '5y' | '10y' | 'all';
 	maxMonths?: number | null;
 	cashflows: ProjectionCashflow[];
@@ -249,7 +248,6 @@ export const buildProjection = (input: {
 			: cappedEnd;
 	const totalMonths = Math.max(0, monthsBetweenYearMonths(startYearMonth, endYearMonth));
 	const inflationRate = input.inflationRate ?? 0;
-	const interestRateChange = input.interestRateChange ?? 0;
 
 	const accountMap = new Map(
 		input.accounts.map((account) => [
@@ -1194,8 +1192,7 @@ export const buildProjection = (input: {
 				Number.isFinite(mortgageAccount.interestRate)
 					? mortgageAccount.interestRate
 					: 0;
-			const effectiveRate = baseRate + interestRateChange;
-			const monthlyRate = effectiveRate / 100 / 12;
+			const monthlyRate = baseRate / 100 / 12;
 			const remaining = state.termRemainingMonths;
 			const scheduledPayment =
 				monthlyRate === 0
@@ -1264,8 +1261,7 @@ export const buildProjection = (input: {
 			if (baseRate === 0) {
 				continue;
 			}
-			const effectiveRate = baseRate + interestRateChange;
-			const monthlyRate = effectiveRate / 100 / 12;
+			const monthlyRate = baseRate / 100 / 12;
 			const interestAmount = accountInfo.balance * monthlyRate;
 			if (interestAmount === 0) continue;
 

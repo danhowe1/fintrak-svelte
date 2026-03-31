@@ -1629,22 +1629,29 @@ const updateMortgageDetails = async (
 	});
 };
 
-	const updateRates = async (deltaInflation: number, deltaInterest: number) => {
+	const persistSessionRates = async () => {
 		await withLock(
-			'updateRates',
+			'updateInflationRate',
 			async () => {
 				const formData = new FormData();
 				formData.set('inflationRate', String(sessionRates.inflationRate));
-				formData.set('interestRateChange', String(sessionRates.interestRateChange));
-				formData.set('deltaInflation', String(deltaInflation));
-				formData.set('deltaInterest', String(deltaInterest));
-				await fetch('?/updateRates', { method: 'POST', body: formData });
+				formData.set('deltaInflation', '0');
+				await fetch('?/updateInflationRate', { method: 'POST', body: formData });
 				await refreshProjection({ force: true });
 			},
 			true
 		).catch((error) => {
 			projectionError =
 				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+		});
+	};
+
+	const queueInflationRateChange = (delta: number) => {
+		const current = Number.isFinite(sessionRates.inflationRate) ? sessionRates.inflationRate : 2;
+		const next = Math.round((current + delta) * 10) / 10;
+		sessionRates = { ...sessionRates, inflationRate: next };
+		scheduleUpdate('updateInflationRate', () => {
+			persistSessionRates();
 		});
 	};
 
@@ -2322,7 +2329,7 @@ const updateMortgageDetails = async (
 					type="button"
 					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
 					disabled={isUpdating}
-					on:click={() => updateRates(-0.5, 0)}
+					on:click={() => queueInflationRateChange(-0.5)}
 				>
 					-
 				</button>
@@ -2330,33 +2337,7 @@ const updateMortgageDetails = async (
 					type="button"
 					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
 					disabled={isUpdating}
-					on:click={() => updateRates(0.5, 0)}
-				>
-					+
-				</button>
-			</div>
-		</div>
-		<div class="flex items-center gap-3">
-			<span class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-				Interest rate change
-			</span>
-			<span class="text-sm font-semibold text-slate-900">
-				{formatRate(sessionRates.interestRateChange, 2)}%
-			</span>
-			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-				<button
-					type="button"
-					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
-					disabled={isUpdating}
-					on:click={() => updateRates(0, -0.25)}
-				>
-					-
-				</button>
-				<button
-					type="button"
-					class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
-					disabled={isUpdating}
-					on:click={() => updateRates(0, 0.25)}
+					on:click={() => queueInflationRateChange(0.5)}
 				>
 					+
 				</button>

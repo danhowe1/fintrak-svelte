@@ -10,7 +10,6 @@ export const load: LayoutServerLoad = async (event) => {
 	}
 	const scenarioCount = await countScenariosForUser(userId);
 	const defaultInflationRate = 2.0;
-	const defaultInterestRateChange = 0.0;
 
 	const parseRate = (value: string | undefined, fallback: number) => {
 		const parsed = Number(value);
@@ -21,21 +20,9 @@ export const load: LayoutServerLoad = async (event) => {
 		event.cookies.get('inflationRate'),
 		defaultInflationRate
 	);
-	const interestRateChange = parseRate(
-		event.cookies.get('interestRateChange'),
-		defaultInterestRateChange
-	);
 
 	if (!event.cookies.get('inflationRate')) {
 		event.cookies.set('inflationRate', defaultInflationRate.toFixed(1), {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax'
-		});
-	}
-
-	if (!event.cookies.get('interestRateChange')) {
-		event.cookies.set('interestRateChange', defaultInterestRateChange.toFixed(2), {
 			path: '/',
 			httpOnly: true,
 			sameSite: 'lax'
@@ -51,8 +38,7 @@ export const load: LayoutServerLoad = async (event) => {
 	return {
 		scenarioCount,
 		sessionRates: {
-			inflationRate,
-			interestRateChange
+			inflationRate
 		}
 	};
 };
