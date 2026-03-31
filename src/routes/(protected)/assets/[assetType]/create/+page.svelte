@@ -287,6 +287,64 @@
 			</FormSection>
 		{/if}
 
+		{#if selectedType === 'superannuation'}
+			<FormSection title={`${assetTypeLabel} DETAILS`}>
+				<label class="grid gap-2 text-sm font-medium text-slate-700">
+					Associated person
+					<select
+						name="superPersonId"
+						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+						required
+					>
+						<option value="" disabled selected={(form?.values?.superPersonId ?? '') === ''}>
+							Select a person
+						</option>
+						{#each data.people as person}
+							<option value={person.id} selected={(form?.values?.superPersonId ?? '') === person.id}>
+								{person.name}
+							</option>
+						{/each}
+					</select>
+					{#if form?.errors?.superPersonId?.[0]}
+						<span class="text-xs text-rose-600">{form.errors.superPersonId[0]}</span>
+					{/if}
+				</label>
+				<div class="grid gap-4 md:grid-cols-3">
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Preservation age"
+						name="superPreservationAge"
+						min="0"
+						step="1"
+						value={form?.values?.superPreservationAge ?? '60'}
+						error={form?.errors?.superPreservationAge?.[0]}
+						required
+					/>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Capital growth rate (%)"
+						name="superCapitalGrowthRate"
+						step="0.01"
+						value={form?.values?.superCapitalGrowthRate ?? ''}
+						error={form?.errors?.superCapitalGrowthRate?.[0]}
+						required
+					/>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Management fee (% p.a.)"
+						name="superManagementFeeRate"
+						step="0.01"
+						value={form?.values?.superManagementFeeRate ?? ''}
+						error={form?.errors?.superManagementFeeRate?.[0]}
+						required
+					/>
+				</div>
+			</FormSection>
+		{/if}
+
 		<FormSection title="Cashflows">
 			{#if selectedType === 'person'}
 				<div class="grid gap-4">
@@ -712,6 +770,53 @@
 						</select>
 						{#if form?.errors?.sharePaysIntoAccountId?.[0]}
 							<span class="text-xs text-rose-600">{form.errors.sharePaysIntoAccountId[0]}</span>
+						{/if}
+					</label>
+				</div>
+			{/if}
+			{#if selectedType === 'superannuation'}
+				<div class="grid gap-4">
+					<div class="text-sm text-slate-600">
+						A super account will be created automatically as:
+						<span class="font-semibold text-slate-900">
+							{String(form?.values?.name ?? '').trim() || 'Asset name'} Super
+						</span>
+					</div>
+					<FormField
+						type="number"
+						class="no-spin"
+						label="Super opening balance"
+						name="superOpeningBalance"
+						step="0.01"
+						value={form?.values?.superOpeningBalance ?? ''}
+						error={form?.errors?.superOpeningBalance?.[0]}
+						required
+					/>
+					<label class="grid gap-2 text-sm font-medium text-slate-700">
+						Pays into (cash account)
+						<select
+							name="superPaysIntoAccountId"
+							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							required
+						>
+							<option
+								value=""
+								disabled
+								selected={(form?.values?.superPaysIntoAccountId ?? '') === ''}
+							>
+								Select a cash account
+							</option>
+							{#each data.cashAccounts as account}
+								<option
+									value={account.id}
+									selected={(form?.values?.superPaysIntoAccountId ?? '') === account.id}
+								>
+									{account.name}
+								</option>
+							{/each}
+						</select>
+						{#if form?.errors?.superPaysIntoAccountId?.[0]}
+							<span class="text-xs text-rose-600">{form.errors.superPaysIntoAccountId[0]}</span>
 						{/if}
 					</label>
 				</div>

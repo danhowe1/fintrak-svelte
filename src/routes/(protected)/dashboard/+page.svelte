@@ -433,7 +433,8 @@ $: transferAccountOptions = (() => {
 				accountIdsWithAssetLinks.has(account.id) &&
 				(account.account_type === 'cash_account' ||
 					(account.account_type === 'brokerage' &&
-						sharesBrokerageAccountIds.has(account.id)))
+						sharesBrokerageAccountIds.has(account.id)) ||
+					account.account_type === 'super_account')
 		)
 		.map((account) => ({ id: account.id, name: account.name }))
 		.sort((a, b) => a.name.localeCompare(b.name));

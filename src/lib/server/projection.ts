@@ -21,6 +21,7 @@ export type ProjectionTransaction = {
 		| 'asset_sale'
 		| 'shares_purchase'
 		| 'shares_sale'
+		| 'super_income'
 		| 'capital_growth'
 		| 'mortgage_repayment'
 		| 'transfer'
@@ -112,6 +113,7 @@ type ProjectionAsset = {
 	id?: string;
 	name?: string;
 	property_id?: string | null;
+	person_id?: string | null;
 };
 
 type ProjectionAssetAccount = {
@@ -284,10 +286,22 @@ export const buildProjection = (input: {
 		points: []
 	}));
 	const assetSeries: AssetValueSeries[] = input.assets
-		.filter((asset) => (asset.asset_type === 'property' || asset.asset_type === 'shares') && asset.id)
+		.filter(
+			(asset) =>
+				(asset.asset_type === 'property' ||
+					asset.asset_type === 'shares' ||
+					asset.asset_type === 'superannuation') &&
+				asset.id
+		)
 		.map((asset) => ({
 			assetId: asset.id as string,
-			assetName: asset.name ?? (asset.asset_type === 'shares' ? 'Shares' : 'Property'),
+			assetName:
+				asset.name ??
+				(asset.asset_type === 'shares'
+					? 'Shares'
+					: asset.asset_type === 'superannuation'
+						? 'Superannuation'
+						: 'Property'),
 			assetType: asset.asset_type,
 			points: []
 		}));
@@ -450,6 +464,24 @@ export const buildProjection = (input: {
 			dividendsTakenAsIncomeDate: YearMonth | null;
 		}
 	>();
+	const superStates = new Map<
+		string,
+		{
+			assetName: string;
+			superAccountId: string;
+			startDate: YearMonth | null;
+			preservationDate: YearMonth | null;
+			preservationEventRecorded: boolean;
+			blockedWithdrawalEventRecorded: boolean;
+			drawdownCycleYear: number | null;
+			drawdownMonthsRemaining: number;
+			monthlyDrawdownAmount: number;
+			paysIntoAccountId: string | null;
+			currentValue: number;
+			capitalGrowthRate: number;
+			managementFeeRate: number;
+		}
+	>();
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'mortgage' || !asset.id) continue;
 		const termMonths = getTermMonths(asset.details ?? {});
@@ -521,16 +553,75 @@ export const buildProjection = (input: {
 			dividendsTakenAsIncomeDate
 		});
 	}
+	for (const asset of input.assets) {
+		if (asset.asset_type !== 'superannuation' || !asset.id) continue;
+		const details = asset.details ?? {};
+		const startDate = parseYearMonth(details.startDate);
+		const preservationAge = getNumberDetail(details, 'preservationAge');
+		const capitalGrowthRate = getNumberDetail(details, 'capitalGrowthRate') ?? 0;
+		const managementFeeRate = getNumberDetail(details, 'managementFeeRate') ?? 0;
+		let superAccountId: string | null = null;
+		let paysIntoAccountId: string | null = null;
+		for (const link of input.assetAccounts) {
+			if (link.asset_id !== asset.id) continue;
+			if (link.relationship_role === 'held_in') {
+				superAccountId = link.account_id;
+				break;
+			}
+		}
+		for (const link of input.assetAccounts) {
+			if (link.asset_id !== asset.id) continue;
+			if (link.relationship_role === 'pays_into') {
+				paysIntoAccountId = link.account_id;
+				break;
+			}
+		}
+		if (!superAccountId) continue;
+		const openingBalance = accountMap.get(superAccountId)?.openingBalance ?? 0;
+		const linkedPerson = asset.person_id ? input.assets.find((item) => item.id === asset.person_id) : null;
+		const personDob = linkedPerson ? parseYearMonth(linkedPerson.details?.dob) : null;
+		const preservationDate =
+			personDob && preservationAge !== null && Number.isFinite(preservationAge)
+				? { year: personDob.year + preservationAge, month: personDob.month }
+				: null;
+		superStates.set(asset.id, {
+			assetName: asset.name ?? 'Superannuation',
+			superAccountId,
+			startDate,
+			preservationDate,
+			preservationEventRecorded: false,
+			blockedWithdrawalEventRecorded: false,
+			drawdownCycleYear: null,
+			drawdownMonthsRemaining: 0,
+			monthlyDrawdownAmount: 0,
+			paysIntoAccountId,
+			currentValue: openingBalance,
+			capitalGrowthRate,
+			managementFeeRate
+		});
+	}
 	for (const [, shareState] of shareStates) {
 		const brokerageAccount = accountMap.get(shareState.brokerageAccountId);
 		if (!brokerageAccount) continue;
 		brokerageAccount.openingBalance = 0;
 		brokerageAccount.balance = 0;
 	}
+	for (const [, superState] of superStates) {
+		const superAccount = accountMap.get(superState.superAccountId);
+		if (!superAccount) continue;
+		superAccount.openingBalance = 0;
+		superAccount.balance = 0;
+	}
 	const brokerageShareByAccountId = new Map<string, string>();
 	for (const [shareAssetId, shareState] of shareStates.entries()) {
 		if (!brokerageShareByAccountId.has(shareState.brokerageAccountId)) {
 			brokerageShareByAccountId.set(shareState.brokerageAccountId, shareAssetId);
+		}
+	}
+	const superByAccountId = new Map<string, string>();
+	for (const [superAssetId, superState] of superStates.entries()) {
+		if (!superByAccountId.has(superState.superAccountId)) {
+			superByAccountId.set(superState.superAccountId, superAssetId);
 		}
 	}
 
@@ -665,6 +756,10 @@ export const buildProjection = (input: {
 					? brokerageShareByAccountId.get(destinationId) ?? null
 					: null;
 				const sourceShareAssetId = sourceId ? brokerageShareByAccountId.get(sourceId) ?? null : null;
+				const destinationSuperAssetId = destinationId
+					? superByAccountId.get(destinationId) ?? null
+					: null;
+				const sourceSuperAssetId = sourceId ? superByAccountId.get(sourceId) ?? null : null;
 
 				const isShareBuyTransfer =
 					sourceId &&
@@ -678,6 +773,18 @@ export const buildProjection = (input: {
 					sourceAccount?.type === 'brokerage' &&
 					destinationAccount?.type === 'cash_account' &&
 					sourceShareAssetId !== null;
+				const isSuperContributionTransfer =
+					sourceId &&
+					destinationId &&
+					sourceAccount?.type === 'cash_account' &&
+					destinationAccount?.type === 'super_account' &&
+					destinationSuperAssetId !== null;
+				const isSuperWithdrawalTransfer =
+					sourceId &&
+					destinationId &&
+					sourceAccount?.type === 'super_account' &&
+					destinationAccount?.type === 'cash_account' &&
+					sourceSuperAssetId !== null;
 
 				if (isShareBuyTransfer && sourceId && destinationId && destinationShareAssetId) {
 					const shareState = shareStates.get(destinationShareAssetId);
@@ -742,6 +849,83 @@ export const buildProjection = (input: {
 						brokerageAccount.balance += tradeAmount;
 					}
 					shareState.currentValue -= tradeAmount;
+					continue;
+				}
+
+				if (isSuperContributionTransfer && sourceId && destinationId && destinationSuperAssetId) {
+					const superState = superStates.get(destinationSuperAssetId);
+					const superAssetName = superState?.assetName ?? null;
+					pushTransaction(
+						sourceId,
+						-rawAmount,
+						cashflow.cashflow_type,
+						'transfer',
+						cashflow.id,
+						cashflow.description ?? null,
+						superAssetName
+					);
+					pushTransaction(
+						destinationId,
+						rawAmount,
+						cashflow.cashflow_type,
+						'transfer',
+						cashflow.id,
+						cashflow.description ?? null,
+						superAssetName
+					);
+					const superAccount = accountMap.get(destinationId);
+					if (superAccount) {
+						superAccount.balance -= rawAmount;
+					}
+					if (superState) {
+						superState.currentValue += rawAmount;
+					}
+					continue;
+				}
+
+				if (isSuperWithdrawalTransfer && sourceId && destinationId && sourceSuperAssetId) {
+					const superState = superStates.get(sourceSuperAssetId);
+					if (!superState) continue;
+					const preservationReached =
+						!superState.preservationDate ||
+						monthsBetweenYearMonths(superState.preservationDate, current) >= 0;
+					if (!preservationReached) {
+						if (!superState.blockedWithdrawalEventRecorded) {
+							events.push({
+								tone: 'negative',
+								message: `Super ${superState.assetName} transfer blocked before preservation age on ${monthLabel}.`
+							});
+							superState.blockedWithdrawalEventRecorded = true;
+						}
+						continue;
+					}
+
+					const superAssetName = superState.assetName ?? null;
+					const tradeAmount = Math.min(rawAmount, Math.max(0, superState.currentValue));
+					if (tradeAmount <= 0) continue;
+					pushTransaction(
+						sourceId,
+						-tradeAmount,
+						cashflow.cashflow_type,
+						'transfer',
+						cashflow.id,
+						cashflow.description ?? null,
+						superAssetName
+					);
+					pushTransaction(
+						destinationId,
+						tradeAmount,
+						cashflow.cashflow_type,
+						'transfer',
+						cashflow.id,
+						cashflow.description ?? null,
+						superAssetName
+					);
+					const superAccount = accountMap.get(sourceId);
+					if (superAccount) {
+						superAccount.balance += tradeAmount;
+					}
+					superState.currentValue -= tradeAmount;
 					continue;
 				}
 
@@ -810,6 +994,58 @@ export const buildProjection = (input: {
 				null,
 				state.assetName
 			);
+		}
+
+		for (const [assetId, state] of superStates.entries()) {
+			if (state.startDate && monthsBetweenYearMonths(state.startDate, current) < 0) continue;
+			if (state.preservationDate && !state.preservationEventRecorded) {
+				const preservationIndex = yearMonthIndex(state.preservationDate);
+				const currentIndex = yearMonthIndex(current);
+				if (currentIndex >= preservationIndex) {
+					events.push({
+						tone: 'positive',
+						message: `Super ${state.assetName} reaches preservation age on ${formatYearMonthLabel(state.preservationDate)}.`
+					});
+					state.preservationEventRecorded = true;
+				}
+			}
+
+			const preservationReached =
+				!state.preservationDate || monthsBetweenYearMonths(state.preservationDate, current) >= 0;
+			if (preservationReached && current.month === 7 && state.drawdownCycleYear !== current.year) {
+				state.drawdownCycleYear = current.year;
+				state.drawdownMonthsRemaining = 12;
+				state.monthlyDrawdownAmount = (state.currentValue * 0.04) / 12;
+			}
+
+			if (
+				preservationReached &&
+				state.drawdownMonthsRemaining > 0 &&
+				state.monthlyDrawdownAmount > 0 &&
+				state.paysIntoAccountId
+			) {
+				const drawdownAmount = Math.min(state.currentValue, state.monthlyDrawdownAmount);
+				if (drawdownAmount > 0) {
+					pushTransaction(
+						state.paysIntoAccountId,
+						drawdownAmount,
+						'income',
+						'super_income',
+						`super_drawdown_${assetId}_${state.drawdownCycleYear ?? current.year}`,
+						'Mandatory 4% drawdown',
+						state.assetName
+					);
+					state.currentValue -= drawdownAmount;
+				}
+				state.drawdownMonthsRemaining -= 1;
+			}
+
+			if (!Number.isFinite(state.currentValue) || state.currentValue === 0) continue;
+			const netAnnualRate = state.capitalGrowthRate - state.managementFeeRate;
+			const monthlyRate = netAnnualRate / 100 / 12;
+			const netGrowthAmount = state.currentValue * monthlyRate;
+			if (!Number.isFinite(netGrowthAmount) || netGrowthAmount === 0) continue;
+			state.currentValue += netGrowthAmount;
 		}
 
 		for (const [assetId, property] of propertyValuationStates.entries()) {
@@ -1061,6 +1297,22 @@ export const buildProjection = (input: {
 					date: currentDate,
 					monthLabel,
 					value: started ? shareState.currentValue : 0
+				});
+				continue;
+			}
+
+			if (series.assetType === 'superannuation') {
+				const superState = superStates.get(series.assetId);
+				if (!superState) {
+					series.points.push({ date: currentDate, monthLabel, value: 0 });
+					continue;
+				}
+				const started =
+					!superState.startDate || monthsBetweenYearMonths(superState.startDate, current) >= 0;
+				series.points.push({
+					date: currentDate,
+					monthLabel,
+					value: started ? superState.currentValue : 0
 				});
 				continue;
 			}

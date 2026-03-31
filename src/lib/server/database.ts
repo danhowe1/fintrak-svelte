@@ -173,6 +173,7 @@ export type AssetListItem = {
 	name: string;
 	details: Record<string, unknown>;
 	property_id?: string | null;
+	person_id?: string | null;
 	created_at: string;
 	relationships: {
 		accountName: string;
@@ -189,6 +190,7 @@ export async function getAssetsForScenario(scenarioId: string) {
 				a.name,
 				a.details,
 				a.property_id,
+				a.person_id,
 				a.created_at,
 				coalesce(
 					jsonb_agg(
@@ -739,17 +741,25 @@ export type CreateAssetInput = {
 	name: string;
 	details: Record<string, unknown>;
 	propertyId?: string | null;
+	personId?: string | null;
 };
 
 export async function createAsset(input: CreateAssetInput, client?: DbClient) {
 	const db = client ?? getPool();
 	const result = await db.query<{ id: string }>(
 		`
-			insert into assets (scenario_id, asset_type, name, details, property_id)
-			values ($1::uuid, $2::asset_type, $3::text, $4::jsonb, $5::uuid)
+			insert into assets (scenario_id, asset_type, name, details, property_id, person_id)
+			values ($1::uuid, $2::asset_type, $3::text, $4::jsonb, $5::uuid, $6::uuid)
 			returning id
 		`,
-		[input.scenarioId, input.assetType, input.name, input.details, input.propertyId ?? null]
+		[
+			input.scenarioId,
+			input.assetType,
+			input.name,
+			input.details,
+			input.propertyId ?? null,
+			input.personId ?? null
+		]
 	);
 
 	const assetId = result.rows[0]?.id;
@@ -1248,6 +1258,18 @@ export type CreateShareAssetWithBrokerageInput = {
 	paysIntoAccountId: string;
 };
 
+export type CreateSuperannuationAssetWithAccountInput = {
+	scenarioId: string;
+	name: string;
+	startDate: number;
+	personId: string;
+	paysIntoAccountId: string;
+	preservationAge: number;
+	capitalGrowthRate: number;
+	managementFeeRate: number;
+	openingBalance: number;
+};
+
 export async function createPersonAssetWithCashflows(input: CreatePersonAssetWithCashflowsInput) {
 	const client = await getPool().connect();
 	try {
@@ -1594,6 +1616,66 @@ export async function createShareAssetWithBrokerage(input: CreateShareAssetWithB
 			role: 'held_in'
 		});
 
+		await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: input.paysIntoAccountId,
+			role: 'pays_into'
+		});
+
+		await client.query('commit');
+		return assetId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+export async function createSuperannuationAssetWithAccount(
+	input: CreateSuperannuationAssetWithAccountInput
+) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+
+		const assetId = await createAsset(
+			{
+				scenarioId: input.scenarioId,
+				assetType: 'superannuation',
+				name: input.name,
+				personId: input.personId,
+				details: {
+					startDate: input.startDate,
+					preservationAge: input.preservationAge,
+					capitalGrowthRate: input.capitalGrowthRate,
+					managementFeeRate: input.managementFeeRate
+				}
+			},
+			client
+		);
+
+		const superAccountId = await createAccount(
+			{
+				scenarioId: input.scenarioId,
+				accountType: 'super_account',
+				name: `${input.name} Super`,
+				details: {
+					interestRate: 0,
+					openingBalance: input.openingBalance,
+					startDate: input.startDate
+				}
+			},
+			client
+		);
+
+		await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId,
+			accountId: superAccountId,
+			role: 'held_in'
+		});
 		await getOrCreateAssetAccount(client, {
 			scenarioId: input.scenarioId,
 			assetId,

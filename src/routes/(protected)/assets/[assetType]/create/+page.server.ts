@@ -7,6 +7,7 @@ import {
 	createPropertyAssetWithExpense,
 	createMortgageAssetWithAccounts,
 	createShareAssetWithBrokerage,
+	createSuperannuationAssetWithAccount,
 	getAccountsForScenario,
 	getAssetsForScenario,
 	getScenarioForUserById
@@ -59,6 +60,12 @@ const createAssetSchema = z
 		shareDividendsTakenAsIncomeDate: z.string().trim().optional(),
 		shareBrokerageAccountOpeningBalance: z.string().trim().optional(),
 		sharePaysIntoAccountId: z.string().trim().optional(),
+		superPersonId: z.string().trim().optional(),
+		superPreservationAge: z.string().trim().optional(),
+		superCapitalGrowthRate: z.string().trim().optional(),
+		superManagementFeeRate: z.string().trim().optional(),
+		superOpeningBalance: z.string().trim().optional(),
+		superPaysIntoAccountId: z.string().trim().optional(),
 		mortgagePropertyId: z.string().trim().optional(),
 		mortgageTermYears: z.string().trim().optional(),
 		mortgageTermMonths: z.string().trim().optional(),
@@ -552,6 +559,75 @@ const createAssetSchema = z
 				}
 			}
 		}
+		if (data.assetType === 'superannuation') {
+			if (!data.superPersonId) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select a person asset',
+					path: ['superPersonId']
+				});
+			} else {
+				const parsed = uuidSchema.safeParse(data.superPersonId);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Person selection is invalid',
+						path: ['superPersonId']
+					});
+				}
+			}
+			if (!data.superPreservationAge || !/^\d+$/.test(data.superPreservationAge)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Preservation age must be a whole number',
+					path: ['superPreservationAge']
+				});
+			}
+			if (
+				!data.superCapitalGrowthRate ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.superCapitalGrowthRate)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Capital growth rate is required',
+					path: ['superCapitalGrowthRate']
+				});
+			}
+			if (!data.superManagementFeeRate || !/^-?\d+(\.\d{1,2})?$/.test(data.superManagementFeeRate)) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Management fee rate is required',
+					path: ['superManagementFeeRate']
+				});
+			}
+			if (
+				data.superOpeningBalance === undefined ||
+				data.superOpeningBalance === '' ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.superOpeningBalance)
+			) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Super opening balance is required',
+					path: ['superOpeningBalance']
+				});
+			}
+			if (!data.superPaysIntoAccountId) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Select a pays into cash account',
+					path: ['superPaysIntoAccountId']
+				});
+			} else {
+				const parsed = uuidSchema.safeParse(data.superPaysIntoAccountId);
+				if (!parsed.success) {
+					ctx.addIssue({
+						code: z.ZodIssueCode.custom,
+						message: 'Pays into account selection is invalid',
+						path: ['superPaysIntoAccountId']
+					});
+				}
+			}
+		}
 	});
 
 const normalizeMonth = (value: string) => {
@@ -588,9 +664,12 @@ export const load: PageServerLoad = async (event) => {
 	const properties = (await getAssetsForScenario(scenario.id)).filter(
 		(asset) => asset.asset_type === 'property'
 	);
+	const people = (await getAssetsForScenario(scenario.id)).filter(
+		(asset) => asset.asset_type === 'person'
+	);
 	const cashAccounts = accounts.filter((account) => account.account_type === 'cash_account');
 
-	return { scenario, assetType: assetType.data, accounts, properties, cashAccounts };
+	return { scenario, assetType: assetType.data, accounts, properties, people, cashAccounts };
 };
 
 export const actions: Actions = {
@@ -634,6 +713,12 @@ export const actions: Actions = {
 			shareDividendsTakenAsIncomeDate: formData.get('shareDividendsTakenAsIncomeDate') ?? '',
 			shareBrokerageAccountOpeningBalance: formData.get('shareBrokerageAccountOpeningBalance') ?? '',
 			sharePaysIntoAccountId: formData.get('sharePaysIntoAccountId') ?? '',
+			superPersonId: formData.get('superPersonId') ?? '',
+			superPreservationAge: formData.get('superPreservationAge') ?? '',
+			superCapitalGrowthRate: formData.get('superCapitalGrowthRate') ?? '',
+			superManagementFeeRate: formData.get('superManagementFeeRate') ?? '',
+			superOpeningBalance: formData.get('superOpeningBalance') ?? '',
+			superPaysIntoAccountId: formData.get('superPaysIntoAccountId') ?? '',
 			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
 			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
 			mortgageTermMonths: formData.get('mortgageTermMonths') ?? '',
@@ -686,6 +771,12 @@ export const actions: Actions = {
 			shareDividendsTakenAsIncomeDate,
 			shareBrokerageAccountOpeningBalance,
 			sharePaysIntoAccountId,
+			superPersonId,
+			superPreservationAge,
+			superCapitalGrowthRate,
+			superManagementFeeRate,
+			superOpeningBalance,
+			superPaysIntoAccountId,
 			mortgagePropertyId,
 			mortgageTermYears,
 			mortgageTermMonths,
@@ -873,6 +964,44 @@ export const actions: Actions = {
 					dividendsTakenAsIncomeDate: normalizeMonth(shareDividendsTakenAsIncomeDate ?? ''),
 					brokerageOpeningBalance: currencySchema.parse(shareBrokerageAccountOpeningBalance ?? '0'),
 					paysIntoAccountId: sharePaysIntoAccountId ?? ''
+				});
+			} else if (assetType.data === 'superannuation') {
+				const personAssets = (await getAssetsForScenario(scenario.id)).filter(
+					(asset) => asset.asset_type === 'person'
+				);
+				if (!personAssets.some((person) => person.id === superPersonId)) {
+					const errors: Record<string, string[]> = {
+						superPersonId: ['Select a valid person asset']
+					};
+					return fail(400, {
+						errors,
+						values: payload
+					});
+				}
+				const cashAccountIds = new Set(
+					(await getAccountsForScenario(scenario.id))
+						.filter((account) => account.account_type === 'cash_account')
+						.map((account) => account.id)
+				);
+				if (!cashAccountIds.has(superPaysIntoAccountId ?? '')) {
+					const errors: Record<string, string[]> = {
+						superPaysIntoAccountId: ['Select a valid cash account']
+					};
+					return fail(400, {
+						errors,
+						values: payload
+					});
+				}
+				await createSuperannuationAssetWithAccount({
+					scenarioId: scenario.id,
+					name,
+					startDate: details.startDate as number,
+					personId: superPersonId ?? '',
+					paysIntoAccountId: superPaysIntoAccountId ?? '',
+					preservationAge: Number(superPreservationAge ?? 60),
+					capitalGrowthRate: decimalUpToTwoPlacesSchema.parse(superCapitalGrowthRate ?? '0'),
+					managementFeeRate: decimalUpToTwoPlacesSchema.parse(superManagementFeeRate ?? '0'),
+					openingBalance: currencySchema.parse(superOpeningBalance ?? '0')
 				});
 			} else {
 				await createAsset({

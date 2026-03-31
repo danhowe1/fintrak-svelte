@@ -433,13 +433,15 @@ export const actions: Actions = {
 		}
 		const isAllowedTransferAccount = (accountId: string, accountType: string | undefined) =>
 			accountType === 'cash_account' ||
+			accountType === 'super_account' ||
 			(accountType === 'brokerage' && shareAssetByAccountId.has(accountId));
 		if (
 			!isAllowedTransferAccount(sourceAccountId, sourceAccount?.account_type) ||
 			!isAllowedTransferAccount(destinationAccountId, destinationAccount?.account_type)
 		) {
 			return fail(400, {
-				error: 'Transfers currently only support cash accounts and shares brokerage accounts.'
+				error:
+					'Transfers currently only support cash accounts, super accounts, and shares brokerage accounts.'
 			});
 		}
 		const destinationHasSharesAsset = shareAssetByAccountId.has(destinationAccountId);
