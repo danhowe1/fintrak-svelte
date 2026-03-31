@@ -96,7 +96,7 @@
 							<td class="px-4 py-3">{formatLabel(asset.asset_type)}</td>
 							<td class="px-4 py-3 font-medium text-slate-900">{asset.name}</td>
 							<td class="px-4 py-3">
-								{formatMonth(asset.details?.startDate)}
+								{formatMonth(asset.start_date)}
 							</td>
 							<td class="px-4 py-3 text-slate-600">
 								{#if asset.asset_type === 'person'}

@@ -63,7 +63,7 @@
 								{account.details?.interestRate ?? '—'}%
 							</td>
 							<td class="px-4 py-3">
-								{formatCurrency(account.details?.openingBalance as number)}
+								{formatCurrency(account.opening_balance)}
 							</td>
 							<td class="px-4 py-3 text-slate-600">
 								{formatRelationships(account.relationships)}

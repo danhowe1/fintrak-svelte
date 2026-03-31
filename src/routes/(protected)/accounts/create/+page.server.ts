@@ -113,10 +113,10 @@ export const actions: Actions = {
 			scenarioId: scenario.id,
 			accountType,
 			name,
+			startDate: normalizedStartDate,
+			openingBalance,
 			details: {
-				interestRate,
-				openingBalance,
-				startDate: normalizedStartDate
+				interestRate
 			},
 			holderAssetIds
 		});

@@ -104,11 +104,14 @@ type ProjectionAccount = {
 		| 'brokerage'
 		| 'super_account';
 	name: string;
+	start_date: number;
+	opening_balance: number;
 	details: Record<string, unknown>;
 };
 
 type ProjectionAsset = {
 	asset_type: 'person' | 'property' | 'mortgage' | 'superannuation' | 'shares';
+	start_date: number;
 	details: Record<string, unknown>;
 	id?: string;
 	name?: string;
@@ -157,16 +160,6 @@ const getYoungestHundredYearMonth = (assets: ProjectionAsset[], fallbackStart: Y
 
 	const base = youngestDob ?? fallbackStart;
 	return { year: base.year + 100, month: base.month };
-};
-
-const getOpeningBalance = (details: Record<string, unknown>) => {
-	const value = details?.openingBalance;
-	if (typeof value === 'number' && Number.isFinite(value)) return value;
-	if (typeof value === 'string') {
-		const parsed = Number(value);
-		return Number.isFinite(parsed) ? parsed : 0;
-	}
-	return 0;
 };
 
 const getInterestRate = (details: Record<string, unknown>) => {
@@ -219,11 +212,11 @@ export const buildProjection = (input: {
 			if (start) candidates.push(start);
 		}
 		for (const account of input.accounts) {
-			const start = parseYearMonth(account.details?.startDate);
+			const start = parseYearMonth(account.start_date);
 			if (start) candidates.push(start);
 		}
 		for (const asset of input.assets) {
-			const start = parseYearMonth(asset.details?.startDate);
+			const start = parseYearMonth(asset.start_date);
 			if (start) candidates.push(start);
 		}
 		if (candidates.length === 0) {
@@ -265,8 +258,8 @@ export const buildProjection = (input: {
 				name: account.name,
 				type: account.account_type,
 				interestRate: getInterestRate(account.details),
-				startDate: parseYearMonth(account.details?.startDate),
-				openingBalance: getOpeningBalance(account.details),
+				startDate: parseYearMonth(account.start_date),
+				openingBalance: Number.isFinite(account.opening_balance) ? account.opening_balance : 0,
 				balance: 0
 			}
 		])
@@ -403,9 +396,8 @@ export const buildProjection = (input: {
 	};
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'property' || !asset.id) continue;
-		const startDateValue = asset.details?.startDate;
 		const saleDateValue = asset.details?.saleDate;
-		const startDate = parseYearMonth(startDateValue);
+		const startDate = parseYearMonth(asset.start_date);
 		const saleDate = parseYearMonth(saleDateValue);
 		if (!startDate) continue;
 		const marketValue = getNumberDetail(asset.details ?? {}, 'marketValue');
@@ -485,8 +477,7 @@ export const buildProjection = (input: {
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'mortgage' || !asset.id) continue;
 		const termMonths = getTermMonths(asset.details ?? {});
-		const startDateValue = asset.details?.startDate;
-		const startDate = parseYearMonth(startDateValue);
+		const startDate = parseYearMonth(asset.start_date);
 		const propertySaleDate =
 			asset.property_id && propertySaleDates.has(asset.property_id)
 				? propertySaleDates.get(asset.property_id) ?? null
@@ -508,9 +499,9 @@ export const buildProjection = (input: {
 		}
 
 		if (mortgageAccountId && fundingSourceAccountId && termMonths > 0) {
-			const mortgageAccountDetails =
-				input.accounts.find((account) => account.id === mortgageAccountId)?.details ?? {};
-			const accountStartDate = parseYearMonth(mortgageAccountDetails?.startDate);
+			const mortgageAccountStartDate =
+				input.accounts.find((account) => account.id === mortgageAccountId)?.start_date ?? null;
+			const accountStartDate = parseYearMonth(mortgageAccountStartDate);
 			mortgageStates.set(asset.id, {
 				mortgageAccountId,
 				fundingSourceAccountId,
@@ -525,7 +516,7 @@ export const buildProjection = (input: {
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'shares' || !asset.id) continue;
 		const details = asset.details ?? {};
-		const startDate = parseYearMonth(details.startDate);
+		const startDate = parseYearMonth(asset.start_date);
 		const dividendsTakenAsIncomeDate = parseYearMonth(details.dividendsTakenAsIncomeDate);
 		const capitalGrowthRate = getNumberDetail(details, 'capitalGrowthRate') ?? 0;
 		const dividendYield = getNumberDetail(details, 'dividendYield') ?? 0;
@@ -556,7 +547,7 @@ export const buildProjection = (input: {
 	for (const asset of input.assets) {
 		if (asset.asset_type !== 'superannuation' || !asset.id) continue;
 		const details = asset.details ?? {};
-		const startDate = parseYearMonth(details.startDate);
+		const startDate = parseYearMonth(asset.start_date);
 		const preservationAge = getNumberDetail(details, 'preservationAge');
 		const capitalGrowthRate = getNumberDetail(details, 'capitalGrowthRate') ?? 0;
 		const managementFeeRate = getNumberDetail(details, 'managementFeeRate') ?? 0;

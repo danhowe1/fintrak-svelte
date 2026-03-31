@@ -806,9 +806,7 @@ export const actions: Actions = {
 			expenseAccountOpeningBalance
 		} = parsed.data;
 
-		const details: Record<string, unknown> = {
-			startDate: normalizeMonth(startMonth)
-		};
+		const startDate = normalizeMonth(startMonth);
 
 		try {
 			if (assetType.data === 'person') {
@@ -818,7 +816,7 @@ export const actions: Actions = {
 					name,
 					dob: normalizeMonth(personDob ?? ''),
 					retirementAge: Number(retirementAge),
-					startDate: details.startDate as number,
+					startDate,
 					employmentIncome: employmentIncome ? currencySchema.parse(employmentIncome) : 0,
 					essentialExpenses: currencySchema.parse(essentialExpenses ?? ''),
 					expenseAccount:
@@ -860,7 +858,7 @@ export const actions: Actions = {
 					scenarioId: scenario.id,
 					userId,
 					name,
-					startDate: details.startDate as number,
+					startDate,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
 					marketGrowthRate: decimalUpToOnePlaceSchema.parse(propertyMarketGrowthRate ?? '5'),
 					fixedSellingCosts: currencySchema.parse(propertyFixedSellingCosts ?? '10000'),
@@ -882,18 +880,21 @@ export const actions: Actions = {
 							: { type: 'existing', accountId: expenseAccountChoice ?? '' }
 				});
 			} else if (assetType.data === 'mortgage') {
-				details.termYears = Number(mortgageTermYears ?? 0);
-				details.termMonths = Number(mortgageTermMonths ?? 0);
-				details.interestOnly = mortgageInterestOnly === 'on';
+				const mortgageDetails: Record<string, unknown> = {
+					termYears: Number(mortgageTermYears ?? 0),
+					termMonths: Number(mortgageTermMonths ?? 0),
+					interestOnly: mortgageInterestOnly === 'on'
+				};
 				if (mortgageInterestOnly === 'on') {
-					details.interestOnlyEnd = normalizeMonth(mortgageInterestOnlyEnd ?? '');
+					mortgageDetails.interestOnlyEnd = normalizeMonth(mortgageInterestOnlyEnd ?? '');
 				}
 				await createMortgageAssetWithAccounts({
 					scenarioId: scenario.id,
 					userId,
 					name,
+					startDate,
 					propertyId: mortgagePropertyId ?? '',
-					details,
+					details: mortgageDetails,
 					mortgageAccount: {
 						name: mortgageAccountName ?? 'Mortgage account',
 						interestRate: roundToTwo(
@@ -958,7 +959,7 @@ export const actions: Actions = {
 				await createShareAssetWithBrokerage({
 					scenarioId: scenario.id,
 					name,
-					startDate: details.startDate as number,
+					startDate,
 					capitalGrowthRate: decimalUpToTwoPlacesSchema.parse(shareCapitalGrowthRate ?? '0'),
 					dividendYield: decimalUpToTwoPlacesSchema.parse(shareDividendYield ?? '0'),
 					dividendsTakenAsIncomeDate: normalizeMonth(shareDividendsTakenAsIncomeDate ?? ''),
@@ -995,7 +996,7 @@ export const actions: Actions = {
 				await createSuperannuationAssetWithAccount({
 					scenarioId: scenario.id,
 					name,
-					startDate: details.startDate as number,
+					startDate,
 					personId: superPersonId ?? '',
 					paysIntoAccountId: superPaysIntoAccountId ?? '',
 					preservationAge: Number(superPreservationAge ?? 60),
@@ -1008,7 +1009,8 @@ export const actions: Actions = {
 					scenarioId: scenario.id,
 					assetType: assetType.data,
 					name,
-					details
+					startDate,
+					details: {}
 				});
 			}
 		} catch (error) {

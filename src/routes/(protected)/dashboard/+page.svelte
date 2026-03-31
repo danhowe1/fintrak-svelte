@@ -243,7 +243,7 @@ $: if (Object.keys(personDetails).length === 0 && (assetsList.length ?? 0) > 0) 
 		if (asset.asset_type === 'person') {
 			next[asset.id] = {
 				name: asset.name ?? '',
-				startDate: formatYearMonthInput(asset.details?.startDate),
+				startDate: formatYearMonthInput(asset.start_date),
 				dob: formatYearMonthInput(asset.details?.dob)
 			};
 		}
@@ -349,7 +349,7 @@ $: if (Object.keys(mortgageDetails).length === 0 && (assetsList.length ?? 0) > 0
 			typeof rawTermYears === 'number' ? rawTermYears : Number(rawTermYears ?? 0);
 		const termMonths =
 			typeof rawTermMonths === 'number' ? rawTermMonths : Number(rawTermMonths ?? 0);
-		const rawOpeningBalance = account?.details?.openingBalance;
+		const rawOpeningBalance = account?.opening_balance;
 		const openingBalance =
 			typeof rawOpeningBalance === 'number' ? rawOpeningBalance : Number(rawOpeningBalance ?? 0);
 		next[asset.id] = {
@@ -445,8 +445,8 @@ $: if (!transferDraft.startDate) {
 		...transferDraft,
 		startDate:
 			toMonthYearInput(projectionData.startDate) ||
-			toMonthYearInput(assetsList[0]?.details?.startDate) ||
-			toMonthYearInput(accountsList[0]?.details?.startDate) ||
+			toMonthYearInput(assetsList[0]?.start_date) ||
+			toMonthYearInput(accountsList[0]?.start_date) ||
 			''
 	};
 }
@@ -541,8 +541,8 @@ const getDefaultDraft = (
 	const fallbackStartMonth = `${String(now.getMonth() + 1).padStart(2, '0')} ${now.getFullYear()}`;
 	const defaultStartDate =
 		monthLabelFromDate(
-			assetsList.find((asset) => asset.asset_type === 'person')?.details?.startDate ??
-				accountsList[0]?.details?.startDate ??
+			assetsList.find((asset) => asset.asset_type === 'person')?.start_date ??
+				accountsList[0]?.start_date ??
 				''
 		) || fallbackStartMonth;
 	const options = getAssetAccountOptions(assetId);
@@ -2901,7 +2901,7 @@ const updateMortgageDetails = async (
 					<div class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600">
 						<span class="truncate text-slate-500">Start date</span>
 						<span class="justify-self-end text-slate-900">
-							{formatYearMonthInput(share.details?.startDate)}
+							{formatYearMonthInput(share.start_date)}
 						</span>
 						<span></span>
 					</div>
@@ -2952,7 +2952,7 @@ const updateMortgageDetails = async (
 								const next = Number((event.currentTarget as HTMLInputElement).value);
 								const current = propertyDetails[property.id] ?? {
 									name: property.name,
-									startDate: formatYearMonthInput(property.details?.startDate),
+									startDate: formatYearMonthInput(property.start_date),
 									marketValue: Number(property.details?.marketValue) || 0,
 									marketGrowthRate: 0,
 									saleDate: '',
@@ -2968,7 +2968,7 @@ const updateMortgageDetails = async (
 								const next = Number((event.currentTarget as HTMLInputElement).value);
 								const current = propertyDetails[property.id] ?? {
 									name: property.name,
-									startDate: formatYearMonthInput(property.details?.startDate),
+									startDate: formatYearMonthInput(property.start_date),
 									marketValue: Number(property.details?.marketValue) || 0,
 									marketGrowthRate: 0,
 									saleDate: '',
@@ -3285,7 +3285,7 @@ const updateMortgageDetails = async (
 									const next = (event.currentTarget as HTMLInputElement).value;
 									const current = propertyDetails[property.id] ?? {
 										name: property.name,
-										startDate: formatYearMonthInput(property.details?.startDate),
+										startDate: formatYearMonthInput(property.start_date),
 										marketValue: Number(property.details?.marketValue) || 0,
 										marketGrowthRate: 0,
 										saleDate: '',
@@ -3301,7 +3301,7 @@ const updateMortgageDetails = async (
 									const next = (event.currentTarget as HTMLInputElement).value;
 									const current = propertyDetails[property.id] ?? {
 										name: property.name,
-										startDate: formatYearMonthInput(property.details?.startDate),
+										startDate: formatYearMonthInput(property.start_date),
 										marketValue: Number(property.details?.marketValue) || 0,
 										marketGrowthRate: 0,
 										saleDate: '',
