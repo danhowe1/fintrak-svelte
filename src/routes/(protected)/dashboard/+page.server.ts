@@ -18,10 +18,18 @@ import {
 	updateShareDetails,
 	updateAccountInterestRate,
 	updateAccountDetails,
-	updateMortgageDetails
+	updateMortgageDetails,
+	getOrCreateHeldInAssetAccount
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
 import { parseYearMonthInput } from '$lib/yearMonth';
+
+const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
+
+const parseSelectedAccountId = (value: string) =>
+	value.startsWith(CASH_ACCOUNT_SELECTION_PREFIX)
+		? value.slice(CASH_ACCOUNT_SELECTION_PREFIX.length)
+		: null;
 
 export const load: PageServerLoad = async (event) => {
 	const parentData = await event.parent();
@@ -696,6 +704,7 @@ export const actions: Actions = {
 			(type !== 'income' && type !== 'expense') ||
 			(category !== 'living_expenses' &&
 				category !== 'employment_income' &&
+				category !== 'misc_income' &&
 				category !== 'asset_ownership' &&
 				category !== 'rental_income') ||
 			(frequency !== 'monthly' &&
@@ -720,15 +729,33 @@ export const actions: Actions = {
 			getAssetAccountsForScenario(scenarioId),
 			getAssetsForScenario(scenarioId)
 		]);
-		const assetAccount = assetAccounts.find(
-			(link) => link.id === assetAccountId && link.asset_id === assetId
-		);
-		if (!assetAccount) {
-			return fail(400, { error: 'Account selection is invalid.' });
-		}
+		const accounts = await getAccountsForScenario(scenarioId);
 		const asset = assets.find((item) => item.id === assetId);
 		if (!asset) {
 			return fail(404, { error: 'Asset not found.' });
+		}
+		let resolvedAssetAccountId =
+			assetAccounts.find(
+				(link) =>
+					link.id === assetAccountId &&
+					link.asset_id === assetId &&
+					link.relationship_role === 'held_in'
+			)?.id ?? null;
+		if (!resolvedAssetAccountId && (asset.asset_type === 'person' || asset.asset_type === 'property')) {
+			const selectedAccountId = parseSelectedAccountId(assetAccountId);
+			const selectedAccount = selectedAccountId
+				? accounts.find((account) => account.id === selectedAccountId)
+				: null;
+			if (selectedAccount?.account_type === 'cash_account') {
+				resolvedAssetAccountId = await getOrCreateHeldInAssetAccount({
+					scenarioId,
+					assetId,
+					accountId: selectedAccount.id
+				});
+			}
+		}
+		if (!resolvedAssetAccountId) {
+			return fail(400, { error: 'Account selection is invalid.' });
 		}
 		if (asset.asset_type === 'person') {
 			if (type === 'expense' && category !== 'living_expenses') {
@@ -736,7 +763,8 @@ export const actions: Actions = {
 			}
 			if (
 				type === 'income' &&
-				category !== 'employment_income'
+				category !== 'employment_income' &&
+				category !== 'misc_income'
 			) {
 				return fail(400, { error: 'Invalid category for person income.' });
 			}
@@ -759,8 +787,8 @@ export const actions: Actions = {
 			inflationAffected,
 			startDate: normalizeMonth(startMonth),
 			endDate: endMonth.trim().length > 0 ? normalizeMonth(endMonth) : null,
-			sourceAssetAccountId: type === 'expense' ? assetAccountId : null,
-			destinationAssetAccountId: type === 'income' ? assetAccountId : null,
+			sourceAssetAccountId: type === 'expense' ? resolvedAssetAccountId : null,
+			destinationAssetAccountId: type === 'income' ? resolvedAssetAccountId : null,
 			description,
 			createdBy: userId
 		});
@@ -822,6 +850,7 @@ export const actions: Actions = {
 			(type !== 'income' && type !== 'expense') ||
 			(category !== 'living_expenses' &&
 				category !== 'employment_income' &&
+				category !== 'misc_income' &&
 				category !== 'asset_ownership' &&
 				category !== 'rental_income') ||
 			(frequency !== 'monthly' &&
@@ -846,15 +875,33 @@ export const actions: Actions = {
 			getAssetAccountsForScenario(scenarioId),
 			getAssetsForScenario(scenarioId)
 		]);
-		const assetAccount = assetAccounts.find(
-			(link) => link.id === assetAccountId && link.asset_id === assetId
-		);
-		if (!assetAccount) {
-			return fail(400, { error: 'Account selection is invalid.' });
-		}
+		const accounts = await getAccountsForScenario(scenarioId);
 		const asset = assets.find((item) => item.id === assetId);
 		if (!asset) {
 			return fail(404, { error: 'Asset not found.' });
+		}
+		let resolvedAssetAccountId =
+			assetAccounts.find(
+				(link) =>
+					link.id === assetAccountId &&
+					link.asset_id === assetId &&
+					link.relationship_role === 'held_in'
+			)?.id ?? null;
+		if (!resolvedAssetAccountId && (asset.asset_type === 'person' || asset.asset_type === 'property')) {
+			const selectedAccountId = parseSelectedAccountId(assetAccountId);
+			const selectedAccount = selectedAccountId
+				? accounts.find((account) => account.id === selectedAccountId)
+				: null;
+			if (selectedAccount?.account_type === 'cash_account') {
+				resolvedAssetAccountId = await getOrCreateHeldInAssetAccount({
+					scenarioId,
+					assetId,
+					accountId: selectedAccount.id
+				});
+			}
+		}
+		if (!resolvedAssetAccountId) {
+			return fail(400, { error: 'Account selection is invalid.' });
 		}
 		if (asset.asset_type === 'person') {
 			if (type === 'expense' && category !== 'living_expenses') {
@@ -862,7 +909,8 @@ export const actions: Actions = {
 			}
 			if (
 				type === 'income' &&
-				category !== 'employment_income'
+				category !== 'employment_income' &&
+				category !== 'misc_income'
 			) {
 				return fail(400, { error: 'Invalid category for person income.' });
 			}
@@ -886,8 +934,8 @@ export const actions: Actions = {
 			inflationAffected,
 			startDate: normalizeMonth(startMonth),
 			endDate: endMonth.trim().length > 0 ? normalizeMonth(endMonth) : null,
-			sourceAssetAccountId: type === 'expense' ? assetAccountId : null,
-			destinationAssetAccountId: type === 'income' ? assetAccountId : null,
+			sourceAssetAccountId: type === 'expense' ? resolvedAssetAccountId : null,
+			destinationAssetAccountId: type === 'income' ? resolvedAssetAccountId : null,
 			description
 		});
 

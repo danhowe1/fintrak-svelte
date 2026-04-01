@@ -15,6 +15,7 @@ export type ProjectionTransaction = {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'dividend_income'
 		| 'rental_income'
 		| 'asset_ownership'
@@ -78,6 +79,7 @@ type ProjectionCashflow = {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'asset_ownership'
 		| 'rental_income'
 		| 'transfer'

@@ -606,6 +606,7 @@ export async function createCashflow(input: {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'asset_ownership'
 		| 'rental_income'
 		| 'transfer'
@@ -687,6 +688,7 @@ export async function updateCashflow(input: {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'asset_ownership'
 		| 'rental_income'
 		| 'transfer'
@@ -739,6 +741,7 @@ export type CashflowSummary = {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'asset_ownership'
 		| 'rental_income'
 		| 'transfer'
@@ -940,6 +943,30 @@ export async function getOrCreateAssetAccount(
 	}
 
 	return assetAccountId;
+}
+
+export async function getOrCreateHeldInAssetAccount(input: {
+	scenarioId: string;
+	assetId: string;
+	accountId: string;
+}) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+		const assetAccountId = await getOrCreateAssetAccount(client, {
+			scenarioId: input.scenarioId,
+			assetId: input.assetId,
+			accountId: input.accountId,
+			role: 'held_in'
+		});
+		await client.query('commit');
+		return assetAccountId;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
 }
 
 export type CreateScenarioWithPersonInput = {
@@ -1210,6 +1237,7 @@ type InsertCashflowInput = {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'asset_ownership'
 		| 'rental_income'
 		| 'transfer'

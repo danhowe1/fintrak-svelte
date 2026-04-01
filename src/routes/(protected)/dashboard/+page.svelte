@@ -43,10 +43,14 @@ const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f
 const cashflowCategoryOptions = [
 	{ value: 'living_expenses', label: 'Living expenses' },
 	{ value: 'employment_income', label: 'Employment income' },
+	{ value: 'misc_income', label: 'Misc income' },
 	{ value: 'rental_income', label: 'Rental income' },
 	{ value: 'asset_ownership', label: 'Asset ownership' }
 ];
-const personIncomeCategoryOptions = [{ value: 'employment_income', label: 'Employment income' }];
+const personIncomeCategoryOptions = [
+	{ value: 'employment_income', label: 'Employment income' },
+	{ value: 'misc_income', label: 'Misc income' }
+];
 const propertyIncomeCategoryOptions = [
 	{ value: 'rental_income', label: 'Rental income' }
 ];
@@ -59,6 +63,7 @@ const cashflowFrequencyOptions = [
 	{ value: 'annually', label: 'Annually' },
 	{ value: 'one_time', label: 'One time' }
 ];
+const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
 
 type ProjectionRange = '1y' | '5y' | '10y' | 'all';
 type AssetPanelTab = 'assets' | 'accounts' | 'transfers';
@@ -68,6 +73,7 @@ type CashflowDraft = {
 	category:
 		| 'living_expenses'
 		| 'employment_income'
+		| 'misc_income'
 		| 'asset_ownership'
 		| 'rental_income';
 	frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
@@ -315,7 +321,7 @@ $: if (Object.keys(propertyDetails).length === 0 && (assetsList.length ?? 0) > 0
 				typeof rawMarketValue === 'number' ? rawMarketValue : Number(rawMarketValue);
 			const rawRate = details.marketGrowthRate;
 			const rate = typeof rawRate === 'number' ? rawRate : Number(rawRate);
-			const rawStartDate = details.startDate;
+			const rawStartDate = asset.start_date;
 			const startDate = formatYearMonthInput(rawStartDate);
 			const rawSaleDate = details.saleDate;
 			const saleDate = formatYearMonthInput(rawSaleDate);
@@ -422,7 +428,7 @@ $: if (Object.keys(mortgageDetails).length === 0 && (assetsList.length ?? 0) > 0
 			typeof rawOpeningBalance === 'number' ? rawOpeningBalance : Number(rawOpeningBalance ?? 0);
 		next[asset.id] = {
 			name: asset.name ?? '',
-			startDate: formatYearMonthInput(details.startDate),
+			startDate: formatYearMonthInput(asset.start_date),
 			termYears: Number.isFinite(termYears) ? Math.max(0, Math.round(termYears)) : 0,
 			termMonths: Number.isFinite(termMonths)
 				? Math.min(11, Math.max(0, Math.round(termMonths)))
@@ -585,10 +591,23 @@ const monthLabelFromDate = (value?: unknown | null) => {
 };
 
 const getAssetAccountOptions = (assetId: string) => {
+	const assetType = getAssetType(assetId);
 	const accountsById = new Map(accountsList.map((account) => [account.id, account]));
-	return assetAccountsList
-		.filter((link) => link.asset_id === assetId && link.relationship_role === 'held_in')
-		.map((link) => ({
+	const heldInLinks = assetAccountsList.filter(
+		(link) => link.asset_id === assetId && link.relationship_role === 'held_in'
+	);
+	if (assetType === 'person' || assetType === 'property') {
+		const heldInLinksByAccountId = new Map(heldInLinks.map((link) => [link.account_id, link]));
+		return accountsList
+			.filter((account) => account.account_type === 'cash_account')
+			.map((account) => ({
+				id:
+					heldInLinksByAccountId.get(account.id)?.id ??
+					`${CASH_ACCOUNT_SELECTION_PREFIX}${account.id}`,
+				name: account.name ?? 'Account'
+			}));
+	}
+	return heldInLinks.map((link) => ({
 			id: link.id,
 			name: accountsById.get(link.account_id)?.name ?? 'Account'
 		}));
@@ -700,6 +719,7 @@ const openCashflowFormForEdit = (assetId: string, cashflow: (typeof cashflows)[n
 	const category: CashflowDraft['category'] =
 		cashflow.category === 'living_expenses' ||
 		cashflow.category === 'employment_income' ||
+		cashflow.category === 'misc_income' ||
 		cashflow.category === 'asset_ownership' ||
 		cashflow.category === 'rental_income'
 			? cashflow.category
@@ -1118,6 +1138,12 @@ const createAssetCashflow = async (assetId: string, draft: CashflowDraft) => {
 				// ignore JSON parse issues; refreshProjection will sync state
 			}
 			await refreshProjection({ includeCashflows: !hasCashflows });
+			const draftKey = getDraftKey(assetId, draft.type);
+			const assetType = getAssetType(assetId);
+			cashflowDrafts = {
+				...cashflowDrafts,
+				[draftKey]: getDefaultDraft(assetId, draft.type, assetType)
+			};
 			cashflowFormErrors = { ...cashflowFormErrors, [assetId]: '' };
 			activeCashflowForm = null;
 		},
@@ -2156,43 +2182,50 @@ const updateMortgageDetails = async (
 			Projections for {data.scenario.name} ({formatYearMonthInput(projectionData.startDate)})
 		</h2>
 		<div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
-			{#if projectionView === 'balances' || projectionView === 'balance_sheet'}
-				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'assets'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'assets')}
-					>
-						Assets
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'accounts'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'accounts')}
-					>
-						Accounts
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							projectionBalanceSource === 'net_worth'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (projectionBalanceSource = 'net_worth')}
-					>
-						Net worth
-					</button>
-				</div>
-			{/if}
+			<div
+				class={`inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 ${
+					projectionView === 'balances' || projectionView === 'balance_sheet'
+						? ''
+						: 'invisible pointer-events-none'
+				}`}
+				aria-hidden={projectionView === 'balances' || projectionView === 'balance_sheet'
+					? undefined
+					: 'true'}
+			>
+				<button
+					type="button"
+					class={`rounded-full px-3 py-1 transition ${
+						projectionBalanceSource === 'assets'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-600 hover:text-slate-900'
+					}`}
+					on:click={() => (projectionBalanceSource = 'assets')}
+				>
+					Assets
+				</button>
+				<button
+					type="button"
+					class={`rounded-full px-3 py-1 transition ${
+						projectionBalanceSource === 'accounts'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-600 hover:text-slate-900'
+					}`}
+					on:click={() => (projectionBalanceSource = 'accounts')}
+				>
+					Accounts
+				</button>
+				<button
+					type="button"
+					class={`rounded-full px-3 py-1 transition ${
+						projectionBalanceSource === 'net_worth'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-600 hover:text-slate-900'
+					}`}
+					on:click={() => (projectionBalanceSource = 'net_worth')}
+				>
+					Net worth
+				</button>
+			</div>
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
 				<button
 					type="button"

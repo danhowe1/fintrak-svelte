@@ -1,4 +1,5 @@
--- Rebuilt schema from scratch (YYYYMM integer months)
+-- Consolidated schema for fresh development databases.
+-- Includes all changes previously spread across 0001-0010 migrations.
 
 -- =========================
 -- 0) Extensions
@@ -8,7 +9,6 @@ create extension if not exists pgcrypto;
 -- =========================
 -- 1) Reset existing schema (destructive)
 -- =========================
--- Drop tables first (cascade to FKs), then types.
 drop table if exists cashflows cascade;
 drop table if exists asset_accounts cascade;
 drop table if exists accounts cascade;
@@ -30,14 +30,13 @@ drop type if exists scenario_role;
 -- 2) Enum types
 -- =========================
 do $$ begin
-  create type asset_type as enum ('person','property','mortgage','superannuation');
+  create type asset_type as enum ('person', 'property', 'mortgage', 'superannuation', 'shares');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
   create type account_type as enum (
-    'current_account',
+    'cash_account',
     'mortgage_account',
-    'savings_account',
     'credit_card',
     'brokerage',
     'super_account'
@@ -55,24 +54,27 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type scenario_role as enum ('owner','editor','viewer');
+  create type scenario_role as enum ('owner', 'editor', 'viewer');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type cashflow_type as enum ('expense','income','transfer');
+  create type cashflow_type as enum ('expense', 'income', 'transfer');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
-  create type cashflow_frequency as enum ('monthly','quarterly','annually','one_time');
+  create type cashflow_frequency as enum ('monthly', 'quarterly', 'annually', 'one_time');
 exception when duplicate_object then null; end $$;
 
 do $$ begin
   create type cashflow_category as enum (
     'living_expenses',
     'employment_income',
+    'misc_income',
     'asset_ownership',
     'rental_income',
-    'other'
+    'transfer',
+    'shares_purchase',
+    'shares_sale'
   );
 exception when duplicate_object then null; end $$;
 
@@ -126,7 +128,6 @@ create index if not exists app_user_identities_app_user_idx on app_user_identiti
 create table if not exists scenarios (
   id uuid primary key default gen_random_uuid(),
   name text not null,
-  details jsonb not null default '{}'::jsonb,
   created_by text not null references app_users(id) on delete restrict,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -157,14 +158,19 @@ create table if not exists assets (
   name text not null,
   details jsonb not null default '{}'::jsonb,
   property_id uuid,
+  person_id uuid,
+  start_date int not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint assets_unique_name unique (scenario_id, name),
-  constraint assets_property_id_mortgage_check
+  constraint assets_linked_asset_check
     check (
-      (asset_type = 'mortgage' and property_id is not null)
-      or (asset_type <> 'mortgage' and property_id is null)
-    )
+      (asset_type = 'mortgage' and property_id is not null and person_id is null)
+      or (asset_type = 'superannuation' and person_id is not null and property_id is null)
+      or (asset_type not in ('mortgage', 'superannuation') and property_id is null and person_id is null)
+    ),
+  constraint assets_start_date_check
+    check (is_year_month(start_date))
 );
 
 alter table assets
@@ -174,8 +180,16 @@ alter table assets
 add constraint assets_property_id_fkey
 foreign key (property_id) references assets(id) on delete cascade;
 
+alter table assets
+drop constraint if exists assets_person_id_fkey;
+
+alter table assets
+add constraint assets_person_id_fkey
+foreign key (person_id) references assets(id) on delete cascade;
+
 create index if not exists assets_scenario_idx on assets(scenario_id);
 create index if not exists assets_type_idx on assets(asset_type);
+create index if not exists assets_start_date_idx on assets(start_date);
 create index if not exists assets_details_gin_idx on assets using gin(details);
 
 create or replace function enforce_mortgage_property()
@@ -183,26 +197,45 @@ returns trigger language plpgsql as $$
 declare
   property_type asset_type;
   property_scenario uuid;
+  person_type asset_type;
+  person_scenario uuid;
 begin
-  if new.property_id is null then
-    return new;
+  if new.property_id is not null then
+    select asset_type, scenario_id
+    into property_type, property_scenario
+    from assets
+    where id = new.property_id;
+
+    if property_type is null then
+      raise exception 'property asset not found';
+    end if;
+
+    if property_type <> 'property' then
+      raise exception 'mortgage property_id must reference a property asset';
+    end if;
+
+    if new.scenario_id <> property_scenario then
+      raise exception 'mortgage property must be in the same scenario';
+    end if;
   end if;
 
-  select asset_type, scenario_id
-  into property_type, property_scenario
-  from assets
-  where id = new.property_id;
+  if new.person_id is not null then
+    select asset_type, scenario_id
+    into person_type, person_scenario
+    from assets
+    where id = new.person_id;
 
-  if property_type is null then
-    raise exception 'property asset not found';
-  end if;
+    if person_type is null then
+      raise exception 'person asset not found';
+    end if;
 
-  if property_type <> 'property' then
-    raise exception 'mortgage property_id must reference a property asset';
-  end if;
+    if person_type <> 'person' then
+      raise exception 'superannuation person_id must reference a person asset';
+    end if;
 
-  if new.scenario_id <> property_scenario then
-    raise exception 'mortgage property must be in the same scenario';
+    if new.scenario_id <> person_scenario then
+      raise exception 'superannuation person must be in the same scenario';
+    end if;
   end if;
 
   return new;
@@ -229,15 +262,21 @@ create table if not exists accounts (
   name text not null,
   currency char(3) not null default 'AUD',
   details jsonb not null default '{}'::jsonb,
+  start_date int not null,
+  opening_balance numeric not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint accounts_unique_name unique (scenario_id, name)
+  constraint accounts_unique_name unique (scenario_id, name),
+  constraint accounts_start_date_check
+    check (is_year_month(start_date))
 );
 
 create index if not exists accounts_scenario_idx on accounts(scenario_id);
 create index if not exists accounts_type_idx on accounts(account_type);
+create index if not exists accounts_start_date_idx on accounts(start_date);
 create index if not exists accounts_details_gin_idx on accounts using gin(details);
 
+drop trigger if exists accounts_set_updated_at on accounts;
 create trigger accounts_set_updated_at
 before update on accounts
 for each row execute function set_updated_at();
@@ -323,6 +362,7 @@ create index if not exists cashflows_destination_asset_account_idx on cashflows(
 create index if not exists cashflows_created_by_idx on cashflows(created_by);
 create index if not exists cashflows_start_date_idx on cashflows(start_date);
 
+drop trigger if exists cashflows_set_updated_at on cashflows;
 create trigger cashflows_set_updated_at
 before update on cashflows
 for each row execute function set_updated_at();
@@ -361,3 +401,15 @@ drop trigger if exists trg_cashflows_scenario_match on cashflows;
 create trigger trg_cashflows_scenario_match
 before insert or update on cashflows
 for each row execute function enforce_cashflows_scenario_match();
+
+-- =========================
+-- 10) Row level security
+-- =========================
+alter table app_users enable row level security;
+alter table app_user_identities enable row level security;
+alter table scenarios enable row level security;
+alter table scenario_members enable row level security;
+alter table assets enable row level security;
+alter table accounts enable row level security;
+alter table asset_accounts enable row level security;
+alter table cashflows enable row level security;

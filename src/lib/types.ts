@@ -34,6 +34,7 @@ export type CashflowType = 'expense' | 'income' | 'transfer';
 export type CashflowCategory =
 	| 'living_expenses'
 	| 'employment_income'
+	| 'misc_income'
 	| 'asset_ownership'
 	| 'rental_income'
 	| 'transfer'
