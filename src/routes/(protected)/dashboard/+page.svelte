@@ -201,6 +201,8 @@ let transferAccountOptions: { id: string; name: string }[] = [];
 let transferEditDrafts: Record<
 	string,
 	{
+		sourceAccountId: string;
+		destinationAccountId: string;
 		amount: string;
 		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 		startDate: string;
@@ -531,6 +533,8 @@ $: {
 	for (const transfer of transferCashflows) {
 		if (nextDrafts[transfer.id]) continue;
 		nextDrafts[transfer.id] = {
+			sourceAccountId: transfer.source_account_id ?? '',
+			destinationAccountId: transfer.destination_account_id ?? '',
 			amount: String(transfer.amount ?? ''),
 			frequency: transfer.frequency,
 			startDate: toMonthYearInput(transfer.start_date),
@@ -1327,6 +1331,8 @@ const updateTransferInflationAffected = async (cashflowId: string, inflationAffe
 const setTransferEditDraft = (
 	cashflowId: string,
 	updates: Partial<{
+		sourceAccountId: string;
+		destinationAccountId: string;
 		amount: string;
 		frequency: 'monthly' | 'quarterly' | 'annually' | 'one_time';
 		startDate: string;
@@ -1344,6 +1350,14 @@ const saveTransferEditDraft = async (cashflowId: string) => {
 	const draft = transferEditDrafts[cashflowId];
 	if (!draft) return;
 	const amountValue = Number(draft.amount);
+	if (
+		!draft.sourceAccountId ||
+		!draft.destinationAccountId ||
+		draft.sourceAccountId === draft.destinationAccountId
+	) {
+		transferInlineError = 'Choose different source and destination accounts.';
+		return;
+	}
 	if (!Number.isFinite(amountValue) || amountValue <= 0) {
 		transferInlineError = 'Transfer amount must be greater than 0.';
 		return;
@@ -1363,6 +1377,8 @@ const saveTransferEditDraft = async (cashflowId: string) => {
 			const formData = new FormData();
 			formData.set('scenarioId', data.scenario.id);
 			formData.set('cashflowId', cashflowId);
+			formData.set('sourceAccountId', draft.sourceAccountId);
+			formData.set('destinationAccountId', draft.destinationAccountId);
 			formData.set('amount', String(amountValue));
 			formData.set('frequency', draft.frequency);
 			formData.set('startDate', draft.startDate);
@@ -1386,6 +1402,8 @@ const saveTransferEditDraft = async (cashflowId: string) => {
 				);
 				if (refreshedTransfer) {
 					setTransferEditDraft(cashflowId, {
+						sourceAccountId: refreshedTransfer.source_account_id ?? '',
+						destinationAccountId: refreshedTransfer.destination_account_id ?? '',
 						amount: String(refreshedTransfer.amount ?? ''),
 						frequency: refreshedTransfer.frequency,
 						startDate: toMonthYearInput(refreshedTransfer.start_date),
@@ -4627,8 +4645,44 @@ const updateMortgageDetails = async (
 											{#each transferCashflows as transfer}
 												{@const transferDraftRow = transferEditDrafts[transfer.id]}
 												<tr>
-													<td class="px-2 py-2">{transfer.source_account_name ?? '—'}</td>
-													<td class="px-2 py-2">{transfer.destination_account_name ?? '—'}</td>
+													<td class="px-2 py-2">
+														<select
+															class="w-40 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+															value={transferDraftRow?.sourceAccountId ?? transfer.source_account_id ?? ''}
+															on:change={(event) => {
+																setTransferEditDraft(transfer.id, {
+																	sourceAccountId: (event.currentTarget as HTMLSelectElement).value
+																});
+																scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																	saveTransferEditDraft(transfer.id)
+																);
+															}}
+														>
+															<option value="">Select account</option>
+															{#each transferAccountOptions as option}
+																<option value={option.id}>{option.name}</option>
+															{/each}
+														</select>
+													</td>
+													<td class="px-2 py-2">
+														<select
+															class="w-40 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+															value={transferDraftRow?.destinationAccountId ?? transfer.destination_account_id ?? ''}
+															on:change={(event) => {
+																setTransferEditDraft(transfer.id, {
+																	destinationAccountId: (event.currentTarget as HTMLSelectElement).value
+																});
+																scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
+																	saveTransferEditDraft(transfer.id)
+																);
+															}}
+														>
+															<option value="">Select account</option>
+															{#each transferAccountOptions as option}
+																<option value={option.id}>{option.name}</option>
+															{/each}
+														</select>
+													</td>
 													<td class="px-2 py-2">{formatLabel(transfer.category)}</td>
 													<td class="px-2 py-2">
 														<input

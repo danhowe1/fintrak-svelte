@@ -605,6 +605,8 @@ export const actions: Actions = {
 		const formData = await event.request.formData();
 		const scenarioId = String(formData.get('scenarioId') ?? '');
 		const cashflowId = String(formData.get('cashflowId') ?? '');
+		const sourceAccountId = String(formData.get('sourceAccountId') ?? '');
+		const destinationAccountId = String(formData.get('destinationAccountId') ?? '');
 		const amount = Number(formData.get('amount'));
 		const frequency = String(formData.get('frequency') ?? '');
 		const startMonth = String(formData.get('startDate') ?? '');
@@ -623,6 +625,9 @@ export const actions: Actions = {
 		if (
 			!scenarioId ||
 			!cashflowId ||
+			!sourceAccountId ||
+			!destinationAccountId ||
+			sourceAccountId === destinationAccountId ||
 			!Number.isFinite(amount) ||
 			amount <= 0 ||
 			(frequency !== 'monthly' &&
@@ -644,16 +649,69 @@ export const actions: Actions = {
 		if (!transfer || transfer.cashflow_type !== 'transfer') {
 			return fail(400, { error: 'Transfer not found.' });
 		}
-		if (!transfer.source_asset_account_id || !transfer.destination_asset_account_id) {
-			return fail(400, { error: 'Transfer account links are missing.' });
+		const [assetAccounts, accounts, assets] = await Promise.all([
+			getAssetAccountsForScenario(scenarioId),
+			getAccountsForScenario(scenarioId),
+			getAssetsForScenario(scenarioId)
+		]);
+		const sourceLink =
+			assetAccounts.find(
+				(link) =>
+					link.account_id === sourceAccountId && link.relationship_role === 'held_in'
+			) ?? assetAccounts.find((link) => link.account_id === sourceAccountId);
+		const destinationLink =
+			assetAccounts.find(
+				(link) =>
+					link.account_id === destinationAccountId && link.relationship_role === 'held_in'
+			) ?? assetAccounts.find((link) => link.account_id === destinationAccountId);
+		if (!sourceLink || !destinationLink) {
+			return fail(400, { error: 'Account linkage is invalid for transfer.' });
 		}
+		const sourceAccount = accounts.find((account) => account.id === sourceAccountId) ?? null;
+		const destinationAccount =
+			accounts.find((account) => account.id === destinationAccountId) ?? null;
+		const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+		const shareAssetByAccountId = new Map<string, string>();
+		for (const link of assetAccounts) {
+			if (link.relationship_role !== 'held_in') continue;
+			const linkedAsset = assetsById.get(link.asset_id);
+			if (!linkedAsset || linkedAsset.asset_type !== 'shares') continue;
+			if (!shareAssetByAccountId.has(link.account_id)) {
+				shareAssetByAccountId.set(link.account_id, link.asset_id);
+			}
+		}
+		const isAllowedTransferAccount = (accountId: string, accountType: string | undefined) =>
+			accountType === 'cash_account' ||
+			accountType === 'super_account' ||
+			(accountType === 'brokerage' && shareAssetByAccountId.has(accountId));
+		if (
+			!isAllowedTransferAccount(sourceAccountId, sourceAccount?.account_type) ||
+			!isAllowedTransferAccount(destinationAccountId, destinationAccount?.account_type)
+		) {
+			return fail(400, {
+				error:
+					'Transfers currently only support cash accounts, super accounts, and shares brokerage accounts.'
+			});
+		}
+		const destinationHasSharesAsset = shareAssetByAccountId.has(destinationAccountId);
+		const sourceHasSharesAsset = shareAssetByAccountId.has(sourceAccountId);
+		const transferCategory =
+			sourceAccount?.account_type === 'cash_account' &&
+			destinationAccount?.account_type === 'brokerage' &&
+			destinationHasSharesAsset
+				? 'shares_purchase'
+				: sourceAccount?.account_type === 'brokerage' &&
+					  destinationAccount?.account_type === 'cash_account' &&
+					  sourceHasSharesAsset
+					? 'shares_sale'
+					: 'transfer';
 
 		await updateCashflow({
 			scenarioId,
 			cashflowId,
 			type: 'transfer',
 			frequency: frequency as 'monthly' | 'quarterly' | 'annually' | 'one_time',
-			category: transfer.category,
+			category: transferCategory,
 			amount,
 			inflationAffected: transfer.inflation_affected,
 			startDate: normalizeMonth(startMonth),
@@ -663,8 +721,8 @@ export const actions: Actions = {
 					: endMonth.trim().length > 0
 						? normalizeMonth(endMonth)
 						: null,
-			sourceAssetAccountId: transfer.source_asset_account_id,
-			destinationAssetAccountId: transfer.destination_asset_account_id,
+			sourceAssetAccountId: sourceLink.id,
+			destinationAssetAccountId: destinationLink.id,
 			description
 		});
 

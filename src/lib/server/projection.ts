@@ -302,6 +302,7 @@ export const buildProjection = (input: {
 		.filter((account) => account.account_type === 'cash_account')
 		.map((account) => account.id);
 	const insolventEventAccountIds = new Set<string>();
+	const blockedTransferSourceAccountIds = new Set<string>();
 
 	const cashflowMeta = input.cashflows.map((cashflow) => {
 		const start = parseYearMonth(cashflow.start_date);
@@ -657,6 +658,24 @@ export const buildProjection = (input: {
 			});
 		};
 
+		const recordBlockedTransferEvent = (
+			sourceAccountId: string,
+			sourceAccountName: string,
+			destinationAccountName: string,
+			requestedAmount: number,
+			availableAmount: number,
+			description?: string | null
+		) => {
+			if (blockedTransferSourceAccountIds.has(sourceAccountId)) return;
+			const descriptionSuffix =
+				description && description.trim().length > 0 ? ` (${description.trim()})` : '';
+			events.push({
+				tone: 'negative',
+				message: `Transfer from ${sourceAccountName} to ${destinationAccountName}${descriptionSuffix} skipped on ${monthLabel}: requested ${requestedAmount.toFixed(2)} but only ${availableAmount.toFixed(2)} available.`
+			});
+			blockedTransferSourceAccountIds.add(sourceAccountId);
+		};
+
 		for (const meta of cashflowMeta) {
 			const { cashflow, start, end, interval, assetName } = meta;
 			if (!start) continue;
@@ -776,6 +795,8 @@ export const buildProjection = (input: {
 					sourceAccount?.type === 'super_account' &&
 					destinationAccount?.type === 'cash_account' &&
 					sourceSuperAssetId !== null;
+				const sourceAccountName = sourceAccount?.name ?? 'source account';
+				const destinationAccountName = destinationAccount?.name ?? 'destination account';
 
 				if (isShareBuyTransfer && sourceId && destinationId && destinationShareAssetId) {
 					const shareState = shareStates.get(destinationShareAssetId);
@@ -813,7 +834,19 @@ export const buildProjection = (input: {
 					const shareState = shareStates.get(sourceShareAssetId);
 					if (!shareState) continue;
 					const shareAssetName = shareState.assetName ?? null;
-					const tradeAmount = Math.min(rawAmount, Math.max(0, shareState.currentValue));
+					const availableAmount = Math.max(0, shareState.currentValue);
+					if (rawAmount > availableAmount) {
+						recordBlockedTransferEvent(
+							sourceId,
+							sourceAccountName,
+							destinationAccountName,
+							rawAmount,
+							availableAmount,
+							cashflow.description ?? null
+						);
+						continue;
+					}
+					const tradeAmount = rawAmount;
 					if (tradeAmount <= 0) continue;
 
 					pushTransaction(
@@ -892,7 +925,19 @@ export const buildProjection = (input: {
 					}
 
 					const superAssetName = superState.assetName ?? null;
-					const tradeAmount = Math.min(rawAmount, Math.max(0, superState.currentValue));
+					const availableAmount = Math.max(0, superState.currentValue);
+					if (rawAmount > availableAmount) {
+						recordBlockedTransferEvent(
+							sourceId,
+							sourceAccountName,
+							destinationAccountName,
+							rawAmount,
+							availableAmount,
+							cashflow.description ?? null
+						);
+						continue;
+					}
+					const tradeAmount = rawAmount;
 					if (tradeAmount <= 0) continue;
 					pushTransaction(
 						sourceId,
@@ -1358,7 +1403,7 @@ export const buildProjection = (input: {
 		}
 	}
 
-	if (insolventEventAccountIds.size === 0) {
+	if (!events.some((event) => event.tone === 'negative')) {
 		events.unshift({
 			tone: 'positive',
 			message: 'Congratulations - you are solvent for this time frame.'
