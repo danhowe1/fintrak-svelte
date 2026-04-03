@@ -2694,15 +2694,31 @@ const updateMortgageDetails = async (
 			projectionBalanceSource === 'assets'
 				? assetSeries
 				: projectionBalanceSource === 'liquidity'
-					? ((projectionData.liquidity?.series ?? []).map((series) => ({
-							id: series.id,
-							name: series.name,
-							points: (series.points ?? []).map((point) => ({
-								date: point.date,
-								monthLabel: point.monthLabel,
-								balance: point.balance
-							}))
-						})) as ChartSeries[])
+					? (() => {
+							const liquiditySeries = (projectionData.liquidity?.series ?? []).map((series) => ({
+								id: series.id,
+								name: series.name,
+								points: (series.points ?? []).map((point) => ({
+									date: point.date,
+									monthLabel: point.monthLabel,
+									balance: point.balance
+								}))
+							}));
+							if (liquiditySeries.length > 0) {
+								return liquiditySeries as ChartSeries[];
+							}
+							return [
+								{
+									id: 'liquidity',
+									name: 'Liquidity',
+									points: (projectionData.liquidity?.points ?? []).map((point) => ({
+										date: point.date,
+										monthLabel: point.monthLabel,
+										balance: point.balance
+									}))
+								}
+							] as ChartSeries[];
+						})()
 				: projectionBalanceSource === 'net_worth'
 					? (() => {
 							const byDate = new Map<number, { monthLabel: string; balance: number }>();
@@ -3136,6 +3152,10 @@ const updateMortgageDetails = async (
 		chart.destroy();
 		chart = null;
 	}
+	$: if (projectionView === 'balances' && chartProjection.series.length === 0 && chart) {
+		chart.destroy();
+		chart = null;
+	}
 
 	$: if (chart && projectionView === 'balances' && projectionVersion && projectionBalanceSource) {
 		chart.data = buildChartData();
@@ -3148,7 +3168,7 @@ const updateMortgageDetails = async (
 	});
 </script>
 
-<section class="not-prose mt-6">
+<section class="not-prose -mt-8">
 	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
 		<div class="space-y-4">
 			<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
