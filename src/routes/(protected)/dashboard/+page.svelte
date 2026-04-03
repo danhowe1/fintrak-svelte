@@ -241,6 +241,7 @@ let plannerManagedAccountSyncId = '';
 let autoFundingRuleError = '';
 let autoSweepRuleError = '';
 let accountBalanceTargetError = '';
+let plannerLiquidityShortcutError = '';
 
 const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 	const details = asset.details ?? {};
@@ -249,14 +250,65 @@ const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 	return Number.isFinite(value) ? value : 0;
 };
 
+const getPrimaryCashAccountId = () =>
+	accountsList.find((account) => account.account_type === 'cash_account')?.id ?? '';
+
+const getLiquidityPlannerTargetAccountId = () =>
+	plannerFirstShortfall?.targetAccountId ?? getPrimaryCashAccountId();
+
+const getAssetHeldInAccountId = (assetId: string) =>
+	assetAccountsList.find(
+		(link) => link.asset_id === assetId && link.relationship_role === 'held_in'
+	)?.account_id ?? null;
+
+const getSeriesPointBalanceAtDate = (
+	series: { points?: { date: number; balance: number }[] } | null,
+	date: number
+) => series?.points?.find((point) => point.date === date)?.balance ?? 0;
+
+const getPlannerLiquiditySaleShortcut = () => {
+	const deficit = plannerFirstLiquidityDeficit;
+	if (!deficit) return null;
+	const targetAccountId = getLiquidityPlannerTargetAccountId();
+	if (!targetAccountId) return null;
+	const targetAccount = accountsList.find((account) => account.id === targetAccountId);
+	if (!targetAccount) return null;
+	const series = projectionData.liquidity?.series ?? [];
+	const candidates: { accountId: string; accountName: string; availableAmount: number }[] = [];
+	for (const item of series) {
+		if (!item.id.startsWith('asset:')) continue;
+		const assetId = item.id.slice('asset:'.length);
+		const asset = assetsList.find((entry) => entry.id === assetId);
+		if (!asset || (asset.asset_type !== 'shares' && asset.asset_type !== 'superannuation')) continue;
+		const accountId = getAssetHeldInAccountId(assetId);
+		if (!accountId || accountId === targetAccountId) continue;
+		const account = accountsList.find((entry) => entry.id === accountId);
+		if (!account) continue;
+		const availableAmount = getSeriesPointBalanceAtDate(item, deficit.startDate);
+		if (availableAmount <= 0) continue;
+		candidates.push({ accountId, accountName: account.name, availableAmount });
+	}
+	candidates.sort((a, b) => b.availableAmount - a.availableAmount);
+	const source = candidates[0];
+	if (!source) return null;
+	const amount = Math.max(
+		1,
+		Math.round(Math.min(deficit.deficitAmount, source.availableAmount) * 100) / 100
+	);
+	return {
+		sourceAccountId: source.accountId,
+		sourceAccountName: source.accountName,
+		targetAccountId: targetAccount.id,
+		targetAccountName: targetAccount.name,
+		startDate: deficit.startDate,
+		amount
+	};
+};
+
 $: plannerFirstShortfall = projectionData.planner?.firstShortfall ?? null;
-$: plannerHasCapBreach = (projectionData.events ?? []).some(
-	(event) =>
-		event.tone === 'negative' &&
-		typeof event.message === 'string' &&
-		event.message.startsWith('Auto-sweep from ')
-);
-$: plannerRequiresAutofundStage = Boolean(plannerFirstShortfall) || plannerHasCapBreach;
+$: plannerFirstLiquidityDeficit = projectionData.planner?.firstLiquidityDeficit ?? null;
+$: plannerStage = projectionData.planner?.stage ?? 'reserves_caps';
+$: plannerLiquiditySaleShortcut = getPlannerLiquiditySaleShortcut();
 $: plannerExistingRules = plannerFirstShortfall
 	? autoFundingRules
 			.filter((rule) => rule.target_account_id === plannerFirstShortfall.targetAccountId && rule.enabled)
@@ -439,6 +491,7 @@ $: if (data.scenario.id !== lastScenarioId) {
 	autoFundingRuleError = '';
 	autoSweepRuleError = '';
 	accountBalanceTargetError = '';
+	plannerLiquidityShortcutError = '';
 	autoFundingRules = data.autoFundingRules ?? [];
 	accountBalanceTargets = data.accountBalanceTargets ?? [];
 	autoSweepRules = data.autoSweepRules ?? [];
@@ -1240,18 +1293,111 @@ const unwrapActionPayload = (payload: unknown) => {
 		});
 	};
 
-	const runProjectionNow = async () => {
-		await withLock(
-			'manualProjection',
-			async () => {
+const runProjectionNow = async () => {
+	await withLock(
+		'manualProjection',
+		async () => {
 				await refreshProjection({ includeCashflows: true, force: true });
 			},
 			true
 		).catch((error) => {
 			projectionError =
 				error instanceof Error ? error.message : 'Unable to refresh the projection.';
-		});
+	});
+};
+
+const openLiquidityIncomeShortcut = () => {
+	plannerLiquidityShortcutError = '';
+	const personAsset = assetsList.find((asset) => asset.asset_type === 'person');
+	if (!personAsset) {
+		plannerLiquidityShortcutError = 'Add a person asset first so income can be modeled.';
+		return;
+	}
+	assetPanelTab = 'assets';
+	openCashflowForm(personAsset.id, 'income');
+	const key = getDraftKey(personAsset.id, 'income');
+	const existing = cashflowDrafts[key] ?? getDefaultDraft(personAsset.id, 'income', 'person');
+	const deficitMonth = plannerFirstLiquidityDeficit?.startDate
+		? monthLabelFromDate(plannerFirstLiquidityDeficit.startDate)
+		: existing.startDate;
+	const deficitAmount = plannerFirstLiquidityDeficit?.deficitAmount ?? 0;
+	setCashflowDraft(key, {
+		category: 'misc_income',
+		frequency: 'monthly',
+		startDate: deficitMonth,
+		amount: deficitAmount > 0 ? String(Math.round(deficitAmount * 100) / 100) : existing.amount,
+		description: existing.description || 'Liquidity support income'
+	});
+};
+
+const openLiquidityExpenseShortcut = () => {
+	plannerLiquidityShortcutError = '';
+	let bestAssetId: string | null = null;
+	let bestCashflow: (typeof cashflows)[number] | null = null;
+	for (const asset of assetsList) {
+		if (asset.asset_type !== 'person' && asset.asset_type !== 'property') continue;
+		for (const cashflow of cashflowsByAssetId[asset.id] ?? []) {
+			if (cashflow.cashflow_type !== 'expense') continue;
+			if (!bestCashflow || cashflow.amount > bestCashflow.amount) {
+				bestCashflow = cashflow;
+				bestAssetId = asset.id;
+			}
+		}
+	}
+	assetPanelTab = 'assets';
+	if (bestAssetId && bestCashflow) {
+		openCashflowFormForEdit(bestAssetId, bestCashflow);
+		return;
+	}
+	plannerLiquidityShortcutError =
+		'No existing expense cashflows found. Add one first, then reduce it to improve liquidity.';
+};
+
+const openLiquidityTransferShortcut = () => {
+	plannerLiquidityShortcutError = '';
+	if (!plannerLiquiditySaleShortcut) {
+		plannerLiquidityShortcutError =
+			'No shares/super sale source is available for the first liquidity deficit month.';
+		return;
+	}
+	assetPanelTab = 'transfers';
+	transferFormError = '';
+	transferInlineError = '';
+	transferDraft = {
+		sourceAccountId: plannerLiquiditySaleShortcut.sourceAccountId,
+		destinationAccountId: plannerLiquiditySaleShortcut.targetAccountId,
+		amount: String(plannerLiquiditySaleShortcut.amount),
+		frequency: 'one_time',
+		startDate: monthLabelFromDate(plannerLiquiditySaleShortcut.startDate),
+		endDate: '',
+		description: `Liquidity support transfer to ${plannerLiquiditySaleShortcut.targetAccountName}`,
+		inflationAffected: false
 	};
+};
+
+const openLiquidityPropertySaleShortcut = () => {
+	plannerLiquidityShortcutError = '';
+	const property = assetsList.find((asset) => asset.asset_type === 'property');
+	if (!property) {
+		plannerLiquidityShortcutError = 'No property asset found to schedule a sale.';
+		return;
+	}
+	const saleDate = plannerFirstLiquidityDeficit?.startDate
+		? monthLabelFromDate(plannerFirstLiquidityDeficit.startDate)
+		: '';
+	const current = propertyDetails[property.id] ?? {
+		name: property.name ?? '',
+		startDate: formatYearMonthInput(property.start_date),
+		marketValue: Number(property.details?.marketValue ?? 0) || 0,
+		marketGrowthRate: Number(property.details?.marketGrowthRate ?? 0) || 0,
+		saleDate: '',
+		fixedSellingCosts: Number(property.details?.fixedSellingCosts ?? 0) || 0,
+		variableSellingCosts: Number(property.details?.variableSellingCosts ?? 0) || 0
+	};
+	assetPanelTab = 'assets';
+	expandedPropertyDetailIds = new Set([...expandedPropertyDetailIds, property.id]);
+	setPropertyDetails(property.id, { ...current, saleDate });
+};
 
 const saveAutoFundingRule = async () => {
 	if (!plannerFirstShortfall) return;
@@ -3398,8 +3544,9 @@ const updateMortgageDetails = async (
 			</div>
 		{/if}
 		</div>
-			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
+			<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+				<h3 class="text-lg font-semibold text-slate-900">What if?...</h3>
+				<div class="mt-3 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
 					<button
 						type="button"
 						class={`rounded-full px-3 py-1 transition ${
@@ -5953,10 +6100,57 @@ const updateMortgageDetails = async (
 				>
 					{projectionData.planner?.headline ?? 'On track: no cash account is projected to fall below $0.'}
 				</div>
-				{#if plannerFirstShortfall}
+				{#if plannerStage === 'liquidity'}
+					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+						<div class="font-semibold">Stage 1: Fix Liquidity First</div>
+						{#if plannerFirstLiquidityDeficit}
+							<div class="mt-1 text-xs">
+								First deficit: {plannerFirstLiquidityDeficit.monthLabel} ({formatWholeCurrency(plannerFirstLiquidityDeficit.balance)}).
+								Close the gap before configuring auto-funding priorities.
+							</div>
+						{/if}
+						<div class="mt-3 grid gap-2">
+							<button
+								type="button"
+								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
+								on:click={openLiquidityIncomeShortcut}
+							>
+								Increase income (prefill misc income cashflow)
+							</button>
+							<button
+								type="button"
+								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
+								on:click={openLiquidityExpenseShortcut}
+							>
+								Review largest expense
+							</button>
+							<button
+								type="button"
+								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
+								on:click={openLiquidityTransferShortcut}
+							>
+								{#if plannerLiquiditySaleShortcut}
+									Sell shares/super (prefill one-time transfer from {plannerLiquiditySaleShortcut.sourceAccountName} to {plannerLiquiditySaleShortcut.targetAccountName})
+								{:else}
+									Sell shares/super (no eligible source at first deficit month)
+								{/if}
+							</button>
+							<button
+								type="button"
+								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
+								on:click={openLiquidityPropertySaleShortcut}
+							>
+								Prefill property sale month
+							</button>
+						</div>
+						{#if plannerLiquidityShortcutError}
+							<div class="mt-2 text-xs text-rose-700">{plannerLiquidityShortcutError}</div>
+						{/if}
+					</div>
+				{:else if plannerFirstShortfall}
 					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
 						<div class="font-semibold">
-							Auto-fund {plannerFirstShortfall.targetAccountName} from {plannerFirstShortfall.monthLabel} from which account...
+							Stage 2: Auto-fund {plannerFirstShortfall.targetAccountName} from {plannerFirstShortfall.monthLabel} from which account...
 						</div>
 						{#if (plannerExistingRules?.length ?? 0) > 0}
 							<div class="mt-2 space-y-1 text-xs">
@@ -6013,10 +6207,14 @@ const updateMortgageDetails = async (
 							<div class="mt-2 text-xs text-rose-600">{autoFundingRuleError}</div>
 						{/if}
 					</div>
+				{:else if plannerStage === 'autofund'}
+					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+						Stage 2 is active. Review auto-funding priorities until reserve breaches are resolved.
+					</div>
 				{/if}
-				{#if !plannerRequiresAutofundStage}
+				{#if plannerStage === 'reserves_caps'}
 					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-						<div class="font-semibold">Reserve and cap settings</div>
+						<div class="font-semibold">Stage 3: Reserve and cap settings</div>
 						<label class="mt-2 block text-xs text-slate-600">
 							<span class="mb-1 block text-slate-500">Manage account</span>
 							<select

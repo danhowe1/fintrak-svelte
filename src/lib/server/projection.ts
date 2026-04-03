@@ -84,8 +84,16 @@ export type ProjectionResult = {
 		}[];
 	};
 	planner: {
+		stage: 'liquidity' | 'autofund' | 'reserves_caps';
 		status: 'on_track' | 'needs_attention';
 		headline: string;
+		firstLiquidityDeficit: {
+			startDate: number;
+			monthLabel: string;
+			balance: number;
+			deficitAmount: number;
+		} | null;
+		hasCapBreach: boolean;
 		firstShortfall: {
 			targetAccountId: string;
 			targetAccountName: string;
@@ -1927,6 +1935,33 @@ export const buildProjection = (input: {
 		}
 	}
 
+	const firstLiquidityDeficitPoint =
+		liquidityPoints.find((point) => point.balance < 0) ?? null;
+	if (firstLiquidityDeficitPoint) {
+		events.unshift({
+			tone: 'negative',
+			monthLabel: firstLiquidityDeficitPoint.monthLabel,
+			message: `Liquidity falls below $0 by ${formatEventCurrency(Math.abs(firstLiquidityDeficitPoint.balance))}.`
+		});
+	}
+	const hasCapBreach = events.some(
+		(event) => event.tone === 'negative' && event.message.startsWith('Auto-sweep from ')
+	);
+	const firstShortfall = plannerFirstShortfall;
+	const stage: ProjectionResult['planner']['stage'] = firstLiquidityDeficitPoint
+		? 'liquidity'
+		: firstShortfall || hasCapBreach
+			? 'autofund'
+			: 'reserves_caps';
+	const firstLiquidityDeficit = firstLiquidityDeficitPoint
+		? {
+				startDate: firstLiquidityDeficitPoint.date,
+				monthLabel: firstLiquidityDeficitPoint.monthLabel,
+				balance: firstLiquidityDeficitPoint.balance,
+				deficitAmount: Math.abs(firstLiquidityDeficitPoint.balance)
+			}
+		: null;
+
 	if (!events.some((event) => event.tone === 'negative')) {
 		events.unshift({
 			tone: 'positive',
@@ -1934,8 +1969,6 @@ export const buildProjection = (input: {
 			message: 'Congratulations - you are solvent for this time frame.'
 		});
 	}
-
-	const firstShortfall = plannerFirstShortfall;
 
 	return {
 		startDate: toYearMonthInt(startYearMonth),
@@ -1948,12 +1981,19 @@ export const buildProjection = (input: {
 			points: liquidityPoints
 		},
 		planner: {
-			status: firstShortfall ? 'needs_attention' : 'on_track',
-			headline: firstShortfall
-				? firstShortfall.minBalance > 0
-					? `${firstShortfall.targetAccountName} is projected to drop below its reserve target (${formatEventCurrency(firstShortfall.minBalance)}) in ${firstShortfall.monthLabel}.`
-					: `${firstShortfall.targetAccountName} is projected to drop below $0 in ${firstShortfall.monthLabel}.`
-				: 'On track: no cash account is projected to fall below $0.',
+			stage,
+			status: stage === 'reserves_caps' ? 'on_track' : 'needs_attention',
+			headline: firstLiquidityDeficit
+				? `Liquidity drops below $0 in ${firstLiquidityDeficit.monthLabel}.`
+				: firstShortfall
+					? firstShortfall.minBalance > 0
+						? `${firstShortfall.targetAccountName} is projected to drop below its reserve target (${formatEventCurrency(firstShortfall.minBalance)}) in ${firstShortfall.monthLabel}.`
+						: `${firstShortfall.targetAccountName} is projected to drop below $0 in ${firstShortfall.monthLabel}.`
+					: hasCapBreach
+						? 'At least one account breaches its cap and needs sweep priorities configured.'
+						: 'On track: liquidity, auto-funding, and reserve/cap checks pass.',
+			firstLiquidityDeficit,
+			hasCapBreach,
 			firstShortfall
 		},
 		events
