@@ -309,6 +309,28 @@ $: plannerFirstShortfall = projectionData.planner?.firstShortfall ?? null;
 $: plannerFirstLiquidityDeficit = projectionData.planner?.firstLiquidityDeficit ?? null;
 $: plannerStage = projectionData.planner?.stage ?? 'reserves_caps';
 $: plannerLiquiditySaleShortcut = getPlannerLiquiditySaleShortcut();
+$: stage1Passed = !plannerFirstLiquidityDeficit;
+$: stage2Reached = stage1Passed;
+$: stage2Passed = stage2Reached && plannerStage === 'reserves_caps';
+$: stage3Reached = stage2Passed;
+$: plannerFirstCapBreachEvent =
+	(projectionData.events ?? []).find(
+		(event) =>
+			event.tone === 'negative' &&
+			typeof event.message === 'string' &&
+			event.message.startsWith('Auto-sweep from ')
+	) ?? null;
+$: stage1PlannerMessage = plannerFirstLiquidityDeficit
+	? `${plannerFirstLiquidityDeficit.monthLabel}: Liquidity falls below $0 by ${formatWholeCurrency(plannerFirstLiquidityDeficit.deficitAmount)}.`
+	: '';
+$: stage2PlannerMessage = plannerFirstShortfall
+	? plannerFirstShortfall.minBalance > 0
+		? `${plannerFirstShortfall.monthLabel}: ${plannerFirstShortfall.targetAccountName} drops below its reserve target (${formatWholeCurrency(plannerFirstShortfall.minBalance)}).`
+		: `${plannerFirstShortfall.monthLabel}: ${plannerFirstShortfall.targetAccountName} drops below $0.`
+	: plannerFirstCapBreachEvent?.monthLabel
+		? `${plannerFirstCapBreachEvent.monthLabel}: ${plannerFirstCapBreachEvent.message}`
+		: 'Auto-funding needs attention.';
+$: stage3PlannerMessage = `${monthLabelFromDate(projectionData.startDate)}: Reserve and cap settings are ready to tune.`;
 $: plannerExistingRules = plannerFirstShortfall
 	? autoFundingRules
 			.filter((rule) => rule.target_account_id === plannerFirstShortfall.targetAccountId && rule.enabled)
@@ -6091,16 +6113,16 @@ const updateMortgageDetails = async (
 		<div class="space-y-4">
 			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 				<h3 class="text-sm font-semibold text-slate-900">Funding Planner</h3>
-				<div
-					class={`mt-3 rounded-lg border px-3 py-2 text-sm ${
-						projectionData.planner?.status === 'needs_attention'
-							? 'border-amber-200 bg-amber-50 text-amber-800'
-							: 'border-emerald-200 bg-emerald-50 text-emerald-700'
-					}`}
-				>
-					{projectionData.planner?.headline ?? 'On track: no cash account is projected to fall below $0.'}
+				<div class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${stage1Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+					<span class="font-semibold">Stage 1: Liquidity</span>
+					<span class={`rounded-full px-2 py-0.5 font-semibold ${stage1Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+						{stage1Passed ? '✓' : '✕'}
+					</span>
 				</div>
 				{#if plannerStage === 'liquidity'}
+					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+						{stage1PlannerMessage}
+					</div>
 					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 						<div class="font-semibold">Stage 1: Fix Liquidity First</div>
 						{#if plannerFirstLiquidityDeficit}
@@ -6147,8 +6169,20 @@ const updateMortgageDetails = async (
 							<div class="mt-2 text-xs text-rose-700">{plannerLiquidityShortcutError}</div>
 						{/if}
 					</div>
-				{:else if plannerFirstShortfall}
-					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+				{/if}
+
+				<div class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage2Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage2Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
+					<span class="font-semibold">Stage 2: Auto-funding</span>
+					<span class={`rounded-full px-2 py-0.5 font-semibold ${!stage2Reached ? 'bg-slate-100 text-slate-500' : stage2Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+						{!stage2Reached ? '?' : stage2Passed ? '✓' : '✕'}
+					</span>
+				</div>
+				{#if plannerStage === 'autofund'}
+					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+						{stage2PlannerMessage}
+					</div>
+					{#if plannerFirstShortfall}
+						<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
 						<div class="font-semibold">
 							Stage 2: Auto-fund {plannerFirstShortfall.targetAccountName} from {plannerFirstShortfall.monthLabel} from which account...
 						</div>
@@ -6207,12 +6241,23 @@ const updateMortgageDetails = async (
 							<div class="mt-2 text-xs text-rose-600">{autoFundingRuleError}</div>
 						{/if}
 					</div>
-				{:else if plannerStage === 'autofund'}
+					{:else}
 					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
 						Stage 2 is active. Review auto-funding priorities until reserve breaches are resolved.
 					</div>
+					{/if}
 				{/if}
+
+				<div class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage3Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+					<span class="font-semibold">Stage 3: Reserve &amp; Cap</span>
+					<span class={`rounded-full px-2 py-0.5 font-semibold ${!stage3Reached ? 'bg-slate-100 text-slate-500' : 'bg-emerald-100 text-emerald-800'}`}>
+						{!stage3Reached ? '?' : '✓'}
+					</span>
+				</div>
 				{#if plannerStage === 'reserves_caps'}
+					<div class="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+						{stage3PlannerMessage}
+					</div>
 					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
 						<div class="font-semibold">Stage 3: Reserve and cap settings</div>
 						<label class="mt-2 block text-xs text-slate-600">
@@ -6331,7 +6376,7 @@ const updateMortgageDetails = async (
 					<div class="mt-3 space-y-2">
 						{#each projectionData.events as event}
 							<div
-								class={`rounded-lg border px-3 py-2 text-sm ${
+								class={`rounded-lg border px-3 py-2 text-xs ${
 									event.tone === 'negative'
 										? 'border-rose-200 bg-rose-50 text-rose-700'
 										: 'border-emerald-200 bg-emerald-50 text-emerald-700'

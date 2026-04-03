@@ -1937,13 +1937,6 @@ export const buildProjection = (input: {
 
 	const firstLiquidityDeficitPoint =
 		liquidityPoints.find((point) => point.balance < 0) ?? null;
-	if (firstLiquidityDeficitPoint) {
-		events.unshift({
-			tone: 'negative',
-			monthLabel: firstLiquidityDeficitPoint.monthLabel,
-			message: `Liquidity falls below $0 by ${formatEventCurrency(Math.abs(firstLiquidityDeficitPoint.balance))}.`
-		});
-	}
 	const hasCapBreach = events.some(
 		(event) => event.tone === 'negative' && event.message.startsWith('Auto-sweep from ')
 	);
