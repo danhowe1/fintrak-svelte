@@ -5515,6 +5515,14 @@ const updateMortgageDetails = async (
 				{/each}
 			</div>
 				{:else if assetPanelTab === 'accounts'}
+					<div class="mt-3 flex flex-wrap gap-2">
+						<a
+							href="/accounts/create"
+							class="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+						>
+							Add account
+						</a>
+					</div>
 					<div class="mt-5 rounded-xl border border-slate-200 bg-white p-3">
 						{#if accountsList.length > 0}
 							<div class="overflow-x-auto">

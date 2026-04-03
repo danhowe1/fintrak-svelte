@@ -121,6 +121,6 @@ export const actions: Actions = {
 			holderAssetIds
 		});
 
-		throw redirect(303, '/accounts');
+		throw redirect(303, '/dashboard');
 	}
 };

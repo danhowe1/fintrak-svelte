@@ -23,7 +23,7 @@
 	});
 </script>
 
-<h1>Create account</h1>
+<h1>Add account</h1>
 <p class="text-sm text-slate-600">Scenario: {data.scenario.name}</p>
 
 <section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -125,9 +125,9 @@
 
 		<div class="flex flex-wrap items-center gap-3">
 			<Button type="submit" class="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm">
-				Create account
+				Add account
 			</Button>
-			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/accounts">
+			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/dashboard">
 				Cancel
 			</a>
 		</div>
