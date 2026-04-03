@@ -1955,14 +1955,6 @@ export const buildProjection = (input: {
 			}
 		: null;
 
-	if (!events.some((event) => event.tone === 'negative')) {
-		events.unshift({
-			tone: 'positive',
-			monthLabel: formatYearMonthLabel(startYearMonth),
-			message: 'Congratulations - you are solvent for this time frame.'
-		});
-	}
-
 	return {
 		startDate: toYearMonthInt(startYearMonth),
 		endDate: toYearMonthInt(endYearMonth),
