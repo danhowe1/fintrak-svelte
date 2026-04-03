@@ -8,6 +8,7 @@
 	export let form: ActionData;
 
 	const selectedType = (form?.values?.assetType as string) ?? data.assetType;
+	const assetTypeTitle = selectedType.replace(/_/g, ' ');
 	const assetTypeLabel = selectedType.replace(/_/g, ' ').toUpperCase();
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
@@ -26,7 +27,7 @@
 	})();
 </script>
 
-<h1>Create asset</h1>
+<h1>Add {assetTypeTitle}</h1>
 <p class="text-sm text-slate-600">Scenario: {data.scenario.name}</p>
 
 <section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -825,9 +826,9 @@
 
 		<div class="flex flex-wrap items-center gap-3">
 			<Button type="submit" class="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm">
-				Create asset
+				Add asset
 			</Button>
-			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/assets">
+			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/dashboard">
 				Cancel
 			</a>
 		</div>

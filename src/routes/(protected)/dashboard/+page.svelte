@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { afterUpdate, onDestroy } from 'svelte';
+	import { afterUpdate, onDestroy, tick } from 'svelte';
 	import Chart from 'chart.js/auto';
 	import {
 		formatYearMonthInput,
@@ -38,6 +38,7 @@ let projectionVersion = 1;
 let projectionError: string | null = null;
 let cashflows = data.cashflows ?? [];
 let autoRunProjection = true;
+let whatIfPanelElement: HTMLElement | null = null;
 
 const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 const cashflowCategoryOptions = [
@@ -1421,6 +1422,30 @@ const openLiquidityPropertySaleShortcut = () => {
 	setPropertyDetails(property.id, { ...current, saleDate });
 };
 
+const jumpToWhatIfAssetsExpense = async () => {
+	assetPanelTab = 'assets';
+	const firstPerson = assetsList.find((asset) => asset.asset_type === 'person');
+	const firstExpense = firstPerson
+		? (cashflowsByAssetId[firstPerson.id] ?? []).find((cashflow) => cashflow.cashflow_type === 'expense')
+		: null;
+
+	await tick();
+
+	whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	if (firstExpense) {
+		const targetInput = document.getElementById(
+			`cashflow-input-${firstExpense.id}`
+		) as HTMLInputElement | null;
+		targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		targetInput?.focus({ preventScroll: true });
+		try {
+			targetInput?.select();
+		} catch {
+			// Some input types may not support text selection.
+		}
+	}
+};
+
 const saveAutoFundingRule = async () => {
 	if (!plannerFirstShortfall) return;
 	if (!plannerSourceAccountId) {
@@ -2720,36 +2745,7 @@ const updateMortgageDetails = async (
 							] as ChartSeries[];
 						})()
 				: projectionBalanceSource === 'net_worth'
-					? (() => {
-							const byDate = new Map<number, { monthLabel: string; balance: number }>();
-							for (const series of [...accountSeries, ...assetSeries]) {
-								for (const point of series.points) {
-									const existing = byDate.get(point.date);
-									if (!existing) {
-										byDate.set(point.date, {
-											monthLabel: point.monthLabel,
-											balance: point.balance
-										});
-									} else {
-										existing.balance += point.balance;
-									}
-								}
-							}
-							const points = Array.from(byDate.entries())
-								.sort((a, b) => a[0] - b[0])
-								.map(([date, point]) => ({
-									date,
-									monthLabel: point.monthLabel,
-									balance: point.balance
-								}));
-							return [
-								{
-									id: 'net_worth',
-									name: 'Net worth',
-									points
-								}
-							] as ChartSeries[];
-						})()
+					? ([...accountSeries, ...assetSeries] as ChartSeries[])
 					: accountSeries;
 
 		if (projectionRange === '10y' || projectionRange === 'all') {
@@ -2768,7 +2764,7 @@ const updateMortgageDetails = async (
 	})();
 	$: totalSeries = (() => {
 		const seriesList = chartProjection.series ?? [];
-		if (!seriesList.length || projectionBalanceSource === 'net_worth')
+		if (!seriesList.length)
 			return null;
 		const maxPoints = Math.max(...seriesList.map((series) => series.points.length));
 		if (maxPoints === 0) return null;
@@ -3586,8 +3582,34 @@ const updateMortgageDetails = async (
 			</div>
 		{/if}
 		</div>
-			<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-				<h3 class="text-lg font-semibold text-slate-900">What if?...</h3>
+			<div
+				id="what-if-panel"
+				bind:this={whatIfPanelElement}
+				class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+			>
+				<div class="flex items-center gap-2">
+					<h3 class="text-lg font-semibold text-slate-900">What if?...</h3>
+					<span class="group relative inline-flex">
+						<button
+							type="button"
+							class="grid h-4 w-4 place-items-center rounded-full border border-slate-900/30 bg-white text-[10px] leading-none font-bold text-slate-900"
+							aria-label="What is the What if section for?"
+						>
+							i
+						</button>
+						<span
+							role="tooltip"
+							class="pointer-events-none absolute left-0 top-full z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900 opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+						>
+							Use this area to play out your 'what if?' scenarios. What if?...
+							<ul class="mt-1 list-disc pl-4">
+								<li>You retire early?</li>
+								<li>Interest rates go up?</li>
+								<li>Etc...</li>
+							</ul>
+						</span>
+					</span>
+				</div>
 				<div class="mt-3 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
 					<button
 						type="button"
@@ -3635,6 +3657,40 @@ const updateMortgageDetails = async (
 					</button>
 				</div>
 				{#if assetPanelTab === 'assets'}
+					<div class="mt-3 flex flex-wrap gap-2">
+						<a
+							href="/assets/person/create"
+							class="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+						>
+							Add person
+						</a>
+						<a
+							href="/assets/property/create"
+							class="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+						>
+							Add property
+						</a>
+						{#if assetsList.some((asset) => asset.asset_type === 'property')}
+							<a
+								href="/assets/mortgage/create"
+								class="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+							>
+								Add mortgage
+							</a>
+						{/if}
+						<a
+							href="/assets/superannuation/create"
+							class="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+						>
+							Add superannuation
+						</a>
+						<a
+							href="/assets/shares/create"
+							class="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800"
+						>
+							Add shares
+						</a>
+					</div>
 			<div class="assets-cards mt-5 grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
 			{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
 				<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -3877,6 +3933,7 @@ const updateMortgageDetails = async (
 									{`${formatLabel(cashflow.category)} ${cashflow.description ?? ''}`.trim()}
 								</span>
 								<input
+									id={`cashflow-input-${cashflow.id}`}
 									type="number"
 									class="justify-self-end w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
 									value={cashflowAmounts[cashflow.id] ?? cashflow.amount}
@@ -6134,7 +6191,26 @@ const updateMortgageDetails = async (
 			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 				<h3 class="text-sm font-semibold text-slate-900">Funding Planner</h3>
 				<div class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${stage1Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}>
-					<span class="font-semibold">Stage 1: Liquidity</span>
+					<div class="flex items-center gap-2">
+						<span class="font-semibold">Stage 1: Liquidity</span>
+						<span class="group relative inline-flex">
+							<button
+								type="button"
+								class="grid h-4 w-4 place-items-center rounded-full border border-current/30 bg-white/80 text-[10px] leading-none font-bold"
+								aria-label="What is Stage 1 liquidity?"
+							>
+								i
+							</button>
+							<span
+								role="tooltip"
+								class="pointer-events-none absolute left-1/2 top-full z-20 mt-2 w-72 -translate-x-1/2 rounded-md border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900 opacity-0 shadow-md transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
+							>
+								Stage 1 checks whether you are living within your means by seeing if you run
+								out of accessible money in any month. Accessible money is in either cash
+								accounts, shares or pension/superannuation funds (if available).
+							</span>
+						</span>
+					</div>
 					<span class={`rounded-full px-2 py-0.5 font-semibold ${stage1Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
 						{stage1Passed ? '✓' : '✕'}
 					</span>
@@ -6144,50 +6220,32 @@ const updateMortgageDetails = async (
 						{stage1PlannerMessage}
 					</div>
 					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-						<div class="font-semibold">Stage 1: Fix Liquidity First</div>
-						{#if plannerFirstLiquidityDeficit}
-							<div class="mt-1 text-xs">
-								First deficit: {plannerFirstLiquidityDeficit.monthLabel} ({formatWholeCurrency(plannerFirstLiquidityDeficit.balance)}).
-								Close the gap before configuring auto-funding priorities.
-							</div>
-						{/if}
-						<div class="mt-3 grid gap-2">
-							<button
-								type="button"
-								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
-								on:click={openLiquidityIncomeShortcut}
-							>
-								Increase income (prefill misc income cashflow)
-							</button>
-							<button
-								type="button"
-								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
-								on:click={openLiquidityExpenseShortcut}
-							>
-								Review largest expense
-							</button>
-							<button
-								type="button"
-								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
-								on:click={openLiquidityTransferShortcut}
-							>
-								{#if plannerLiquiditySaleShortcut}
-									Sell shares/super (prefill one-time transfer from {plannerLiquiditySaleShortcut.sourceAccountName} to {plannerLiquiditySaleShortcut.targetAccountName})
-								{:else}
-									Sell shares/super (no eligible source at first deficit month)
-								{/if}
-							</button>
-							<button
-								type="button"
-								class="rounded-lg border border-amber-300 bg-white px-3 py-2 text-left text-xs font-semibold text-amber-900 hover:bg-amber-100"
-								on:click={openLiquidityPropertySaleShortcut}
-							>
-								Prefill property sale month
-							</button>
+						<div class="font-semibold">Fix Liquidity First</div>
+						<div class="mt-1 text-xs">
+							You need to reduce your expenses or increase your income to ensure your liquidity.
 						</div>
-						{#if plannerLiquidityShortcutError}
-							<div class="mt-2 text-xs text-rose-700">{plannerLiquidityShortcutError}</div>
-						{/if}
+						<div class="mt-3 text-xs font-semibold">Ways you can fix your liquidity:</div>
+						<ul class="mt-2 list-disc pl-5 text-xs">
+							<li>Reduce or remove expenses.</li>
+							<li>Increase income or add an income stream.</li>
+							<li>Add an income generating asset.</li>
+							<li>
+								Sell an asset to bring in income{assetsList.some((asset) => asset.asset_type === 'property')
+									? ' (e.g. property).'
+									: '.'}
+							</li>
+						</ul>
+						<div class="mt-2 text-xs">
+							Head down to the
+							<a
+								href="#what-if-panel"
+								class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
+								on:click|preventDefault={jumpToWhatIfAssetsExpense}
+							>
+								What if?...
+							</a>
+							section below to make your changes.
+						</div>
 					</div>
 				{/if}
 
@@ -6460,6 +6518,7 @@ const updateMortgageDetails = async (
 		-moz-appearance: textfield;
 	}
 </style>
+
 
 
 
