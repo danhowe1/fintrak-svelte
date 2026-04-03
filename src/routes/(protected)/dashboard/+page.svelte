@@ -6223,6 +6223,9 @@ const updateMortgageDetails = async (
 						{stage1Passed ? '✓' : '✕'}
 					</span>
 				</div>
+				{#if stage1Passed}
+					<div class="mt-2 text-xs text-emerald-700">You are living within your means.</div>
+				{/if}
 				{#if plannerStage === 'liquidity'}
 					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
 						{stage1PlannerMessage}
@@ -6282,6 +6285,9 @@ const updateMortgageDetails = async (
 						{!stage2Reached ? '?' : stage2Passed ? '✓' : '✕'}
 					</span>
 				</div>
+				{#if stage2Passed}
+					<div class="mt-2 text-xs text-emerald-700">None of your accounts run out of money.</div>
+				{/if}
 				{#if plannerStage === 'autofund'}
 					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
 						{stage2PlannerMessage}
