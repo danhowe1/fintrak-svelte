@@ -41,7 +41,6 @@
 					<nav class="flex items-center gap-4 text-sm font-semibold text-slate-700">
 						<a class="hover:text-slate-900" href="/dashboard">Dashboard</a>
 						<a class="hover:text-slate-900" href="/scenarios">Scenarios</a>
-						<a class="hover:text-slate-900" href="/assets">Assets</a>
 						<a class="hover:text-slate-900" href="/accounts">Accounts</a>
 					</nav>
 

@@ -657,7 +657,7 @@ export const load: PageServerLoad = async (event) => {
 
 	const assetType = assetTypeSchema.safeParse(event.params.assetType);
 	if (!assetType.success) {
-		throw redirect(303, '/assets');
+		throw redirect(303, '/dashboard');
 	}
 
 	const accounts = await getAccountsForScenario(scenario.id);
@@ -692,7 +692,7 @@ export const actions: Actions = {
 
 		const assetType = assetTypeSchema.safeParse(event.params.assetType);
 		if (!assetType.success) {
-			throw redirect(303, '/assets');
+			throw redirect(303, '/dashboard');
 		}
 
 		const formData = await event.request.formData();
