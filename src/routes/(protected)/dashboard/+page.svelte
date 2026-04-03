@@ -67,7 +67,7 @@ const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
 
 type ProjectionRange = '1y' | '5y' | '10y' | 'all';
 type AssetPanelTab = 'assets' | 'accounts' | 'transfers' | 'funding';
-type ProjectionBalanceSource = 'accounts' | 'assets' | 'net_worth';
+type ProjectionBalanceSource = 'accounts' | 'assets' | 'net_worth' | 'liquidity';
 type CashflowDraft = {
 	type: 'income' | 'expense';
 	category:
@@ -92,7 +92,7 @@ const normalizeProjectionRange = (value: unknown): ProjectionRange => {
 };
 
 let projectionView: 'balances' | 'transactions' | 'balance_sheet' | 'profit_loss' = 'balances';
-let projectionBalanceSource: ProjectionBalanceSource = 'accounts';
+let projectionBalanceSource: ProjectionBalanceSource = 'liquidity';
 let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionRange);
 let assetPanelTab: AssetPanelTab = 'assets';
 let isUpdating = false;
@@ -2525,6 +2525,16 @@ const updateMortgageDetails = async (
 		const activeSeries =
 			projectionBalanceSource === 'assets'
 				? assetSeries
+				: projectionBalanceSource === 'liquidity'
+					? ((projectionData.liquidity?.series ?? []).map((series) => ({
+							id: series.id,
+							name: series.name,
+							points: (series.points ?? []).map((point) => ({
+								date: point.date,
+								monthLabel: point.monthLabel,
+								balance: point.balance
+							}))
+						})) as ChartSeries[])
 				: projectionBalanceSource === 'net_worth'
 					? (() => {
 							const byDate = new Map<number, { monthLabel: string; balance: number }>();
@@ -2574,7 +2584,8 @@ const updateMortgageDetails = async (
 	})();
 	$: totalSeries = (() => {
 		const seriesList = chartProjection.series ?? [];
-		if (!seriesList.length || projectionBalanceSource === 'net_worth') return null;
+		if (!seriesList.length || projectionBalanceSource === 'net_worth')
+			return null;
 		const maxPoints = Math.max(...seriesList.map((series) => series.points.length));
 		if (maxPoints === 0) return null;
 		const points = Array.from({ length: maxPoints }).map((_, index) => {
@@ -3020,6 +3031,17 @@ const updateMortgageDetails = async (
 					on:click={() => (projectionBalanceSource = 'net_worth')}
 				>
 					Net worth
+				</button>
+				<button
+					type="button"
+					class={`rounded-full px-3 py-1 transition ${
+						projectionBalanceSource === 'liquidity'
+							? 'bg-slate-900 text-white'
+							: 'text-slate-600 hover:text-slate-900'
+					}`}
+					on:click={() => (projectionBalanceSource = 'liquidity')}
+				>
+					Liquidity
 				</button>
 			</div>
 			<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">

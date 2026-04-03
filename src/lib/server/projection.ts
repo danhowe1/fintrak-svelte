@@ -67,6 +67,22 @@ export type ProjectionResult = {
 	transactions: ProjectionTransaction[];
 	accounts: AccountBalanceSeries[];
 	assets: AssetValueSeries[];
+	liquidity: {
+		series: {
+			id: string;
+			name: string;
+			points: {
+				date: number;
+				monthLabel: string;
+				balance: number;
+			}[];
+		}[];
+		points: {
+			date: number;
+			monthLabel: string;
+			balance: number;
+		}[];
+	};
 	planner: {
 		status: 'on_track' | 'needs_attention';
 		headline: string;
@@ -324,6 +340,7 @@ export const buildProjection = (input: {
 
 	const transactions: ProjectionTransaction[] = [];
 	const events: ProjectionResult['events'] = [];
+	const liquidityPoints: ProjectionResult['liquidity']['points'] = [];
 	const accountSeries: AccountBalanceSeries[] = input.accounts.map((account) => ({
 		accountId: account.id,
 		accountName: account.name,
@@ -713,6 +730,26 @@ export const buildProjection = (input: {
 			superByAccountId.set(superState.superAccountId, superAssetId);
 		}
 	}
+	const liquiditySeries: ProjectionResult['liquidity']['series'] = [
+		...input.accounts
+			.filter((account) => account.account_type === 'cash_account')
+			.map((account) => ({
+				id: `account:${account.id}`,
+				name: account.name,
+				points: []
+			})),
+		...Array.from(shareStates.entries()).map(([assetId, state]) => ({
+			id: `asset:${assetId}`,
+			name: state.assetName,
+			points: []
+		})),
+		...Array.from(superStates.entries()).map(([assetId, state]) => ({
+			id: `asset:${assetId}`,
+			name: state.assetName,
+			points: []
+		}))
+	];
+	const liquiditySeriesById = new Map(liquiditySeries.map((series) => [series.id, series]));
 	let plannerFirstShortfall: ProjectionResult['planner']['firstShortfall'] = null;
 
 	for (let i = 0; i <= totalMonths; i += 1) {
@@ -1748,6 +1785,52 @@ export const buildProjection = (input: {
 			series.points.push({ date: currentDate, monthLabel, value: 0 });
 		}
 
+		let cashLiquidity = 0;
+		for (const [accountId, accountInfo] of accountMap.entries()) {
+			if (accountInfo.type !== 'cash_account') continue;
+			const started =
+				!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, current) >= 0;
+			const value = started ? accountInfo.balance : 0;
+			cashLiquidity += value;
+			liquiditySeriesById.get(`account:${accountId}`)?.points.push({
+				date: currentDate,
+				monthLabel,
+				balance: value
+			});
+		}
+		let sharesLiquidity = 0;
+		for (const [assetId, shareState] of shareStates.entries()) {
+			const started =
+				!shareState.startDate || monthsBetweenYearMonths(shareState.startDate, current) >= 0;
+			const value = started ? shareState.currentValue : 0;
+			sharesLiquidity += value;
+			liquiditySeriesById.get(`asset:${assetId}`)?.points.push({
+				date: currentDate,
+				monthLabel,
+				balance: value
+			});
+		}
+		let superLiquidity = 0;
+		for (const [assetId, superState] of superStates.entries()) {
+			const started =
+				!superState.startDate || monthsBetweenYearMonths(superState.startDate, current) >= 0;
+			const preservationReached =
+				!superState.preservationDate ||
+				monthsBetweenYearMonths(superState.preservationDate, current) >= 0;
+			const value = started && preservationReached ? superState.currentValue : 0;
+			superLiquidity += value;
+			liquiditySeriesById.get(`asset:${assetId}`)?.points.push({
+				date: currentDate,
+				monthLabel,
+				balance: value
+			});
+		}
+		liquidityPoints.push({
+			date: currentDate,
+			monthLabel,
+			balance: cashLiquidity + sharesLiquidity + superLiquidity
+		});
+
 		for (const accountId of cashAccountIds) {
 			if (insolventEventAccountIds.has(accountId)) continue;
 			const accountInfo = accountMap.get(accountId);
@@ -1860,6 +1943,10 @@ export const buildProjection = (input: {
 		transactions,
 		accounts: accountSeries,
 		assets: assetSeries,
+		liquidity: {
+			series: liquiditySeries,
+			points: liquidityPoints
+		},
 		planner: {
 			status: firstShortfall ? 'needs_attention' : 'on_track',
 			headline: firstShortfall
