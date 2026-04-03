@@ -66,7 +66,7 @@ const cashflowFrequencyOptions = [
 const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
 
 type ProjectionRange = '1y' | '5y' | '10y' | 'all';
-type AssetPanelTab = 'assets' | 'accounts' | 'transfers';
+type AssetPanelTab = 'assets' | 'accounts' | 'transfers' | 'funding';
 type ProjectionBalanceSource = 'accounts' | 'assets' | 'net_worth';
 type CashflowDraft = {
 	type: 'income' | 'expense';
@@ -101,6 +101,19 @@ let expandedPnlNodes = new Set<string>();
 let assetsList = data.assets ?? [];
 let accountsList = data.accounts ?? [];
 let assetAccountsList = data.assetAccounts ?? [];
+let autoFundingRules = data.autoFundingRules ?? [];
+let accountBalanceTargets = data.accountBalanceTargets ?? [];
+let autoSweepRules = data.autoSweepRules ?? [];
+let fundingReserveDrafts: Record<string, string> = {};
+let fundingCapDrafts: Record<string, string> = {};
+let fundingAddSourceByTarget: Record<string, string> = {};
+let fundingAddDestinationBySource: Record<string, string> = {};
+let fundingSelectedAccountId = '';
+let fundingSelectedReserveRules: typeof autoFundingRules = [];
+let fundingSelectedSweepRules: typeof autoSweepRules = [];
+let fundingSelectedReserveSourceOptions: typeof transferAccountOptions = [];
+let fundingSelectedSweepDestinationOptions: typeof transferAccountOptions = [];
+let fundingTabError = '';
 let personRetirementAges: Record<string, number> = {};
 let personDetails: Record<string, { name: string; startDate: string; dob: string }> = {};
 let cashflowAmounts: Record<string, number> = {};
@@ -219,6 +232,15 @@ let accountEditDrafts: Record<
 	}
 > = {};
 let accountInlineError = '';
+let plannerSourceAccountId = '';
+let plannerSweepDestinationAccountId = '';
+let plannerManagedAccountId = '';
+let plannerManagedMinBalance = '';
+let plannerManagedMaxBalance = '';
+let plannerManagedAccountSyncId = '';
+let autoFundingRuleError = '';
+let autoSweepRuleError = '';
+let accountBalanceTargetError = '';
 
 const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 	const details = asset.details ?? {};
@@ -226,6 +248,165 @@ const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 	const value = typeof raw === 'number' ? raw : Number(raw);
 	return Number.isFinite(value) ? value : 0;
 };
+
+$: plannerFirstShortfall = projectionData.planner?.firstShortfall ?? null;
+$: plannerHasCapBreach = (projectionData.events ?? []).some(
+	(event) =>
+		event.tone === 'negative' &&
+		typeof event.message === 'string' &&
+		event.message.startsWith('Auto-sweep from ')
+);
+$: plannerRequiresAutofundStage = Boolean(plannerFirstShortfall) || plannerHasCapBreach;
+$: plannerExistingRules = plannerFirstShortfall
+	? autoFundingRules
+			.filter((rule) => rule.target_account_id === plannerFirstShortfall.targetAccountId && rule.enabled)
+			.sort((a, b) => a.priority_order - b.priority_order)
+	: null;
+$: plannerSourceOptions = (() => {
+	if (!plannerFirstShortfall) return [];
+	const usedSourceIds = new Set((plannerExistingRules ?? []).map((rule) => rule.source_account_id));
+	return (plannerFirstShortfall.availableSourceAccounts ?? [])
+		.filter(
+			(option) =>
+				option.accountId !== plannerFirstShortfall.targetAccountId &&
+				!usedSourceIds.has(option.accountId)
+		)
+		.map((option) => ({
+			id: option.accountId,
+			name: option.accountName,
+			availableNow: option.availableNow,
+			availableFromDate: option.availableFromDate
+		}))
+		.sort((a, b) => a.name.localeCompare(b.name));
+})();
+$: plannerSelectedSourceOption =
+	plannerSourceOptions.find((option) => option.id === plannerSourceAccountId) ?? null;
+$: plannerSourceAvailabilityWarning =
+	plannerSelectedSourceOption && !plannerSelectedSourceOption.availableNow
+		? plannerSelectedSourceOption.availableFromDate
+			? `${plannerSelectedSourceOption.name} is not available yet. Transfers will take over from ${monthLabelFromDate(plannerSelectedSourceOption.availableFromDate)}.`
+			: `${plannerSelectedSourceOption.name} is not available yet and can be used once it becomes available.`
+		: '';
+$: if (
+	plannerSourceAccountId &&
+	!plannerSourceOptions.some((option) => option.id === plannerSourceAccountId)
+) {
+	plannerSourceAccountId = '';
+}
+$: plannerManagedAccountOptions = transferAccountOptions;
+$: plannerExistingSweepRules = autoSweepRules
+	.filter((rule) => rule.source_account_id === plannerManagedAccountId && rule.enabled)
+	.sort((a, b) => a.priority_order - b.priority_order);
+$: plannerSweepDestinationOptions = plannerManagedAccountOptions
+	.filter(
+		(account) =>
+			account.id !== plannerManagedAccountId &&
+			!plannerExistingSweepRules.some((rule) => rule.destination_account_id === account.id)
+	)
+	.sort((a, b) => a.name.localeCompare(b.name));
+$: if (
+	plannerManagedAccountOptions.length > 0 &&
+	!plannerManagedAccountOptions.some((account) => account.id === plannerManagedAccountId)
+) {
+	plannerManagedAccountId = plannerManagedAccountOptions[0].id;
+}
+$: if (plannerManagedAccountOptions.length === 0 && plannerManagedAccountId) {
+	plannerManagedAccountId = '';
+}
+$: if (
+	plannerSweepDestinationOptions.length > 0 &&
+	!plannerSweepDestinationOptions.some((account) => account.id === plannerSweepDestinationAccountId)
+) {
+	plannerSweepDestinationAccountId = plannerSweepDestinationOptions[0].id;
+}
+$: if (plannerSweepDestinationOptions.length === 0 && plannerSweepDestinationAccountId) {
+	plannerSweepDestinationAccountId = '';
+}
+$: {
+	const nextReserveDrafts = { ...fundingReserveDrafts };
+	const nextCapDrafts = { ...fundingCapDrafts };
+	const nextAddSourceByTarget = { ...fundingAddSourceByTarget };
+	const nextAddDestinationBySource = { ...fundingAddDestinationBySource };
+	let changed = false;
+	for (const account of transferAccountOptions) {
+		const target = accountBalanceTargets.find(
+			(item) => item.account_id === account.id && item.enabled
+		);
+		if (nextReserveDrafts[account.id] === undefined) {
+			nextReserveDrafts[account.id] = String(target?.min_balance ?? 0);
+			changed = true;
+		}
+		if (nextCapDrafts[account.id] === undefined) {
+			nextCapDrafts[account.id] = target?.max_balance == null ? '' : String(target.max_balance);
+			changed = true;
+		}
+		if (nextAddSourceByTarget[account.id] === undefined) {
+			nextAddSourceByTarget[account.id] = '';
+			changed = true;
+		}
+		if (nextAddDestinationBySource[account.id] === undefined) {
+			nextAddDestinationBySource[account.id] = '';
+			changed = true;
+		}
+	}
+	if (changed) {
+		fundingReserveDrafts = nextReserveDrafts;
+		fundingCapDrafts = nextCapDrafts;
+		fundingAddSourceByTarget = nextAddSourceByTarget;
+		fundingAddDestinationBySource = nextAddDestinationBySource;
+	}
+}
+$: if (
+	transferAccountOptions.length > 0 &&
+	!transferAccountOptions.some((account) => account.id === fundingSelectedAccountId)
+) {
+	fundingSelectedAccountId = transferAccountOptions[0].id;
+}
+$: if (transferAccountOptions.length === 0 && fundingSelectedAccountId) {
+	fundingSelectedAccountId = '';
+}
+$: fundingSelectedReserveRules = fundingSelectedAccountId
+	? autoFundingRules
+			.filter((rule) => rule.target_account_id === fundingSelectedAccountId)
+			.sort((a, b) => a.priority_order - b.priority_order)
+	: [];
+$: fundingSelectedSweepRules = fundingSelectedAccountId
+	? autoSweepRules
+			.filter((rule) => rule.source_account_id === fundingSelectedAccountId)
+			.sort((a, b) => a.priority_order - b.priority_order)
+	: [];
+$: fundingSelectedReserveSourceOptions = (() => {
+	if (!fundingSelectedAccountId) return [];
+	const existingSourceIds = new Set(fundingSelectedReserveRules.map((rule) => rule.source_account_id));
+	return transferAccountOptions.filter(
+		(option) => option.id !== fundingSelectedAccountId && !existingSourceIds.has(option.id)
+	);
+})();
+$: fundingSelectedSweepDestinationOptions = (() => {
+	if (!fundingSelectedAccountId) return [];
+	const existingDestinationIds = new Set(
+		fundingSelectedSweepRules.map((rule) => rule.destination_account_id)
+	);
+	return transferAccountOptions.filter(
+		(option) => option.id !== fundingSelectedAccountId && !existingDestinationIds.has(option.id)
+	);
+})();
+$: {
+	const target = accountBalanceTargets.find(
+		(item) => item.account_id === plannerManagedAccountId && item.enabled
+	);
+	const syncId = `${plannerManagedAccountId}:${target?.min_balance ?? ''}:${target?.max_balance ?? ''}:${target?.enabled ? 1 : 0}`;
+	if (plannerManagedAccountId && plannerManagedAccountSyncId !== syncId) {
+		plannerManagedMinBalance = String(target?.min_balance ?? 0);
+		plannerManagedMaxBalance = target?.max_balance == null ? '' : String(target.max_balance);
+		plannerManagedAccountSyncId = syncId;
+	}
+	if (!plannerManagedAccountId && plannerManagedAccountSyncId !== syncId) {
+		plannerManagedMinBalance = '';
+		plannerManagedMaxBalance = '';
+		plannerManagedAccountSyncId = syncId;
+	}
+}
 
 $: assetsList = data.assets ?? [];
 $: accountsList = data.accounts ?? [];
@@ -255,6 +436,24 @@ $: if (data.scenario.id !== lastScenarioId) {
 	transferFormError = '';
 	transferInlineError = '';
 	accountInlineError = '';
+	autoFundingRuleError = '';
+	autoSweepRuleError = '';
+	accountBalanceTargetError = '';
+	autoFundingRules = data.autoFundingRules ?? [];
+	accountBalanceTargets = data.accountBalanceTargets ?? [];
+	autoSweepRules = data.autoSweepRules ?? [];
+	plannerSourceAccountId = '';
+	plannerSweepDestinationAccountId = '';
+	plannerManagedAccountId = '';
+	plannerManagedMinBalance = '';
+	plannerManagedMaxBalance = '';
+	plannerManagedAccountSyncId = '';
+	fundingReserveDrafts = {};
+	fundingCapDrafts = {};
+	fundingAddSourceByTarget = {};
+	fundingAddDestinationBySource = {};
+	fundingSelectedAccountId = '';
+	fundingTabError = '';
 	transferDraft = {
 		sourceAccountId: '',
 		destinationAccountId: '',
@@ -973,6 +1172,13 @@ const withLock = async (key: string, run: () => Promise<void>, showSpinner = fal
 	}
 };
 
+const unwrapActionPayload = (payload: unknown) => {
+	if (payload && typeof payload === 'object' && 'data' in payload) {
+		return (payload as { data?: Record<string, unknown> }).data ?? {};
+	}
+	return payload as Record<string, unknown>;
+};
+
 	const togglePnlNode = (id: string) => {
 		const next = new Set(expandedPnlNodes);
 		if (next.has(id)) {
@@ -998,6 +1204,15 @@ const withLock = async (key: string, run: () => Promise<void>, showSpinner = fal
 		}
 		const payload = await response.json();
 		projectionData = payload.projection;
+		if (payload.autoFundingRules) {
+			autoFundingRules = [...payload.autoFundingRules];
+		}
+		if (payload.accountBalanceTargets) {
+			accountBalanceTargets = [...payload.accountBalanceTargets];
+		}
+		if (payload.autoSweepRules) {
+			autoSweepRules = [...payload.autoSweepRules];
+		}
 		if (payload.cashflows) {
 			cashflows = [...payload.cashflows];
 			syncCashflowAmounts(payload.cashflows);
@@ -1037,6 +1252,568 @@ const withLock = async (key: string, run: () => Promise<void>, showSpinner = fal
 				error instanceof Error ? error.message : 'Unable to refresh the projection.';
 		});
 	};
+
+const saveAutoFundingRule = async () => {
+	if (!plannerFirstShortfall) return;
+	if (!plannerSourceAccountId) {
+		autoFundingRuleError = 'Select a source account.';
+		return;
+	}
+
+	await withLock(
+		`auto-funding-save:${plannerFirstShortfall.targetAccountId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('targetAccountId', plannerFirstShortfall.targetAccountId);
+			formData.set('sourceAccountId', plannerSourceAccountId);
+			const response = await fetch('?/upsertAutoFundingRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				let message = 'Unable to save auto-funding rule.';
+				try {
+					const payload = await response.json();
+					message = payload?.error ?? payload?.data?.error ?? payload?.message ?? message;
+				} catch {
+					// ignore parse errors and keep default message
+				}
+				throw new Error(message);
+			}
+			const payload = await response.json();
+			if (payload?.autoFundingRules) {
+				autoFundingRules = [...payload.autoFundingRules];
+			}
+			plannerSourceAccountId = '';
+			autoFundingRuleError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		autoFundingRuleError =
+			error instanceof Error ? error.message : 'Unable to save auto-funding rule.';
+		projectionError = autoFundingRuleError;
+	});
+};
+
+const removeAutoFundingRule = async (ruleId: string) => {
+	await withLock(
+		`auto-funding-delete:${ruleId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('ruleId', ruleId);
+			const response = await fetch('?/deleteAutoFundingRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				let message = 'Unable to remove auto-funding rule.';
+				try {
+					const payload = await response.json();
+					message = payload?.error ?? payload?.data?.error ?? payload?.message ?? message;
+				} catch {
+					// ignore parse errors and keep default message
+				}
+				throw new Error(message);
+			}
+			const payload = await response.json();
+			if (payload?.autoFundingRules) {
+				autoFundingRules = [...payload.autoFundingRules];
+			}
+			autoFundingRuleError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		autoFundingRuleError =
+			error instanceof Error ? error.message : 'Unable to remove auto-funding rule.';
+		projectionError = autoFundingRuleError;
+	});
+};
+
+const saveAccountBalanceTarget = async () => {
+	if (!plannerManagedAccountId) return;
+	const minBalance = Number(plannerManagedMinBalance);
+	const maxBalanceRaw = plannerManagedMaxBalance.trim();
+	const maxBalance = maxBalanceRaw.length > 0 ? Number(maxBalanceRaw) : null;
+	if (!Number.isFinite(minBalance) || minBalance < 0) {
+		accountBalanceTargetError = 'Reserve must be a number greater than or equal to 0.';
+		return;
+	}
+	if (maxBalance !== null && (!Number.isFinite(maxBalance) || maxBalance < 0)) {
+		accountBalanceTargetError = 'Cap must be blank or a number greater than or equal to 0.';
+		return;
+	}
+	if (maxBalance !== null && maxBalance < minBalance) {
+		accountBalanceTargetError = 'Cap must be greater than or equal to reserve.';
+		return;
+	}
+	await withLock(
+		`balance-target:${plannerManagedAccountId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('accountId', plannerManagedAccountId);
+			formData.set('minBalance', String(minBalance));
+			formData.set('maxBalance', maxBalanceRaw);
+			const response = await fetch('?/updateAccountBalanceTarget', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				let message = 'Unable to save account balance target.';
+				try {
+					const payload = await response.json();
+					message = payload?.error ?? payload?.data?.error ?? payload?.message ?? message;
+				} catch {
+					// ignore parse errors and keep default message
+				}
+				throw new Error(message);
+			}
+			const payload = await response.json();
+			if (payload?.accountBalanceTargets) {
+				accountBalanceTargets = [...payload.accountBalanceTargets];
+			}
+			accountBalanceTargetError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		accountBalanceTargetError =
+			error instanceof Error ? error.message : 'Unable to save account balance target.';
+		projectionError = accountBalanceTargetError;
+	});
+};
+
+const saveAutoSweepRule = async () => {
+	if (!plannerManagedAccountId || !plannerSweepDestinationAccountId) {
+		autoSweepRuleError = 'Select a destination account.';
+		return;
+	}
+	await withLock(
+		`auto-sweep-save:${plannerManagedAccountId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('sourceAccountId', plannerManagedAccountId);
+			formData.set('destinationAccountId', plannerSweepDestinationAccountId);
+			const response = await fetch('?/upsertAutoSweepRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				let message = 'Unable to save auto-sweep rule.';
+				try {
+					const payload = await response.json();
+					message = payload?.error ?? payload?.data?.error ?? payload?.message ?? message;
+				} catch {
+					// ignore parse errors and keep default message
+				}
+				throw new Error(message);
+			}
+			const payload = await response.json();
+			if (payload?.autoSweepRules) {
+				autoSweepRules = [...payload.autoSweepRules];
+			}
+			autoSweepRuleError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		autoSweepRuleError =
+			error instanceof Error ? error.message : 'Unable to save auto-sweep rule.';
+		projectionError = autoSweepRuleError;
+	});
+};
+
+const removeAutoSweepRule = async (ruleId: string) => {
+	await withLock(
+		`auto-sweep-delete:${ruleId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('ruleId', ruleId);
+			const response = await fetch('?/deleteAutoSweepRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				let message = 'Unable to remove auto-sweep rule.';
+				try {
+					const payload = await response.json();
+					message = payload?.error ?? payload?.data?.error ?? payload?.message ?? message;
+				} catch {
+					// ignore parse errors and keep default message
+				}
+				throw new Error(message);
+			}
+			const payload = await response.json();
+			if (payload?.autoSweepRules) {
+				autoSweepRules = [...payload.autoSweepRules];
+			}
+			autoSweepRuleError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		autoSweepRuleError =
+			error instanceof Error ? error.message : 'Unable to remove auto-sweep rule.';
+		projectionError = autoSweepRuleError;
+	});
+};
+
+const getFundingTarget = (accountId: string) =>
+	accountBalanceTargets.find((item) => item.account_id === accountId && item.enabled) ?? null;
+
+const getReserveRulesForTarget = (targetAccountId: string) =>
+	autoFundingRules
+		.filter((rule) => rule.target_account_id === targetAccountId)
+		.sort((a, b) => a.priority_order - b.priority_order);
+
+const getSweepRulesForSource = (sourceAccountId: string) =>
+	autoSweepRules
+		.filter((rule) => rule.source_account_id === sourceAccountId)
+		.sort((a, b) => a.priority_order - b.priority_order);
+
+const getReserveSourceOptionsForTarget = (targetAccountId: string) => {
+	const existingSourceIds = new Set(
+		getReserveRulesForTarget(targetAccountId).map((rule) => rule.source_account_id)
+	);
+	return transferAccountOptions.filter(
+		(option) => option.id !== targetAccountId && !existingSourceIds.has(option.id)
+	);
+};
+
+const getSweepDestinationOptionsForSource = (sourceAccountId: string) => {
+	const existingDestinationIds = new Set(
+		getSweepRulesForSource(sourceAccountId).map((rule) => rule.destination_account_id)
+	);
+	return transferAccountOptions.filter(
+		(option) => option.id !== sourceAccountId && !existingDestinationIds.has(option.id)
+	);
+};
+
+const upsertFundingTargetForAccount = async (accountId: string) => {
+	const minBalance = Number(fundingReserveDrafts[accountId] ?? '0');
+	const maxRaw = (fundingCapDrafts[accountId] ?? '').trim();
+	const maxBalance = maxRaw.length > 0 ? Number(maxRaw) : null;
+	if (!Number.isFinite(minBalance) || minBalance < 0) {
+		fundingTabError = 'Reserve must be a number greater than or equal to 0.';
+		return;
+	}
+	if (maxBalance !== null && (!Number.isFinite(maxBalance) || maxBalance < 0)) {
+		fundingTabError = 'Cap must be blank or a number greater than or equal to 0.';
+		return;
+	}
+	if (maxBalance !== null && maxBalance < minBalance) {
+		fundingTabError = 'Cap must be greater than or equal to reserve.';
+		return;
+	}
+	await withLock(
+		`funding-target-save:${accountId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('accountId', accountId);
+			formData.set('minBalance', String(minBalance));
+			formData.set('maxBalance', maxRaw);
+			const response = await fetch('?/updateAccountBalanceTarget', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(payload?.error ?? 'Unable to save reserve/cap.');
+			}
+			const payload = unwrapActionPayload(await response.json());
+			if (Array.isArray(payload?.accountBalanceTargets)) {
+				accountBalanceTargets = [...payload.accountBalanceTargets];
+			}
+			fundingTabError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		fundingTabError = error instanceof Error ? error.message : 'Unable to save reserve/cap.';
+	});
+};
+
+const addReserveRuleForTarget = async (targetAccountId: string, selectedSourceAccountId?: string) => {
+	const sourceAccountId = selectedSourceAccountId ?? fundingAddSourceByTarget[targetAccountId] ?? '';
+	if (!sourceAccountId) {
+		fundingTabError = 'Select a reserve funding source account.';
+		return;
+	}
+	await withLock(
+		`funding-reserve-add:${targetAccountId}`,
+		async () => {
+			const optimisticId = `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			const currentRules = getReserveRulesForTarget(targetAccountId);
+			autoFundingRules = [
+				...autoFundingRules,
+				{
+					id: optimisticId,
+					scenario_id: data.scenario.id,
+					source_account_id: sourceAccountId,
+					target_account_id: targetAccountId,
+					priority_order: currentRules.length + 1,
+					enabled: true,
+					min_target_balance: 0,
+					created_at: '',
+					updated_at: ''
+				}
+			];
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('targetAccountId', targetAccountId);
+			formData.set('sourceAccountId', sourceAccountId);
+			const response = await fetch('?/upsertAutoFundingRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(
+					payload?.error ?? payload?.data?.error ?? 'Unable to add reserve funding rule.'
+				);
+			}
+			const payload = unwrapActionPayload(await response.json());
+			if (Array.isArray(payload?.autoFundingRules)) {
+				autoFundingRules = [...payload.autoFundingRules];
+			}
+			fundingAddSourceByTarget = { ...fundingAddSourceByTarget, [targetAccountId]: '' };
+			fundingTabError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		fundingTabError =
+			error instanceof Error ? error.message : 'Unable to add reserve funding rule.';
+	});
+};
+
+const removeReserveRule = async (ruleId: string) => {
+	const previousRules = [...autoFundingRules];
+	autoFundingRules = autoFundingRules.filter((rule) => rule.id !== ruleId);
+	await withLock(
+		`funding-reserve-delete:${ruleId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('ruleId', ruleId);
+			const response = await fetch('?/deleteAutoFundingRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(
+					payload?.error ?? payload?.data?.error ?? 'Unable to delete reserve funding rule.'
+				);
+			}
+			const payload = unwrapActionPayload(await response.json());
+			if (Array.isArray(payload?.autoFundingRules)) {
+				autoFundingRules = [...payload.autoFundingRules];
+			}
+			fundingTabError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		autoFundingRules = previousRules;
+		fundingTabError =
+			error instanceof Error ? error.message : 'Unable to delete reserve funding rule.';
+	});
+};
+
+const moveReserveRule = async (targetAccountId: string, ruleId: string, direction: -1 | 1) => {
+	const rules = getReserveRulesForTarget(targetAccountId);
+	const index = rules.findIndex((rule) => rule.id === ruleId);
+	if (index < 0) return;
+	const swapIndex = index + direction;
+	if (swapIndex < 0 || swapIndex >= rules.length) return;
+	const reordered = [...rules];
+	const [moved] = reordered.splice(index, 1);
+	reordered.splice(swapIndex, 0, moved);
+	const reorderedIds = reordered.map((rule) => rule.id);
+	autoFundingRules = autoFundingRules.map((rule) => {
+		if (rule.target_account_id !== targetAccountId) return rule;
+		const nextIndex = reorderedIds.indexOf(rule.id);
+		return nextIndex < 0 ? rule : { ...rule, priority_order: nextIndex + 1 };
+	});
+	await withLock(
+		`funding-reserve-move:${targetAccountId}`,
+		async () => {
+		const formData = new FormData();
+		formData.set('scenarioId', data.scenario.id);
+		formData.set('targetAccountId', targetAccountId);
+		formData.set('ruleIds', reordered.map((rule) => rule.id).join(','));
+		const response = await fetch('?/reorderAutoFundingRules', {
+			method: 'POST',
+			body: formData,
+			headers: { accept: 'application/json' }
+		});
+		if (!response.ok) {
+			const payload = await response.json().catch(() => ({}));
+			throw new Error(payload?.error ?? payload?.data?.error ?? 'Unable to reorder reserve funding rules.');
+		}
+		const payload = unwrapActionPayload(await response.json());
+		if (Array.isArray(payload?.autoFundingRules)) {
+			autoFundingRules = [...payload.autoFundingRules];
+		}
+		fundingTabError = '';
+		await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		fundingTabError =
+			error instanceof Error ? error.message : 'Unable to reorder reserve funding rules.';
+	});
+};
+
+const addSweepRuleForSource = async (
+	sourceAccountId: string,
+	selectedDestinationAccountId?: string
+) => {
+	const destinationAccountId =
+		selectedDestinationAccountId ?? fundingAddDestinationBySource[sourceAccountId] ?? '';
+	if (!destinationAccountId) {
+		fundingTabError = 'Select an auto-sweep destination account.';
+		return;
+	}
+	await withLock(
+		`funding-sweep-add:${sourceAccountId}`,
+		async () => {
+			const optimisticId = `temp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+			const currentRules = getSweepRulesForSource(sourceAccountId);
+			autoSweepRules = [
+				...autoSweepRules,
+				{
+					id: optimisticId,
+					scenario_id: data.scenario.id,
+					source_account_id: sourceAccountId,
+					destination_account_id: destinationAccountId,
+					priority_order: currentRules.length + 1,
+					enabled: true,
+					created_at: '',
+					updated_at: ''
+				}
+			];
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('sourceAccountId', sourceAccountId);
+			formData.set('destinationAccountId', destinationAccountId);
+			const response = await fetch('?/upsertAutoSweepRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(payload?.error ?? payload?.data?.error ?? 'Unable to add auto-sweep rule.');
+			}
+			const payload = unwrapActionPayload(await response.json());
+			if (Array.isArray(payload?.autoSweepRules)) {
+				autoSweepRules = [...payload.autoSweepRules];
+			}
+			fundingAddDestinationBySource = {
+				...fundingAddDestinationBySource,
+				[sourceAccountId]: ''
+			};
+			fundingTabError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		fundingTabError = error instanceof Error ? error.message : 'Unable to add auto-sweep rule.';
+	});
+};
+
+const removeSweepRule = async (ruleId: string) => {
+	const previousRules = [...autoSweepRules];
+	autoSweepRules = autoSweepRules.filter((rule) => rule.id !== ruleId);
+	await withLock(
+		`funding-sweep-delete:${ruleId}`,
+		async () => {
+			const formData = new FormData();
+			formData.set('scenarioId', data.scenario.id);
+			formData.set('ruleId', ruleId);
+			const response = await fetch('?/deleteAutoSweepRule', {
+				method: 'POST',
+				body: formData,
+				headers: { accept: 'application/json' }
+			});
+			if (!response.ok) {
+				const payload = await response.json().catch(() => ({}));
+				throw new Error(payload?.error ?? payload?.data?.error ?? 'Unable to delete auto-sweep rule.');
+			}
+			const payload = unwrapActionPayload(await response.json());
+			if (Array.isArray(payload?.autoSweepRules)) {
+				autoSweepRules = [...payload.autoSweepRules];
+			}
+			fundingTabError = '';
+			await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		autoSweepRules = previousRules;
+		fundingTabError = error instanceof Error ? error.message : 'Unable to delete auto-sweep rule.';
+	});
+};
+
+const moveSweepRule = async (sourceAccountId: string, ruleId: string, direction: -1 | 1) => {
+	const rules = getSweepRulesForSource(sourceAccountId);
+	const index = rules.findIndex((rule) => rule.id === ruleId);
+	if (index < 0) return;
+	const swapIndex = index + direction;
+	if (swapIndex < 0 || swapIndex >= rules.length) return;
+	const reordered = [...rules];
+	const [moved] = reordered.splice(index, 1);
+	reordered.splice(swapIndex, 0, moved);
+	const reorderedIds = reordered.map((rule) => rule.id);
+	autoSweepRules = autoSweepRules.map((rule) => {
+		if (rule.source_account_id !== sourceAccountId) return rule;
+		const nextIndex = reorderedIds.indexOf(rule.id);
+		return nextIndex < 0 ? rule : { ...rule, priority_order: nextIndex + 1 };
+	});
+	await withLock(
+		`funding-sweep-move:${sourceAccountId}`,
+		async () => {
+		const formData = new FormData();
+		formData.set('scenarioId', data.scenario.id);
+		formData.set('sourceAccountId', sourceAccountId);
+		formData.set('ruleIds', reordered.map((rule) => rule.id).join(','));
+		const response = await fetch('?/reorderAutoSweepRules', {
+			method: 'POST',
+			body: formData,
+			headers: { accept: 'application/json' }
+		});
+		if (!response.ok) {
+			const payload = await response.json().catch(() => ({}));
+			throw new Error(payload?.error ?? payload?.data?.error ?? 'Unable to reorder auto-sweep rules.');
+		}
+		const payload = unwrapActionPayload(await response.json());
+		if (Array.isArray(payload?.autoSweepRules)) {
+			autoSweepRules = [...payload.autoSweepRules];
+		}
+		fundingTabError = '';
+		await refreshProjection({ includeCashflows: true, force: true });
+		},
+		autoRunProjection
+	).catch((error) => {
+		fundingTabError = error instanceof Error ? error.message : 'Unable to reorder auto-sweep rules.';
+	});
+};
 
 const updateRetirementAge = async (assetId: string, retirementAge: number) => {
 	await withLock(
@@ -2194,7 +2971,8 @@ const updateMortgageDetails = async (
 
 <section class="not-prose mt-6">
 	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-		<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+		<div class="space-y-4">
+			<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h2 class="text-lg font-semibold text-slate-900">
 			Projections for {data.scenario.name} ({formatYearMonthInput(projectionData.startDate)})
@@ -2598,32 +3376,6 @@ const updateMortgageDetails = async (
 			</div>
 		{/if}
 		</div>
-		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-			<h3 class="text-sm font-semibold text-slate-900">Events</h3>
-			{#if (projectionData.events?.length ?? 0) > 0}
-				<div class="mt-3 space-y-2">
-					{#each projectionData.events as event}
-						<div
-							class={`rounded-lg border px-3 py-2 text-sm ${
-								event.tone === 'negative'
-									? 'border-rose-200 bg-rose-50 text-rose-700'
-									: 'border-emerald-200 bg-emerald-50 text-emerald-700'
-							}`}
-						>
-							{event.message}
-						</div>
-					{/each}
-				</div>
-			{:else}
-				<div class="mt-3 text-sm text-slate-600">No events for this projection.</div>
-			{/if}
-		</div>
-	</div>
-</section>
-
-<section class="not-prose mt-6">
-	<div class="grid gap-4">
-		<div>
 			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 				<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
 					<button
@@ -2658,6 +3410,17 @@ const updateMortgageDetails = async (
 						on:click={() => (assetPanelTab = 'transfers')}
 					>
 						Transfers
+					</button>
+					<button
+						type="button"
+						class={`rounded-full px-3 py-1 transition ${
+							assetPanelTab === 'funding'
+								? 'bg-slate-900 text-white'
+								: 'text-slate-600 hover:text-slate-900'
+						}`}
+						on:click={() => (assetPanelTab = 'funding')}
+					>
+						Funding
 					</button>
 				</div>
 				{#if assetPanelTab === 'assets'}
@@ -4618,7 +5381,7 @@ const updateMortgageDetails = async (
 							<div class="text-sm text-slate-600">No accounts to show yet.</div>
 						{/if}
 					</div>
-				{:else}
+				{:else if assetPanelTab === 'transfers'}
 					<div class="mt-5 space-y-4">
 						<div class="rounded-xl border border-slate-200 bg-white p-3">
 							<h3 class="text-sm font-semibold text-slate-900">Existing transfers</h3>
@@ -4993,11 +5756,379 @@ const updateMortgageDetails = async (
 							</div>
 						</div>
 					</div>
+				{:else}
+					<div class="mt-5 space-y-4">
+						{#if transferAccountOptions.length === 0}
+							<div class="rounded-xl border border-slate-200 bg-white p-3 text-sm text-slate-600">
+								No eligible funding accounts available yet.
+							</div>
+						{:else}
+							<label class="block max-w-sm text-xs text-slate-600">
+								<span class="mb-1 block text-slate-500">Funding account</span>
+								<select
+									class="w-full rounded border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={fundingSelectedAccountId}
+									on:change={(event) =>
+										(fundingSelectedAccountId = (event.currentTarget as HTMLSelectElement).value)}
+								>
+									{#each transferAccountOptions as option}
+										<option value={option.id}>{option.name}</option>
+									{/each}
+								</select>
+							</label>
+							{@const account = transferAccountOptions.find((item) => item.id === fundingSelectedAccountId)}
+							{#if account}
+								<div class="rounded-xl border border-slate-200 bg-white p-3">
+									<div class="text-sm font-semibold text-slate-900">{account.name}</div>
+									<div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+										<label class="text-xs text-slate-600">
+											<span class="mb-1 block text-slate-500">Reserve</span>
+											<input
+												type="number"
+												class="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+												value={fundingReserveDrafts[account.id] ?? '0'}
+												on:input={(event) =>
+													(fundingReserveDrafts = {
+														...fundingReserveDrafts,
+														[account.id]: (event.currentTarget as HTMLInputElement).value
+													})}
+												on:change={() =>
+													scheduleUpdate(`funding-target:${account.id}`, () =>
+														upsertFundingTargetForAccount(account.id)
+													)}
+											/>
+										</label>
+										<label class="text-xs text-slate-600">
+											<span class="mb-1 block text-slate-500">Cap (blank = none)</span>
+											<input
+												type="number"
+												class="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+												value={fundingCapDrafts[account.id] ?? ''}
+												on:input={(event) =>
+													(fundingCapDrafts = {
+														...fundingCapDrafts,
+														[account.id]: (event.currentTarget as HTMLInputElement).value
+													})}
+												on:change={() =>
+													scheduleUpdate(`funding-target:${account.id}`, () =>
+														upsertFundingTargetForAccount(account.id)
+													)}
+											/>
+										</label>
+										<div class="flex items-end gap-2 sm:col-span-2">
+											<span class="text-[11px] text-slate-500">
+												Changes apply automatically when you leave each field.
+											</span>
+										</div>
+									</div>
+
+									<div class="mt-4 grid gap-3 lg:grid-cols-2">
+										<div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
+											<div class="text-xs font-semibold text-slate-700">Reserve Sources</div>
+											<div class="mt-2 space-y-1">
+												{#if fundingSelectedReserveRules.length === 0}
+													<div class="text-xs text-slate-500">No reserve source priorities set.</div>
+												{/if}
+												{#each fundingSelectedReserveRules as rule, idx}
+													{@const sourceName =
+														transferAccountOptions.find((item) => item.id === rule.source_account_id)?.name ??
+														'Source account'}
+													<div class="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-xs">
+														<span class="w-5 text-slate-500">{idx + 1}.</span>
+														<span class="flex-1 truncate">{sourceName}</span>
+														<button type="button" class="px-1 text-slate-500 disabled:opacity-30" disabled={idx === 0} on:click={() => moveReserveRule(account.id, rule.id, -1)}>↑</button>
+														<button type="button" class="px-1 text-slate-500 disabled:opacity-30" disabled={idx === fundingSelectedReserveRules.length - 1} on:click={() => moveReserveRule(account.id, rule.id, 1)}>↓</button>
+														<button type="button" class="px-1 text-rose-600" on:click={() => removeReserveRule(rule.id)}>✕</button>
+													</div>
+												{/each}
+											</div>
+											<div class="mt-2 flex items-center gap-2">
+												<select
+													class="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+													value={fundingAddSourceByTarget[account.id] ?? ''}
+													on:change={(event) => {
+														const selectedSource = (event.currentTarget as HTMLSelectElement).value;
+														fundingAddSourceByTarget = {
+															...fundingAddSourceByTarget,
+															[account.id]: selectedSource
+														};
+														if (selectedSource) {
+															void addReserveRuleForTarget(account.id, selectedSource);
+														}
+													}}
+												>
+													<option value="">Add source…</option>
+													{#each fundingSelectedReserveSourceOptions as option}
+														<option value={option.id}>{option.name}</option>
+													{/each}
+												</select>
+											</div>
+										</div>
+
+										<div class="rounded-lg border border-slate-200 bg-slate-50 p-2">
+											<div class="text-xs font-semibold text-slate-700">Cap Destinations</div>
+											<div class="mt-2 space-y-1">
+												{#if fundingSelectedSweepRules.length === 0}
+													<div class="text-xs text-slate-500">No cap destination priorities set.</div>
+												{/if}
+												{#each fundingSelectedSweepRules as rule, idx}
+													{@const destinationName =
+														transferAccountOptions.find((item) => item.id === rule.destination_account_id)
+															?.name ?? 'Destination account'}
+													<div class="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 text-xs">
+														<span class="w-5 text-slate-500">{idx + 1}.</span>
+														<span class="flex-1 truncate">{destinationName}</span>
+														<button type="button" class="px-1 text-slate-500 disabled:opacity-30" disabled={idx === 0} on:click={() => moveSweepRule(account.id, rule.id, -1)}>↑</button>
+														<button type="button" class="px-1 text-slate-500 disabled:opacity-30" disabled={idx === fundingSelectedSweepRules.length - 1} on:click={() => moveSweepRule(account.id, rule.id, 1)}>↓</button>
+														<button type="button" class="px-1 text-rose-600" on:click={() => removeSweepRule(rule.id)}>✕</button>
+													</div>
+												{/each}
+											</div>
+											<div class="mt-2 flex items-center gap-2">
+												<select
+													class="flex-1 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+													value={fundingAddDestinationBySource[account.id] ?? ''}
+													on:change={(event) => {
+														const selectedDestination = (event.currentTarget as HTMLSelectElement).value;
+														fundingAddDestinationBySource = {
+															...fundingAddDestinationBySource,
+															[account.id]: selectedDestination
+														};
+														if (selectedDestination) {
+															void addSweepRuleForSource(account.id, selectedDestination);
+														}
+													}}
+												>
+													<option value="">Add destination…</option>
+													{#each fundingSelectedSweepDestinationOptions as option}
+														<option value={option.id}>{option.name}</option>
+													{/each}
+												</select>
+											</div>
+										</div>
+									</div>
+								</div>
+							{/if}
+							{#if fundingTabError}
+								<div class="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+									{fundingTabError}
+								</div>
+							{/if}
+						{/if}
+					</div>
+				{/if}
+		</div>
+		</div>
+		<div class="space-y-4">
+			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+				<h3 class="text-sm font-semibold text-slate-900">Funding Planner</h3>
+				<div
+					class={`mt-3 rounded-lg border px-3 py-2 text-sm ${
+						projectionData.planner?.status === 'needs_attention'
+							? 'border-amber-200 bg-amber-50 text-amber-800'
+							: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+					}`}
+				>
+					{projectionData.planner?.headline ?? 'On track: no cash account is projected to fall below $0.'}
+				</div>
+				{#if plannerFirstShortfall}
+					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+						<div class="font-semibold">
+							Auto-fund {plannerFirstShortfall.targetAccountName} from {plannerFirstShortfall.monthLabel} from which account...
+						</div>
+						{#if (plannerExistingRules?.length ?? 0) > 0}
+							<div class="mt-2 space-y-1 text-xs">
+								{#each plannerExistingRules ?? [] as rule}
+									{@const sourceAccountName =
+										accountsList.find((account) => account.id === rule.source_account_id)?.name ??
+										'Source account'}
+									<div class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1">
+										<span>Priority {rule.priority_order}: {sourceAccountName}</span>
+										<button
+											type="button"
+											class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+											on:click={() => removeAutoFundingRule(rule.id)}
+										>
+											Remove
+										</button>
+									</div>
+								{/each}
+							</div>
+						{/if}
+						<div class="mt-2 block text-xs text-slate-600">
+							<select
+								class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={plannerSourceAccountId}
+								on:change={(event) =>
+									(plannerSourceAccountId = (event.currentTarget as HTMLSelectElement).value)}
+							>
+								{#if plannerSourceOptions.length === 0}
+									<option value="">No valid funding accounts</option>
+								{:else}
+									<option value="">Add next funding account...</option>
+									{#each plannerSourceOptions as option}
+										<option value={option.id}>{option.name}</option>
+									{/each}
+								{/if}
+							</select>
+						</div>
+						{#if plannerSourceAvailabilityWarning}
+							<div class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+								{plannerSourceAvailabilityWarning}
+							</div>
+						{/if}
+						<div class="mt-2">
+							<button
+								type="button"
+								class="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={!plannerSourceAccountId || plannerSourceOptions.length === 0}
+								on:click={saveAutoFundingRule}
+							>
+								Add Funding Account
+							</button>
+						</div>
+						{#if autoFundingRuleError}
+							<div class="mt-2 text-xs text-rose-600">{autoFundingRuleError}</div>
+						{/if}
+					</div>
+				{/if}
+				{#if !plannerRequiresAutofundStage}
+					<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+						<div class="font-semibold">Reserve and cap settings</div>
+						<label class="mt-2 block text-xs text-slate-600">
+							<span class="mb-1 block text-slate-500">Manage account</span>
+							<select
+								class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+								value={plannerManagedAccountId}
+								on:change={(event) => {
+									plannerManagedAccountId = (event.currentTarget as HTMLSelectElement).value;
+									accountBalanceTargetError = '';
+									autoSweepRuleError = '';
+								}}
+							>
+								{#if plannerManagedAccountOptions.length === 0}
+									<option value="">No eligible accounts</option>
+								{:else}
+									{#each plannerManagedAccountOptions as option}
+										<option value={option.id}>{option.name}</option>
+									{/each}
+								{/if}
+							</select>
+						</label>
+						<div class="mt-2 grid grid-cols-2 gap-2 text-xs">
+							<label class="block text-slate-600">
+								<span class="mb-1 block text-slate-500">Reserve (minimum)</span>
+								<input
+									type="number"
+									class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={plannerManagedMinBalance}
+									on:input={(event) =>
+										(plannerManagedMinBalance = (event.currentTarget as HTMLInputElement).value)}
+								/>
+							</label>
+							<label class="block text-slate-600">
+								<span class="mb-1 block text-slate-500">Cap (blank = no cap)</span>
+								<input
+									type="number"
+									class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={plannerManagedMaxBalance}
+									on:input={(event) =>
+										(plannerManagedMaxBalance = (event.currentTarget as HTMLInputElement).value)}
+								/>
+							</label>
+						</div>
+						<div class="mt-2">
+							<button
+								type="button"
+								class="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+								disabled={!plannerManagedAccountId}
+								on:click={saveAccountBalanceTarget}
+							>
+								Save Reserve/Cap
+							</button>
+						</div>
+						{#if accountBalanceTargetError}
+							<div class="mt-2 text-xs text-rose-600">{accountBalanceTargetError}</div>
+						{/if}
+						<div class="mt-4 border-t border-slate-200 pt-3">
+							<div class="font-semibold">Auto-sweep priorities</div>
+							{#if (plannerExistingSweepRules?.length ?? 0) > 0}
+								<div class="mt-2 space-y-1 text-xs">
+									{#each plannerExistingSweepRules ?? [] as rule}
+										{@const destinationAccountName =
+											accountsList.find((account) => account.id === rule.destination_account_id)?.name ??
+											'Destination account'}
+										<div class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1">
+											<span>Priority {rule.priority_order}: {destinationAccountName}</span>
+											<button
+												type="button"
+												class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
+												on:click={() => removeAutoSweepRule(rule.id)}
+											>
+												Remove
+											</button>
+										</div>
+									{/each}
+								</div>
+							{/if}
+							<label class="mt-2 block text-xs text-slate-600">
+								<span class="mb-1 block text-slate-500">Add sweep destination</span>
+								<select
+									class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+									value={plannerSweepDestinationAccountId}
+									on:change={(event) =>
+										(plannerSweepDestinationAccountId = (event.currentTarget as HTMLSelectElement).value)}
+								>
+									{#if plannerSweepDestinationOptions.length === 0}
+										<option value="">No destination accounts available</option>
+									{:else}
+										{#each plannerSweepDestinationOptions as option}
+											<option value={option.id}>{option.name}</option>
+										{/each}
+									{/if}
+								</select>
+							</label>
+							<div class="mt-2">
+								<button
+									type="button"
+									class="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+									disabled={!plannerManagedAccountId || !plannerSweepDestinationAccountId}
+									on:click={saveAutoSweepRule}
+								>
+									Add Sweep Destination
+								</button>
+							</div>
+							{#if autoSweepRuleError}
+								<div class="mt-2 text-xs text-rose-600">{autoSweepRuleError}</div>
+							{/if}
+						</div>
+					</div>
+				{/if}
+			</div>
+			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+				<h3 class="text-sm font-semibold text-slate-900">Events</h3>
+				{#if (projectionData.events?.length ?? 0) > 0}
+					<div class="mt-3 space-y-2">
+						{#each projectionData.events as event}
+							<div
+								class={`rounded-lg border px-3 py-2 text-sm ${
+									event.tone === 'negative'
+										? 'border-rose-200 bg-rose-50 text-rose-700'
+										: 'border-emerald-200 bg-emerald-50 text-emerald-700'
+								}`}
+							>
+								{event.monthLabel ? `${event.monthLabel}: ${event.message}` : event.message}
+							</div>
+						{/each}
+					</div>
+				{:else}
+					<div class="mt-3 text-sm text-slate-600">No events for this projection.</div>
 				{/if}
 			</div>
 		</div>
 	</div>
 </section>
+
 
 {#if deleteConfirmId}
 	<div class="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 px-4">
@@ -5044,3 +6175,7 @@ const updateMortgageDetails = async (
 		-moz-appearance: textfield;
 	}
 </style>
+
+
+
+

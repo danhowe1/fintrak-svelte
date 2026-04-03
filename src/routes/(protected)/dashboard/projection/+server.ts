@@ -2,6 +2,9 @@ import { json, redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
 	getAccountsForScenario,
+	getAccountBalanceTargetsForScenario,
+	getAutoFundingRulesForScenario,
+	getAutoSweepRulesForScenario,
 	getAssetAccountsForScenario,
 	getAssetsForScenario,
 	getCashflowsForScenario,
@@ -56,11 +59,15 @@ export const GET: RequestHandler = async (event) => {
 	const projectionMonths = projectionMonthsForRange(projectionRange);
 	const inflationRate = parseRate(event.cookies.get('inflationRate'), 2.0);
 
-	const [cashflows, accounts, assets, assetAccounts] = await Promise.all([
+	const [cashflows, accounts, assets, assetAccounts, autoFundingRules, accountBalanceTargets, autoSweepRules] =
+		await Promise.all([
 		getCashflowsForScenario(scenario.id),
 		getAccountsForScenario(scenario.id),
 		getAssetsForScenario(scenario.id),
-		getAssetAccountsForScenario(scenario.id)
+		getAssetAccountsForScenario(scenario.id),
+		getAutoFundingRulesForScenario(scenario.id),
+		getAccountBalanceTargetsForScenario(scenario.id),
+		getAutoSweepRulesForScenario(scenario.id)
 	]);
 	const includeCashflows = event.url.searchParams.get('includeCashflows') === 'true';
 
@@ -71,11 +78,17 @@ export const GET: RequestHandler = async (event) => {
 		cashflows,
 		accounts,
 		assets,
-		assetAccounts
+		assetAccounts,
+		autoFundingRules,
+		accountBalanceTargets,
+		autoSweepRules
 	});
 
 	return json({
 		projection,
+		autoFundingRules,
+		accountBalanceTargets,
+		autoSweepRules,
 		...(includeCashflows ? { cashflows } : {}),
 		projectionRange,
 		sessionRates: {

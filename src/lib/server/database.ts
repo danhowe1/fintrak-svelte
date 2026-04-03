@@ -586,6 +586,414 @@ export type AssetAccountLink = {
 	relationship_role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
 };
 
+export type AutoFundingRule = {
+	id: string;
+	scenario_id: string;
+	source_account_id: string;
+	target_account_id: string;
+	priority_order: number;
+	enabled: boolean;
+	min_target_balance: number;
+	created_at: string;
+	updated_at: string;
+};
+
+export type AccountBalanceTarget = {
+	id: string;
+	scenario_id: string;
+	account_id: string;
+	min_balance: number;
+	max_balance: number | null;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+};
+
+export type AutoSweepRule = {
+	id: string;
+	scenario_id: string;
+	source_account_id: string;
+	destination_account_id: string;
+	priority_order: number;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+};
+
+export async function getAutoFundingRulesForScenario(scenarioId: string) {
+	const result = await getPool().query<AutoFundingRule>(
+		`
+			select
+				id,
+				scenario_id,
+				source_account_id,
+				target_account_id,
+				priority_order,
+				enabled,
+				min_target_balance::double precision as min_target_balance,
+				created_at,
+				updated_at
+			from auto_funding_rules
+			where scenario_id = $1::uuid
+			order by target_account_id asc, priority_order asc, created_at asc
+		`,
+		[scenarioId]
+	);
+
+	return result.rows;
+}
+
+export async function getAccountBalanceTargetsForScenario(scenarioId: string) {
+	const result = await getPool().query<AccountBalanceTarget>(
+		`
+			select
+				id,
+				scenario_id,
+				account_id,
+				min_balance::double precision as min_balance,
+				max_balance::double precision as max_balance,
+				enabled,
+				created_at,
+				updated_at
+			from account_balance_targets
+			where scenario_id = $1::uuid
+			order by created_at asc
+		`,
+		[scenarioId]
+	);
+
+	return result.rows;
+}
+
+export async function upsertAccountBalanceTarget(input: {
+	scenarioId: string;
+	accountId: string;
+	minBalance: number;
+	maxBalance?: number | null;
+	enabled?: boolean;
+}) {
+	const result = await getPool().query<AccountBalanceTarget>(
+		`
+			insert into account_balance_targets (
+				scenario_id,
+				account_id,
+				min_balance,
+				max_balance,
+				enabled
+			)
+			values (
+				$1::uuid,
+				$2::uuid,
+				$3::numeric,
+				$4::numeric,
+				$5::boolean
+			)
+			on conflict (scenario_id, account_id)
+			do update
+			set min_balance = excluded.min_balance,
+				max_balance = excluded.max_balance,
+				enabled = excluded.enabled
+			returning
+				id,
+				scenario_id,
+				account_id,
+				min_balance::double precision as min_balance,
+				max_balance::double precision as max_balance,
+				enabled,
+				created_at,
+				updated_at
+		`,
+		[
+			input.scenarioId,
+			input.accountId,
+			input.minBalance,
+			input.maxBalance ?? null,
+			input.enabled ?? true
+		]
+	);
+
+	return result.rows[0] ?? null;
+}
+
+export async function deleteAccountBalanceTarget(scenarioId: string, accountId: string) {
+	await getPool().query(
+		`
+			delete from account_balance_targets
+			where scenario_id = $1::uuid
+			  and account_id = $2::uuid
+		`,
+		[scenarioId, accountId]
+	);
+}
+
+export async function getAutoSweepRulesForScenario(scenarioId: string) {
+	const result = await getPool().query<AutoSweepRule>(
+		`
+			select
+				id,
+				scenario_id,
+				source_account_id,
+				destination_account_id,
+				priority_order,
+				enabled,
+				created_at,
+				updated_at
+			from auto_sweep_rules
+			where scenario_id = $1::uuid
+			order by source_account_id asc, priority_order asc, created_at asc
+		`,
+		[scenarioId]
+	);
+
+	return result.rows;
+}
+
+export async function createAutoFundingRule(input: {
+	scenarioId: string;
+	sourceAccountId: string;
+	targetAccountId: string;
+	priorityOrder?: number;
+	enabled?: boolean;
+	minTargetBalance?: number;
+}) {
+	const nextPriorityOrder =
+		input.priorityOrder ??
+		(
+			await getPool().query<{ max_priority_order: number | null }>(
+				`
+					select max(priority_order)::int as max_priority_order
+					from auto_funding_rules
+					where scenario_id = $1::uuid
+					  and target_account_id = $2::uuid
+				`,
+				[input.scenarioId, input.targetAccountId]
+			)
+		).rows[0]?.max_priority_order ?? 0;
+
+	const result = await getPool().query<AutoFundingRule>(
+		`
+			insert into auto_funding_rules (
+				scenario_id,
+				source_account_id,
+				target_account_id,
+				priority_order,
+				enabled,
+				min_target_balance
+			)
+			values (
+				$1::uuid,
+				$2::uuid,
+				$3::uuid,
+				$4::int,
+				$5::boolean,
+				$6::numeric
+			)
+			on conflict (scenario_id, target_account_id, source_account_id)
+			do update
+			set enabled = excluded.enabled,
+				min_target_balance = excluded.min_target_balance
+			returning
+				id,
+				scenario_id,
+				source_account_id,
+				target_account_id,
+				priority_order,
+				enabled,
+				min_target_balance::double precision as min_target_balance,
+				created_at,
+				updated_at
+		`,
+		[
+			input.scenarioId,
+			input.sourceAccountId,
+			input.targetAccountId,
+			nextPriorityOrder + (input.priorityOrder ? 0 : 1),
+			input.enabled ?? true,
+			input.minTargetBalance ?? 0
+		]
+	);
+
+	return result.rows[0] ?? null;
+}
+
+export async function createAutoSweepRule(input: {
+	scenarioId: string;
+	sourceAccountId: string;
+	destinationAccountId: string;
+	priorityOrder?: number;
+	enabled?: boolean;
+}) {
+	const nextPriorityOrder =
+		input.priorityOrder ??
+		(
+			await getPool().query<{ max_priority_order: number | null }>(
+				`
+					select max(priority_order)::int as max_priority_order
+					from auto_sweep_rules
+					where scenario_id = $1::uuid
+					  and source_account_id = $2::uuid
+				`,
+				[input.scenarioId, input.sourceAccountId]
+			)
+		).rows[0]?.max_priority_order ?? 0;
+
+	const result = await getPool().query<AutoSweepRule>(
+		`
+			insert into auto_sweep_rules (
+				scenario_id,
+				source_account_id,
+				destination_account_id,
+				priority_order,
+				enabled
+			)
+			values (
+				$1::uuid,
+				$2::uuid,
+				$3::uuid,
+				$4::int,
+				$5::boolean
+			)
+			on conflict (scenario_id, source_account_id, destination_account_id)
+			do update
+			set enabled = excluded.enabled
+			returning
+				id,
+				scenario_id,
+				source_account_id,
+				destination_account_id,
+				priority_order,
+				enabled,
+				created_at,
+				updated_at
+		`,
+		[
+			input.scenarioId,
+			input.sourceAccountId,
+			input.destinationAccountId,
+			nextPriorityOrder + (input.priorityOrder ? 0 : 1),
+			input.enabled ?? true
+		]
+	);
+
+	return result.rows[0] ?? null;
+}
+
+export async function deleteAutoFundingRule(scenarioId: string, ruleId: string) {
+	await getPool().query(
+		`
+			delete from auto_funding_rules
+			where scenario_id = $1::uuid
+			  and id = $2::uuid
+		`,
+		[scenarioId, ruleId]
+	);
+}
+
+export async function deleteAutoSweepRule(scenarioId: string, ruleId: string) {
+	await getPool().query(
+		`
+			delete from auto_sweep_rules
+			where scenario_id = $1::uuid
+			  and id = $2::uuid
+		`,
+		[scenarioId, ruleId]
+	);
+}
+
+export async function reorderAutoFundingRules(
+	scenarioId: string,
+	targetAccountId: string,
+	ruleIdsInOrder: string[]
+) {
+	if (ruleIdsInOrder.length === 0) return;
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+		const result = await client.query<{ id: string }>(
+			`
+				select id
+				from auto_funding_rules
+				where scenario_id = $1::uuid
+				  and target_account_id = $2::uuid
+				order by priority_order asc, created_at asc
+			`,
+			[scenarioId, targetAccountId]
+		);
+		const existingIds = result.rows.map((row) => row.id);
+		if (
+			existingIds.length !== ruleIdsInOrder.length ||
+			existingIds.some((id) => !ruleIdsInOrder.includes(id))
+		) {
+			throw new Error('Invalid rule ordering payload.');
+		}
+		for (let index = 0; index < ruleIdsInOrder.length; index += 1) {
+			await client.query(
+				`
+					update auto_funding_rules
+					set priority_order = $4::int
+					where scenario_id = $1::uuid
+					  and target_account_id = $2::uuid
+					  and id = $3::uuid
+				`,
+				[scenarioId, targetAccountId, ruleIdsInOrder[index], index + 1]
+			);
+		}
+		await client.query('commit');
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
+export async function reorderAutoSweepRules(
+	scenarioId: string,
+	sourceAccountId: string,
+	ruleIdsInOrder: string[]
+) {
+	if (ruleIdsInOrder.length === 0) return;
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+		const result = await client.query<{ id: string }>(
+			`
+				select id
+				from auto_sweep_rules
+				where scenario_id = $1::uuid
+				  and source_account_id = $2::uuid
+				order by priority_order asc, created_at asc
+			`,
+			[scenarioId, sourceAccountId]
+		);
+		const existingIds = result.rows.map((row) => row.id);
+		if (
+			existingIds.length !== ruleIdsInOrder.length ||
+			existingIds.some((id) => !ruleIdsInOrder.includes(id))
+		) {
+			throw new Error('Invalid rule ordering payload.');
+		}
+		for (let index = 0; index < ruleIdsInOrder.length; index += 1) {
+			await client.query(
+				`
+					update auto_sweep_rules
+					set priority_order = $4::int
+					where scenario_id = $1::uuid
+					  and source_account_id = $2::uuid
+					  and id = $3::uuid
+				`,
+				[scenarioId, sourceAccountId, ruleIdsInOrder[index], index + 1]
+			);
+		}
+		await client.query('commit');
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
+}
+
 export async function getAssetAccountsForScenario(scenarioId: string) {
 	const result = await getPool().query<AssetAccountLink>(
 		`

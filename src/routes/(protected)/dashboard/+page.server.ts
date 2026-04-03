@@ -19,7 +19,18 @@ import {
 	updateAccountInterestRate,
 	updateAccountDetails,
 	updateMortgageDetails,
-	getOrCreateHeldInAssetAccount
+	getOrCreateHeldInAssetAccount,
+	getAutoFundingRulesForScenario,
+	createAutoFundingRule,
+	deleteAutoFundingRule,
+	getAccountBalanceTargetsForScenario,
+	upsertAccountBalanceTarget,
+	deleteAccountBalanceTarget,
+	getAutoSweepRulesForScenario,
+	createAutoSweepRule,
+	deleteAutoSweepRule,
+	reorderAutoFundingRules,
+	reorderAutoSweepRules
 } from '$lib/server/database';
 import { buildProjection } from '$lib/server/projection';
 import { parseYearMonthInput } from '$lib/yearMonth';
@@ -60,10 +71,14 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const cashflows = await getCashflowsForScenario(scenario.id);
-	const [accounts, assets, assetAccounts] = await Promise.all([
+	const [accounts, assets, assetAccounts, autoFundingRules, accountBalanceTargets, autoSweepRules] =
+		await Promise.all([
 		getAccountsForScenario(scenario.id),
 		getAssetsForScenario(scenario.id),
-		getAssetAccountsForScenario(scenario.id)
+		getAssetAccountsForScenario(scenario.id),
+		getAutoFundingRulesForScenario(scenario.id),
+		getAccountBalanceTargetsForScenario(scenario.id),
+		getAutoSweepRulesForScenario(scenario.id)
 	]);
 
 	const projectionRangeParam = event.url.searchParams.get('projectionRange');
@@ -108,7 +123,10 @@ export const load: PageServerLoad = async (event) => {
 		cashflows,
 		accounts,
 		assets,
-		assetAccounts
+		assetAccounts,
+		autoFundingRules,
+		accountBalanceTargets,
+		autoSweepRules
 	});
 
 	return {
@@ -117,6 +135,9 @@ export const load: PageServerLoad = async (event) => {
 		assets,
 		accounts,
 		assetAccounts,
+		autoFundingRules,
+		accountBalanceTargets,
+		autoSweepRules,
 		projection,
 		projectionRange,
 		sessionRates: parentData.sessionRates
@@ -156,6 +177,301 @@ export const actions: Actions = {
 		});
 
 		return { success: true };
+	},
+	upsertAutoFundingRule: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const sourceAccountId = String(formData.get('sourceAccountId') ?? '');
+		const targetAccountId = String(formData.get('targetAccountId') ?? '');
+
+		if (
+			!scenarioId ||
+			!sourceAccountId ||
+			!targetAccountId ||
+			sourceAccountId === targetAccountId
+		) {
+			return fail(400, { error: 'Invalid auto-funding rule input.' });
+		}
+
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+
+		const accounts = await getAccountsForScenario(scenarioId);
+		const sourceAccount = accounts.find((account) => account.id === sourceAccountId);
+		const targetAccount = accounts.find((account) => account.id === targetAccountId);
+		const [assetAccounts, assets] = await Promise.all([
+			getAssetAccountsForScenario(scenarioId),
+			getAssetsForScenario(scenarioId)
+		]);
+		const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+		const shareAssetByAccountId = new Map<string, string>();
+		for (const link of assetAccounts) {
+			if (link.relationship_role !== 'held_in') continue;
+			const linkedAsset = assetsById.get(link.asset_id);
+			if (!linkedAsset || linkedAsset.asset_type !== 'shares') continue;
+			if (!shareAssetByAccountId.has(link.account_id)) {
+				shareAssetByAccountId.set(link.account_id, link.asset_id);
+			}
+		}
+		const superAssetByAccountId = new Map<string, string>();
+		for (const link of assetAccounts) {
+			if (link.relationship_role !== 'held_in') continue;
+			const linkedAsset = assetsById.get(link.asset_id);
+			if (!linkedAsset || linkedAsset.asset_type !== 'superannuation') continue;
+			if (!superAssetByAccountId.has(link.account_id)) {
+				superAssetByAccountId.set(link.account_id, link.asset_id);
+			}
+		}
+		const isAllowedAutoFundingSource = (accountId: string, accountType: string | undefined) =>
+			accountType === 'cash_account' ||
+			(accountType === 'brokerage' && shareAssetByAccountId.has(accountId)) ||
+			(accountType === 'super_account' && superAssetByAccountId.has(accountId));
+		if (
+			!sourceAccount ||
+			!targetAccount ||
+			!isAllowedAutoFundingSource(sourceAccountId, sourceAccount.account_type) ||
+			targetAccount.account_type !== 'cash_account'
+		) {
+			return fail(400, {
+				error:
+					'Auto-funding source must be a cash account, shares brokerage account, or eligible super account. Target must be a cash account.'
+			});
+		}
+
+		await createAutoFundingRule({
+			scenarioId,
+			sourceAccountId,
+			targetAccountId,
+			enabled: true,
+			minTargetBalance: 0
+		});
+
+		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
+		return { success: true, autoFundingRules };
+	},
+	deleteAutoFundingRule: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const ruleId = String(formData.get('ruleId') ?? '');
+		if (!scenarioId || !ruleId) {
+			return fail(400, { error: 'Invalid auto-funding rule input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await deleteAutoFundingRule(scenarioId, ruleId);
+		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
+		return { success: true, autoFundingRules };
+	},
+	updateAccountBalanceTarget: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const accountId = String(formData.get('accountId') ?? '');
+		const minBalanceRaw = Number(formData.get('minBalance'));
+		const maxBalanceRaw = String(formData.get('maxBalance') ?? '').trim();
+		const maxBalance = maxBalanceRaw.length > 0 ? Number(maxBalanceRaw) : null;
+		if (
+			!scenarioId ||
+			!accountId ||
+			!Number.isFinite(minBalanceRaw) ||
+			minBalanceRaw < 0 ||
+			(maxBalance !== null && (!Number.isFinite(maxBalance) || maxBalance < 0))
+		) {
+			return fail(400, { error: 'Invalid balance target input.' });
+		}
+		if (maxBalance !== null && maxBalance < minBalanceRaw) {
+			return fail(400, { error: 'Cap must be greater than or equal to reserve.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		const accounts = await getAccountsForScenario(scenarioId);
+		if (!accounts.some((account) => account.id === accountId)) {
+			return fail(400, { error: 'Account not found in this scenario.' });
+		}
+		await upsertAccountBalanceTarget({
+			scenarioId,
+			accountId,
+			minBalance: Math.round(minBalanceRaw * 100) / 100,
+			maxBalance: maxBalance === null ? null : Math.round(maxBalance * 100) / 100,
+			enabled: true
+		});
+		const accountBalanceTargets = await getAccountBalanceTargetsForScenario(scenarioId);
+		return { success: true, accountBalanceTargets };
+	},
+	deleteAccountBalanceTarget: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const accountId = String(formData.get('accountId') ?? '');
+		if (!scenarioId || !accountId) {
+			return fail(400, { error: 'Invalid balance target input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await deleteAccountBalanceTarget(scenarioId, accountId);
+		const accountBalanceTargets = await getAccountBalanceTargetsForScenario(scenarioId);
+		return { success: true, accountBalanceTargets };
+	},
+	upsertAutoSweepRule: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const sourceAccountId = String(formData.get('sourceAccountId') ?? '');
+		const destinationAccountId = String(formData.get('destinationAccountId') ?? '');
+		if (
+			!scenarioId ||
+			!sourceAccountId ||
+			!destinationAccountId ||
+			sourceAccountId === destinationAccountId
+		) {
+			return fail(400, { error: 'Invalid auto-sweep rule input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		const [accounts, assetAccounts, assets] = await Promise.all([
+			getAccountsForScenario(scenarioId),
+			getAssetAccountsForScenario(scenarioId),
+			getAssetsForScenario(scenarioId)
+		]);
+		const accountsById = new Map(accounts.map((account) => [account.id, account]));
+		const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
+		const shareAssetByAccountId = new Map<string, string>();
+		for (const link of assetAccounts) {
+			if (link.relationship_role !== 'held_in') continue;
+			const linkedAsset = assetsById.get(link.asset_id);
+			if (!linkedAsset || linkedAsset.asset_type !== 'shares') continue;
+			if (!shareAssetByAccountId.has(link.account_id)) {
+				shareAssetByAccountId.set(link.account_id, link.asset_id);
+			}
+		}
+		const superAssetByAccountId = new Map<string, string>();
+		for (const link of assetAccounts) {
+			if (link.relationship_role !== 'held_in') continue;
+			const linkedAsset = assetsById.get(link.asset_id);
+			if (!linkedAsset || linkedAsset.asset_type !== 'superannuation') continue;
+			if (!superAssetByAccountId.has(link.account_id)) {
+				superAssetByAccountId.set(link.account_id, link.asset_id);
+			}
+		}
+		const isAllowedSweepAccount = (accountId: string, accountType: string | undefined) =>
+			accountType === 'cash_account' ||
+			(accountType === 'brokerage' && shareAssetByAccountId.has(accountId)) ||
+			(accountType === 'super_account' && superAssetByAccountId.has(accountId));
+		const sourceAccount = accountsById.get(sourceAccountId);
+		const destinationAccount = accountsById.get(destinationAccountId);
+		if (
+			!sourceAccount ||
+			!destinationAccount ||
+			!isAllowedSweepAccount(sourceAccountId, sourceAccount.account_type) ||
+			!isAllowedSweepAccount(destinationAccountId, destinationAccount.account_type)
+		) {
+			return fail(400, {
+				error:
+					'Auto-sweep accounts must be cash accounts, shares brokerage accounts, or eligible super accounts.'
+			});
+		}
+		await createAutoSweepRule({
+			scenarioId,
+			sourceAccountId,
+			destinationAccountId,
+			enabled: true
+		});
+		const autoSweepRules = await getAutoSweepRulesForScenario(scenarioId);
+		return { success: true, autoSweepRules };
+	},
+	reorderAutoFundingRules: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const targetAccountId = String(formData.get('targetAccountId') ?? '');
+		const ruleIdsCsv = String(formData.get('ruleIds') ?? '');
+		const ruleIds = ruleIdsCsv
+			.split(',')
+			.map((value) => value.trim())
+			.filter((value) => value.length > 0);
+		if (!scenarioId || !targetAccountId || ruleIds.length === 0) {
+			return fail(400, { error: 'Invalid auto-funding reorder input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await reorderAutoFundingRules(scenarioId, targetAccountId, ruleIds);
+		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
+		return { success: true, autoFundingRules };
+	},
+	reorderAutoSweepRules: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const sourceAccountId = String(formData.get('sourceAccountId') ?? '');
+		const ruleIdsCsv = String(formData.get('ruleIds') ?? '');
+		const ruleIds = ruleIdsCsv
+			.split(',')
+			.map((value) => value.trim())
+			.filter((value) => value.length > 0);
+		if (!scenarioId || !sourceAccountId || ruleIds.length === 0) {
+			return fail(400, { error: 'Invalid auto-sweep reorder input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await reorderAutoSweepRules(scenarioId, sourceAccountId, ruleIds);
+		const autoSweepRules = await getAutoSweepRulesForScenario(scenarioId);
+		return { success: true, autoSweepRules };
+	},
+	deleteAutoSweepRule: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const ruleId = String(formData.get('ruleId') ?? '');
+		if (!scenarioId || !ruleId) {
+			return fail(400, { error: 'Invalid auto-sweep rule input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await deleteAutoSweepRule(scenarioId, ruleId);
+		const autoSweepRules = await getAutoSweepRulesForScenario(scenarioId);
+		return { success: true, autoSweepRules };
 	},
 	updateRetirementAge: async (event) => {
 		const userId = event.locals.appUserId;

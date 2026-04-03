@@ -67,8 +67,26 @@ export type ProjectionResult = {
 	transactions: ProjectionTransaction[];
 	accounts: AccountBalanceSeries[];
 	assets: AssetValueSeries[];
+	planner: {
+		status: 'on_track' | 'needs_attention';
+		headline: string;
+		firstShortfall: {
+			targetAccountId: string;
+			targetAccountName: string;
+			minBalance: number;
+			startDate: number;
+			monthLabel: string;
+			availableSourceAccounts: {
+				accountId: string;
+				accountName: string;
+				availableNow: boolean;
+				availableFromDate: number | null;
+			}[];
+		} | null;
+	};
 	events: {
 		tone: 'negative' | 'positive';
+		monthLabel: string | null;
 		message: string;
 	}[];
 };
@@ -125,6 +143,30 @@ type ProjectionAssetAccount = {
 	asset_id: string;
 	account_id: string;
 	relationship_role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+};
+
+type ProjectionAutoFundingRule = {
+	id: string;
+	source_account_id: string;
+	target_account_id: string;
+	priority_order: number;
+	enabled: boolean;
+	min_target_balance: number;
+};
+
+type ProjectionAccountBalanceTarget = {
+	account_id: string;
+	min_balance: number;
+	max_balance: number | null;
+	enabled: boolean;
+};
+
+type ProjectionAutoSweepRule = {
+	id: string;
+	source_account_id: string;
+	destination_account_id: string;
+	priority_order: number;
+	enabled: boolean;
 };
 
 const parseYearMonth = (value?: unknown): YearMonth | null => {
@@ -197,6 +239,12 @@ const getFrequencyInterval = (frequency: ProjectionCashflow['frequency']) => {
 	}
 };
 
+const maxYearMonth = (left: YearMonth | null, right: YearMonth | null): YearMonth | null => {
+	if (!left) return right;
+	if (!right) return left;
+	return yearMonthIndex(left) >= yearMonthIndex(right) ? left : right;
+};
+
 export const buildProjection = (input: {
 	inflationRate?: number | null;
 	projectionRange?: '1y' | '5y' | '10y' | 'all';
@@ -205,6 +253,9 @@ export const buildProjection = (input: {
 	accounts: ProjectionAccount[];
 	assets: ProjectionAsset[];
 	assetAccounts: ProjectionAssetAccount[];
+	autoFundingRules?: ProjectionAutoFundingRule[];
+	accountBalanceTargets?: ProjectionAccountBalanceTarget[];
+	autoSweepRules?: ProjectionAutoSweepRule[];
 }): ProjectionResult => {
 	const startYearMonth = (() => {
 		const candidates: YearMonth[] = [];
@@ -303,6 +354,51 @@ export const buildProjection = (input: {
 		.map((account) => account.id);
 	const insolventEventAccountIds = new Set<string>();
 	const blockedTransferSourceAccountIds = new Set<string>();
+	const blockedAutoFundingTargetIds = new Set<string>();
+	const blockedAutoSweepSourceIds = new Set<string>();
+	const recordedAutoFundingExecutionRuleIds = new Set<string>();
+	const recordedAutoSweepExecutionRuleIds = new Set<string>();
+	const autoFundingRules = (input.autoFundingRules ?? [])
+		.map((rule) => ({
+			id: rule.id,
+			sourceAccountId: rule.source_account_id,
+			targetAccountId: rule.target_account_id,
+			priorityOrder:
+				typeof rule.priority_order === 'number' && Number.isFinite(rule.priority_order)
+					? rule.priority_order
+					: Number.MAX_SAFE_INTEGER,
+			minTargetBalance:
+				typeof rule.min_target_balance === 'number' && Number.isFinite(rule.min_target_balance)
+					? rule.min_target_balance
+					: 0
+		}))
+		.sort((a, b) => a.targetAccountId.localeCompare(b.targetAccountId) || a.priorityOrder - b.priorityOrder);
+	const accountBalanceTargets = (input.accountBalanceTargets ?? [])
+		.map((target) => ({
+			accountId: target.account_id,
+			minBalance:
+				typeof target.min_balance === 'number' && Number.isFinite(target.min_balance)
+					? Math.max(0, target.min_balance)
+					: 0,
+			maxBalance:
+				typeof target.max_balance === 'number' && Number.isFinite(target.max_balance)
+					? Math.max(0, target.max_balance)
+					: null
+		}));
+	const accountBalanceTargetsByAccountId = new Map(
+		accountBalanceTargets.map((target) => [target.accountId, target])
+	);
+	const autoSweepRules = (input.autoSweepRules ?? [])
+		.map((rule) => ({
+			id: rule.id,
+			sourceAccountId: rule.source_account_id,
+			destinationAccountId: rule.destination_account_id,
+			priorityOrder:
+				typeof rule.priority_order === 'number' && Number.isFinite(rule.priority_order)
+					? rule.priority_order
+					: Number.MAX_SAFE_INTEGER
+		}))
+		.sort((a, b) => a.sourceAccountId.localeCompare(b.sourceAccountId) || a.priorityOrder - b.priorityOrder);
 
 	const cashflowMeta = input.cashflows.map((cashflow) => {
 		const start = parseYearMonth(cashflow.start_date);
@@ -391,7 +487,8 @@ export const buildProjection = (input: {
 		if (!mortgageAccount) return;
 		events.push({
 			tone: 'positive',
-			message: `Mortgage ${mortgageAccount.name} paid off on ${monthLabel}.`
+			monthLabel,
+			message: `Mortgage ${mortgageAccount.name} paid off.`
 		});
 		mortgagePaidOffEventAccountIds.add(mortgageAccountId);
 	};
@@ -616,6 +713,7 @@ export const buildProjection = (input: {
 			superByAccountId.set(superState.superAccountId, superAssetId);
 		}
 	}
+	let plannerFirstShortfall: ProjectionResult['planner']['firstShortfall'] = null;
 
 	for (let i = 0; i <= totalMonths; i += 1) {
 		const current = addMonthsToYearMonth(startYearMonth, i);
@@ -671,7 +769,8 @@ export const buildProjection = (input: {
 				description && description.trim().length > 0 ? ` (${description.trim()})` : '';
 			events.push({
 				tone: 'negative',
-				message: `Transfer from ${sourceAccountName} to ${destinationAccountName}${descriptionSuffix} skipped on ${monthLabel}: requested ${requestedAmount.toFixed(2)} but only ${availableAmount.toFixed(2)} available.`
+				monthLabel,
+				message: `Transfer from ${sourceAccountName} to ${destinationAccountName}${descriptionSuffix} skipped: requested ${requestedAmount.toFixed(2)} but only ${availableAmount.toFixed(2)} available.`
 			});
 			blockedTransferSourceAccountIds.add(sourceAccountId);
 		};
@@ -917,7 +1016,8 @@ export const buildProjection = (input: {
 						if (!superState.blockedWithdrawalEventRecorded) {
 							events.push({
 								tone: 'negative',
-								message: `Super ${superState.assetName} transfer blocked before preservation age on ${monthLabel}.`
+								monthLabel,
+								message: `Super ${superState.assetName} transfer blocked before preservation age.`
 							});
 							superState.blockedWithdrawalEventRecorded = true;
 						}
@@ -1059,7 +1159,8 @@ export const buildProjection = (input: {
 				if (currentIndex >= preservationIndex) {
 					events.push({
 						tone: 'positive',
-						message: `Super ${state.assetName} reaches preservation age on ${formatYearMonthLabel(state.preservationDate)}.`
+						monthLabel,
+						message: `Super ${state.assetName} reaches preservation age.`
 					});
 					state.preservationEventRecorded = true;
 				}
@@ -1148,7 +1249,8 @@ export const buildProjection = (input: {
 			}
 			events.push({
 				tone: 'positive',
-				message: `${property.assetName} sold on ${monthLabel} for ${formatEventCurrency(saleAmount)}.`
+				monthLabel,
+				message: `${property.assetName} sold for ${formatEventCurrency(saleAmount)}.`
 			});
 
 			const saleInflationFactor = Math.pow(1 + inflationRate / 100, yearsHeld);
@@ -1325,6 +1427,264 @@ export const buildProjection = (input: {
 			});
 		}
 
+		const autoFundingRulesByTarget = new Map<string, typeof autoFundingRules>();
+		for (const rule of autoFundingRules) {
+			const existing = autoFundingRulesByTarget.get(rule.targetAccountId) ?? [];
+			autoFundingRulesByTarget.set(rule.targetAccountId, [...existing, rule]);
+		}
+		for (const [targetAccountId, rules] of autoFundingRulesByTarget.entries()) {
+			const targetAccount = accountMap.get(targetAccountId);
+			if (!targetAccount) continue;
+			if (
+				targetAccount.startDate &&
+				monthsBetweenYearMonths(targetAccount.startDate, current) < 0
+			) {
+				continue;
+			}
+			const targetBalanceSettings = accountBalanceTargetsByAccountId.get(targetAccountId);
+			const minTargetBalance = Math.max(
+				targetBalanceSettings?.minBalance ?? 0,
+				...rules.map((rule) => (Number.isFinite(rule.minTargetBalance) ? rule.minTargetBalance : 0))
+			);
+			let remainingRequired = minTargetBalance - targetAccount.balance;
+			if (!Number.isFinite(remainingRequired) || remainingRequired <= 0) continue;
+
+			for (const rule of rules) {
+				if (remainingRequired <= 0) break;
+				const sourceAccount = accountMap.get(rule.sourceAccountId);
+				if (!sourceAccount) continue;
+				if (
+					sourceAccount.startDate &&
+					monthsBetweenYearMonths(sourceAccount.startDate, current) < 0
+				) {
+					continue;
+				}
+				let availableAmount = 0;
+				if (sourceAccount.type === 'cash_account') {
+					availableAmount = Math.max(0, sourceAccount.balance);
+				} else if (sourceAccount.type === 'brokerage') {
+					const shareAssetId = brokerageShareByAccountId.get(rule.sourceAccountId);
+					const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+					availableAmount = Math.max(0, shareState?.currentValue ?? 0);
+				} else if (sourceAccount.type === 'super_account') {
+					const superAssetId = superByAccountId.get(rule.sourceAccountId);
+					const superState = superAssetId ? superStates.get(superAssetId) : null;
+					const preservationReached =
+						superState &&
+						(!superState.preservationDate ||
+							monthsBetweenYearMonths(superState.preservationDate, current) >= 0);
+					availableAmount = preservationReached ? Math.max(0, superState?.currentValue ?? 0) : 0;
+				}
+				if (availableAmount <= 0) continue;
+				const transferAmount = Math.min(remainingRequired, availableAmount);
+				pushTransaction(
+					rule.sourceAccountId,
+					-transferAmount,
+					'transfer',
+					'transfer',
+					`auto_funding:${rule.id}`,
+					'Auto-funding transfer'
+				);
+				pushTransaction(
+					targetAccountId,
+					transferAmount,
+					'transfer',
+					'transfer',
+					`auto_funding:${rule.id}`,
+					'Auto-funding transfer'
+				);
+				if (sourceAccount.type === 'brokerage') {
+					const shareAssetId = brokerageShareByAccountId.get(rule.sourceAccountId);
+					const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+					const brokerageAccount = accountMap.get(rule.sourceAccountId);
+					if (brokerageAccount) {
+						brokerageAccount.balance += transferAmount;
+					}
+					if (shareState) {
+						shareState.currentValue = Math.max(0, shareState.currentValue - transferAmount);
+					}
+				}
+				if (sourceAccount.type === 'super_account') {
+					const superAssetId = superByAccountId.get(rule.sourceAccountId);
+					const superState = superAssetId ? superStates.get(superAssetId) : null;
+					const superAccount = accountMap.get(rule.sourceAccountId);
+					if (superAccount) {
+						superAccount.balance += transferAmount;
+					}
+					if (superState) {
+						superState.currentValue = Math.max(0, superState.currentValue - transferAmount);
+					}
+				}
+				if (!recordedAutoFundingExecutionRuleIds.has(rule.id)) {
+					const reserveReason =
+						minTargetBalance > 0
+							? `reserve target ${formatEventCurrency(minTargetBalance)} was breached`
+							: 'balance fell below $0';
+					events.push({
+						tone: 'positive',
+						monthLabel,
+						message: `Auto-funding applied: ${formatEventCurrency(transferAmount)} moved from ${sourceAccount.name} to ${targetAccount.name} because ${reserveReason}.`
+					});
+					recordedAutoFundingExecutionRuleIds.add(rule.id);
+				}
+				remainingRequired -= transferAmount;
+			}
+
+			if (remainingRequired > 0.0000001 && !blockedAutoFundingTargetIds.has(targetAccountId)) {
+				events.push({
+					tone: 'negative',
+					monthLabel,
+					message: `Auto-funding to ${targetAccount.name} was short: still needed ${formatEventCurrency(remainingRequired)} after all funding accounts were tried.`
+				});
+				blockedAutoFundingTargetIds.add(targetAccountId);
+			}
+		}
+
+		const autoSweepRulesBySource = new Map<string, typeof autoSweepRules>();
+		for (const rule of autoSweepRules) {
+			const existing = autoSweepRulesBySource.get(rule.sourceAccountId) ?? [];
+			autoSweepRulesBySource.set(rule.sourceAccountId, [...existing, rule]);
+		}
+		for (const [sourceAccountId, rules] of autoSweepRulesBySource.entries()) {
+			const sourceAccount = accountMap.get(sourceAccountId);
+			if (!sourceAccount) continue;
+			if (
+				sourceAccount.startDate &&
+				monthsBetweenYearMonths(sourceAccount.startDate, current) < 0
+			) {
+				continue;
+			}
+
+			const sourceBalanceSettings = accountBalanceTargetsByAccountId.get(sourceAccountId);
+			const maxSourceBalance = sourceBalanceSettings?.maxBalance ?? null;
+			if (maxSourceBalance === null) continue;
+			let remainingExcess = sourceAccount.balance - maxSourceBalance;
+			if (!Number.isFinite(remainingExcess) || remainingExcess <= 0) continue;
+
+			for (const rule of rules) {
+				if (remainingExcess <= 0) break;
+				const destinationAccount = accountMap.get(rule.destinationAccountId);
+				if (!destinationAccount) continue;
+				if (
+					destinationAccount.startDate &&
+					monthsBetweenYearMonths(destinationAccount.startDate, current) < 0
+				) {
+					continue;
+				}
+
+				const destinationBalanceSettings = accountBalanceTargetsByAccountId.get(rule.destinationAccountId);
+				const maxDestinationBalance = destinationBalanceSettings?.maxBalance ?? null;
+				const destinationCapacity =
+					maxDestinationBalance === null
+						? Number.POSITIVE_INFINITY
+						: maxDestinationBalance - destinationAccount.balance;
+				if (destinationCapacity <= 0) continue;
+
+				let availableAmount = 0;
+				if (sourceAccount.type === 'cash_account') {
+					availableAmount = Math.max(0, sourceAccount.balance);
+				} else if (sourceAccount.type === 'brokerage') {
+					const shareAssetId = brokerageShareByAccountId.get(sourceAccountId);
+					const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+					availableAmount = Math.max(0, shareState?.currentValue ?? 0);
+				} else if (sourceAccount.type === 'super_account') {
+					const superAssetId = superByAccountId.get(sourceAccountId);
+					const superState = superAssetId ? superStates.get(superAssetId) : null;
+					const preservationReached =
+						superState &&
+						(!superState.preservationDate ||
+							monthsBetweenYearMonths(superState.preservationDate, current) >= 0);
+					availableAmount = preservationReached ? Math.max(0, superState?.currentValue ?? 0) : 0;
+				}
+				if (availableAmount <= 0) continue;
+				const transferAmount = Math.min(remainingExcess, availableAmount, destinationCapacity);
+				if (transferAmount <= 0) continue;
+
+				pushTransaction(
+					sourceAccountId,
+					-transferAmount,
+					'transfer',
+					'transfer',
+					`auto_sweep:${rule.id}`,
+					'Auto-sweep transfer'
+				);
+				pushTransaction(
+					rule.destinationAccountId,
+					transferAmount,
+					'transfer',
+					'transfer',
+					`auto_sweep:${rule.id}`,
+					'Auto-sweep transfer'
+				);
+
+				if (sourceAccount.type === 'brokerage') {
+					const shareAssetId = brokerageShareByAccountId.get(sourceAccountId);
+					const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+					const brokerageAccount = accountMap.get(sourceAccountId);
+					if (brokerageAccount) {
+						brokerageAccount.balance += transferAmount;
+					}
+					if (shareState) {
+						shareState.currentValue = Math.max(0, shareState.currentValue - transferAmount);
+					}
+				}
+				if (sourceAccount.type === 'super_account') {
+					const superAssetId = superByAccountId.get(sourceAccountId);
+					const superState = superAssetId ? superStates.get(superAssetId) : null;
+					const superAccount = accountMap.get(sourceAccountId);
+					if (superAccount) {
+						superAccount.balance += transferAmount;
+					}
+					if (superState) {
+						superState.currentValue = Math.max(0, superState.currentValue - transferAmount);
+					}
+				}
+
+				const destinationAccountType = destinationAccount.type;
+				if (destinationAccountType === 'brokerage') {
+					const shareAssetId = brokerageShareByAccountId.get(rule.destinationAccountId);
+					const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+					const brokerageAccount = accountMap.get(rule.destinationAccountId);
+					if (brokerageAccount) {
+						brokerageAccount.balance -= transferAmount;
+					}
+					if (shareState) {
+						shareState.currentValue += transferAmount;
+					}
+				}
+				if (destinationAccountType === 'super_account') {
+					const superAssetId = superByAccountId.get(rule.destinationAccountId);
+					const superState = superAssetId ? superStates.get(superAssetId) : null;
+					const superAccount = accountMap.get(rule.destinationAccountId);
+					if (superAccount) {
+						superAccount.balance -= transferAmount;
+					}
+					if (superState) {
+						superState.currentValue += transferAmount;
+					}
+				}
+				if (!recordedAutoSweepExecutionRuleIds.has(rule.id)) {
+					events.push({
+						tone: 'positive',
+						monthLabel,
+						message: `Auto-sweep applied: ${formatEventCurrency(transferAmount)} moved from ${sourceAccount.name} to ${destinationAccount.name} because cap ${formatEventCurrency(maxSourceBalance)} was exceeded.`
+					});
+					recordedAutoSweepExecutionRuleIds.add(rule.id);
+				}
+
+				remainingExcess -= transferAmount;
+			}
+
+			if (remainingExcess > 0.0000001 && !blockedAutoSweepSourceIds.has(sourceAccountId)) {
+				events.push({
+					tone: 'negative',
+					monthLabel,
+					message: `Auto-sweep from ${sourceAccount.name} was short: excess ${formatEventCurrency(remainingExcess)} could not be moved.`
+				});
+				blockedAutoSweepSourceIds.add(sourceAccountId);
+			}
+		}
+
 		for (const series of accountSeries) {
 			const accountInfo = accountMap.get(series.accountId);
 			series.points.push({
@@ -1393,10 +1753,91 @@ export const buildProjection = (input: {
 			const accountInfo = accountMap.get(accountId);
 			if (!accountInfo) continue;
 			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0) continue;
-			if (accountInfo.balance < 0) {
+			const targetBalanceSettings = accountBalanceTargetsByAccountId.get(accountId);
+			const minBalance = targetBalanceSettings?.minBalance ?? 0;
+			if (accountInfo.balance < minBalance) {
+				if (!plannerFirstShortfall) {
+					const availableSourceAccounts: {
+						accountId: string;
+						accountName: string;
+						availableNow: boolean;
+						availableFromDate: number | null;
+					}[] = [];
+					for (const [candidateId, candidateAccount] of accountMap.entries()) {
+						if (candidateId === accountId) continue;
+						const accountStarted =
+							!candidateAccount.startDate ||
+							monthsBetweenYearMonths(candidateAccount.startDate, current) >= 0;
+						let availableNow = false;
+						let availableFrom: YearMonth | null = candidateAccount.startDate ?? null;
+
+						if (candidateAccount.type === 'cash_account') {
+							availableNow = accountStarted && candidateAccount.balance > 0;
+							availableSourceAccounts.push({
+								accountId: candidateId,
+								accountName: candidateAccount.name,
+								availableNow,
+								availableFromDate: availableFrom ? toYearMonthInt(availableFrom) : null
+							});
+							continue;
+						}
+						if (candidateAccount.type === 'brokerage') {
+							const shareAssetId = brokerageShareByAccountId.get(candidateId);
+							const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+							if (!shareState) continue;
+							availableFrom = maxYearMonth(availableFrom, shareState.startDate);
+							const shareStarted =
+								!shareState.startDate || monthsBetweenYearMonths(shareState.startDate, current) >= 0;
+							availableNow =
+								accountStarted && shareStarted && (shareState.currentValue ?? 0) > 0;
+							availableSourceAccounts.push({
+								accountId: candidateId,
+								accountName: candidateAccount.name,
+								availableNow,
+								availableFromDate: availableFrom ? toYearMonthInt(availableFrom) : null
+							});
+							continue;
+						}
+						if (candidateAccount.type === 'super_account') {
+							const superAssetId = superByAccountId.get(candidateId);
+							const superState = superAssetId ? superStates.get(superAssetId) : null;
+							if (!superState) continue;
+							availableFrom = maxYearMonth(availableFrom, superState.startDate);
+							availableFrom = maxYearMonth(availableFrom, superState.preservationDate);
+							const superStarted =
+								!superState.startDate || monthsBetweenYearMonths(superState.startDate, current) >= 0;
+							const preservationReached =
+								!superState.preservationDate ||
+								monthsBetweenYearMonths(superState.preservationDate, current) >= 0;
+							availableNow =
+								accountStarted &&
+								superStarted &&
+								preservationReached &&
+								(superState.currentValue ?? 0) > 0;
+							availableSourceAccounts.push({
+								accountId: candidateId,
+								accountName: candidateAccount.name,
+								availableNow,
+								availableFromDate: availableFrom ? toYearMonthInt(availableFrom) : null
+							});
+						}
+					}
+					plannerFirstShortfall = {
+						targetAccountId: accountId,
+						targetAccountName: accountInfo.name,
+						minBalance,
+						startDate: currentDate,
+						monthLabel,
+						availableSourceAccounts
+					};
+				}
 				events.push({
 					tone: 'negative',
-					message: `Account ${accountInfo.name} runs out of money on ${monthLabel}.`
+					monthLabel,
+					message:
+						minBalance > 0
+							? `Account ${accountInfo.name} drops below its reserve target (${formatEventCurrency(minBalance)}).`
+							: `Account ${accountInfo.name} runs out of money.`
 				});
 				insolventEventAccountIds.add(accountId);
 			}
@@ -1406,9 +1847,12 @@ export const buildProjection = (input: {
 	if (!events.some((event) => event.tone === 'negative')) {
 		events.unshift({
 			tone: 'positive',
+			monthLabel: formatYearMonthLabel(startYearMonth),
 			message: 'Congratulations - you are solvent for this time frame.'
 		});
 	}
+
+	const firstShortfall = plannerFirstShortfall;
 
 	return {
 		startDate: toYearMonthInt(startYearMonth),
@@ -1416,6 +1860,15 @@ export const buildProjection = (input: {
 		transactions,
 		accounts: accountSeries,
 		assets: assetSeries,
+		planner: {
+			status: firstShortfall ? 'needs_attention' : 'on_track',
+			headline: firstShortfall
+				? firstShortfall.minBalance > 0
+					? `${firstShortfall.targetAccountName} is projected to drop below its reserve target (${formatEventCurrency(firstShortfall.minBalance)}) in ${firstShortfall.monthLabel}.`
+					: `${firstShortfall.targetAccountName} is projected to drop below $0 in ${firstShortfall.monthLabel}.`
+				: 'On track: no cash account is projected to fall below $0.',
+			firstShortfall
+		},
 		events
 	};
 };
