@@ -6308,6 +6308,14 @@ type Stage3Assessment = {
 												</td>
 											{/each}
 										</tr>
+										<tr>
+											<td
+												colspan={fundingCashAccountOptions.length + 1}
+												class="px-2 py-2 text-xs text-sky-800"
+											>
+												Select the assets or accounts to fund the account from once it falls below its reserve.
+											</td>
+										</tr>
 										{#each Array.from({ length: fundingReservePriorityRowCount }) as _, priorityIndex (priorityIndex)}
 											{@const priority = priorityIndex + 1}
 											<tr>
@@ -6430,11 +6438,19 @@ type Stage3Assessment = {
 												</td>
 											{/each}
 										</tr>
+										<tr>
+											<td
+												colspan={fundingCashAccountOptions.length + 1}
+												class="px-2 py-2 text-xs text-sky-800"
+											>
+												Once the account has reached its cap, select the assets or accounts to fund in order. Select at least one destination before entering the cap.
+											</td>
+										</tr>
 										{#each Array.from({ length: fundingCapPriorityRowCount }) as _, priorityIndex (priorityIndex)}
 											{@const priority = priorityIndex + 1}
 											<tr>
 												<td class="px-2 py-2 font-semibold text-slate-600">
-													Sweep destination priority {priority}
+													Funding destination priority {priority}
 												</td>
 												{#each fundingCashAccountOptions as account (account.id)}
 													{@const accountSweepRules = fundingSweepRulesByAccount[account.id] ?? []}
@@ -6493,7 +6509,7 @@ type Stage3Assessment = {
 															</select>
 														{:else if canSelectDestination}
 															<div class="min-w-[160px] text-center text-slate-400">
-																No more sweep destinations available
+																No more funding destinations available
 															</div>
 														{:else}
 															<div class="min-w-[160px] text-center text-slate-400">-</div>
@@ -6929,7 +6945,7 @@ type Stage3Assessment = {
 							<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 								<div class="font-semibold">Set Cap Settings In What If</div>
 								<div class="mt-1 text-xs">
-									Use the Caps tab in the What if?... section to set cap amounts and sweep destination
+									Use the Caps tab in the What if?... section to set cap amounts and funding destination
 									priorities.
 								</div>
 								<div class="mt-2 text-xs">
