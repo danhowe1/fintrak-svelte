@@ -3547,47 +3547,49 @@ type Stage3Assessment = {
 					{#if chartProjection.series.length === 0}
 						<p class="mt-3 text-sm text-slate-600">No series available for projection.</p>
 					{:else}
-						<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
-							<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
-								<thead
-									class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-								>
-									<tr>
-										<th class="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3">Line item</th>
-										{#each balanceSheetHeaders as header}
-											<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
-										{/each}
-									</tr>
-								</thead>
-								<tbody class="divide-y divide-slate-100 text-slate-700">
-									{#each balanceSheetRows as row, rowIndex}
-										<tr
-											class={`whitespace-nowrap ${
-												rowIndex === 0 ? 'font-semibold text-slate-900' : ''
-											}`}
-										>
-											<td
-												class={`sticky left-0 z-10 px-4 py-3 ${
-													rowIndex === 0 ? 'bg-white text-slate-900' : 'bg-white'
-												}`}
-											>
-												{row.name}
-											</td>
-											{#each row.values as value}
-												<td
-													class={`px-4 py-3 text-right ${
-														value >= 0 ? 'text-emerald-600' : 'text-rose-600'
-													}`}
-												>
-													{formatWholeCurrency(value)}
-												</td>
+						<div class="relative mt-4">
+							<div class="max-h-96 overflow-x-auto overflow-y-auto">
+								<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
+									<thead
+										class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+									>
+										<tr>
+											<th class="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3">Line item</th>
+											{#each balanceSheetHeaders as header}
+												<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
 											{/each}
 										</tr>
-									{/each}
-								</tbody>
-							</table>
+									</thead>
+									<tbody class="divide-y divide-slate-100 text-slate-700">
+										{#each balanceSheetRows as row, rowIndex}
+											<tr
+												class={`whitespace-nowrap ${
+													rowIndex === 0 ? 'font-semibold text-slate-900' : ''
+												}`}
+											>
+												<td
+													class={`sticky left-0 z-10 px-4 py-3 ${
+														rowIndex === 0 ? 'bg-white text-slate-900' : 'bg-white'
+													}`}
+												>
+													{row.name}
+												</td>
+												{#each row.values as value}
+													<td
+														class={`px-4 py-3 text-right ${
+															value >= 0 ? 'text-emerald-600' : 'text-rose-600'
+														}`}
+													>
+														{formatWholeCurrency(value)}
+													</td>
+												{/each}
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
 							{#if isUpdating}
-								<div class="absolute inset-0 grid place-items-center bg-white/70">
+								<div class="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/70">
 									<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
 										<span
 											class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
@@ -3602,64 +3604,66 @@ type Stage3Assessment = {
 					{#if profitLossRows.length === 0}
 						<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
 					{:else}
-						<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
-							<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
-								<thead
-									class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-								>
-									<tr>
-										<th class="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3">Item</th>
-										{#each balanceSheetHeaders as header}
-											<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
-										{/each}
-									</tr>
-								</thead>
-								<tbody class="divide-y divide-slate-100 text-slate-700">
-									{#each profitLossRows as row, rowIndex}
-										<tr
-											class={`whitespace-nowrap ${
-												row.level === 0 ? 'font-semibold text-slate-900' : ''
-											}`}
-										>
-											<td
-												class={`sticky left-0 z-10 px-4 py-3 ${
-													row.level === 0 ? 'bg-white text-slate-900' : 'bg-white'
-												}`}
-											>
-												<div
-													class="flex items-center gap-2"
-													style={`padding-left: ${row.level * 14}px`}
-												>
-													{#if row.children?.length}
-														<button
-															type="button"
-															class="text-slate-500 hover:text-slate-900"
-															on:click={() => togglePnlNode(row.id)}
-															aria-label="Toggle P&L row"
-														>
-															{expandedPnlNodes.has(row.id) ? '▾' : '▸'}
-														</button>
-													{:else}
-														<span class="w-3 text-slate-400">•</span>
-													{/if}
-													<span>{row.label}</span>
-												</div>
-											</td>
-											{#each row.values as value}
-												<td
-													class={`px-4 py-3 text-right ${
-														value >= 0 ? 'text-emerald-600' : 'text-rose-600'
-													}`}
-												>
-													{formatWholeCurrency(value)}
-												</td>
+						<div class="relative mt-4">
+							<div class="max-h-96 overflow-x-auto overflow-y-auto">
+								<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
+									<thead
+										class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+									>
+										<tr>
+											<th class="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3">Item</th>
+											{#each balanceSheetHeaders as header}
+												<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
 											{/each}
 										</tr>
-									{/each}
-								</tbody>
-							</table>
+									</thead>
+									<tbody class="divide-y divide-slate-100 text-slate-700">
+										{#each profitLossRows as row, rowIndex}
+											<tr
+												class={`whitespace-nowrap ${
+													row.level === 0 ? 'font-semibold text-slate-900' : ''
+												}`}
+											>
+												<td
+													class={`sticky left-0 z-10 px-4 py-3 ${
+														row.level === 0 ? 'bg-white text-slate-900' : 'bg-white'
+													}`}
+												>
+													<div
+														class="flex items-center gap-2"
+														style={`padding-left: ${row.level * 14}px`}
+													>
+														{#if row.children?.length}
+															<button
+																type="button"
+																class="text-slate-500 hover:text-slate-900"
+																on:click={() => togglePnlNode(row.id)}
+																aria-label="Toggle P&L row"
+															>
+																{expandedPnlNodes.has(row.id) ? '▾' : '▸'}
+															</button>
+														{:else}
+															<span class="w-3 text-slate-400">•</span>
+														{/if}
+														<span>{row.label}</span>
+													</div>
+												</td>
+												{#each row.values as value}
+													<td
+														class={`px-4 py-3 text-right ${
+															value >= 0 ? 'text-emerald-600' : 'text-rose-600'
+														}`}
+													>
+														{formatWholeCurrency(value)}
+													</td>
+												{/each}
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
 							{#if isUpdating}
-								<div class="absolute inset-0 grid place-items-center bg-white/70">
+								<div class="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/70">
 									<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
 										<span
 											class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
@@ -3673,47 +3677,49 @@ type Stage3Assessment = {
 				{:else if chartProjection.transactions.length === 0}
 					<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
 				{:else}
-					<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
-						<table class="min-w-full divide-y divide-slate-200 text-xs">
-							<thead
-								class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-							>
-								<tr>
-									<th class="px-4 py-3">Date</th>
-									<th class="px-4 py-3">Type</th>
-									<th class="px-4 py-3">Asset</th>
-									<th class="px-4 py-3">Category</th>
-									<th class="px-4 py-3">Description</th>
-									<th class="px-4 py-3">Account</th>
-									<th class="px-4 py-3 text-right">Amount</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-slate-100 text-slate-700">
-								{#each chartProjection.transactions as transaction}
-									<tr
-										class={`whitespace-nowrap ${
-											transaction.cashflowType === 'transfer'
-												? 'text-amber-600'
-												: transaction.amount >= 0
-													? 'text-emerald-600'
-													: 'text-rose-600'
-										}`}
-									>
-										<td class="px-4 py-3">{transaction.monthLabel}</td>
-										<td class="px-4 py-3">{formatLabel(transaction.cashflowType)}</td>
-										<td class="px-4 py-3">{transaction.assetName ?? ''}</td>
-										<td class="px-4 py-3">{formatLabel(transaction.category)}</td>
-										<td class="px-4 py-3">{transaction.description ?? ''}</td>
-										<td class="px-4 py-3">{transaction.accountName}</td>
-										<td class="px-4 py-3 text-right font-medium">
-											{formatSignedCurrency(transaction.amount)}
-										</td>
+					<div class="relative mt-4">
+						<div class="max-h-96 overflow-x-auto overflow-y-auto">
+							<table class="min-w-full divide-y divide-slate-200 text-xs">
+								<thead
+									class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+								>
+									<tr>
+										<th class="px-4 py-3">Date</th>
+										<th class="px-4 py-3">Type</th>
+										<th class="px-4 py-3">Asset</th>
+										<th class="px-4 py-3">Category</th>
+										<th class="px-4 py-3">Description</th>
+										<th class="px-4 py-3">Account</th>
+										<th class="px-4 py-3 text-right">Amount</th>
 									</tr>
-								{/each}
-							</tbody>
-						</table>
+								</thead>
+								<tbody class="divide-y divide-slate-100 text-slate-700">
+									{#each chartProjection.transactions as transaction}
+										<tr
+											class={`whitespace-nowrap ${
+												transaction.cashflowType === 'transfer'
+													? 'text-amber-600'
+													: transaction.amount >= 0
+														? 'text-emerald-600'
+														: 'text-rose-600'
+											}`}
+										>
+											<td class="px-4 py-3">{transaction.monthLabel}</td>
+											<td class="px-4 py-3">{formatLabel(transaction.cashflowType)}</td>
+											<td class="px-4 py-3">{transaction.assetName ?? ''}</td>
+											<td class="px-4 py-3">{formatLabel(transaction.category)}</td>
+											<td class="px-4 py-3">{transaction.description ?? ''}</td>
+											<td class="px-4 py-3">{transaction.accountName}</td>
+											<td class="px-4 py-3 text-right font-medium">
+												{formatSignedCurrency(transaction.amount)}
+											</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
 						{#if isUpdating}
-							<div class="absolute inset-0 grid place-items-center bg-white/70">
+							<div class="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/70">
 								<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
 									<span
 										class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
@@ -6456,6 +6462,9 @@ type Stage3Assessment = {
 													{@const accountSweepRules = fundingSweepRulesByAccount[account.id] ?? []}
 													{@const rule = accountSweepRules[priorityIndex] ?? null}
 													{@const canSelectDestination = priorityIndex === 0 || Boolean(accountSweepRules[priorityIndex - 1])}
+													{@const capAmountEntered = (fundingCapDrafts[account.id] ?? '').trim().length > 0}
+													{@const showCapDestinationWarning =
+														priorityIndex === 0 && capAmountEntered && !accountSweepRules[0]}
 													{@const availableSweepDestinationOptions =
 														fundingSweepDestinationOptionsByAccount[account.id] ?? []}
 													<td class="px-2 py-2">
@@ -6513,6 +6522,11 @@ type Stage3Assessment = {
 															</div>
 														{:else}
 															<div class="min-w-[160px] text-center text-slate-400">-</div>
+														{/if}
+														{#if showCapDestinationWarning}
+															<div class="mt-1 text-[11px] text-rose-600">
+																Please choose where excess funds should be allocated for cap to take effect.
+															</div>
 														{/if}
 													</td>
 												{/each}
