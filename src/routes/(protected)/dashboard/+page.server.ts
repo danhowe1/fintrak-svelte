@@ -107,19 +107,10 @@ export const load: PageServerLoad = async (event) => {
 			sameSite: 'lax'
 		});
 	}
-	const projectionMonths =
-		projectionRange === '1y'
-			? 12
-			: projectionRange === '5y'
-				? 60
-				: projectionRange === '10y'
-					? 120
-					: null;
-
 	const projection = buildProjection({
 		inflationRate: parentData.sessionRates.inflationRate,
-		projectionRange,
-		maxMonths: projectionMonths,
+		projectionRange: 'all',
+		maxMonths: null,
 		cashflows,
 		accounts,
 		assets,

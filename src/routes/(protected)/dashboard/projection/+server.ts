@@ -25,19 +25,6 @@ const parseProjectionRange = (value: string | undefined) => {
 	return 'all';
 };
 
-const projectionMonthsForRange = (range: string) => {
-	switch (range) {
-		case '1y':
-			return 12;
-		case '5y':
-			return 60;
-		case '10y':
-			return 120;
-		default:
-			return null;
-	}
-};
-
 export const GET: RequestHandler = async (event) => {
 	const userId = event.locals.appUserId;
 	if (!userId) {
@@ -56,7 +43,6 @@ export const GET: RequestHandler = async (event) => {
 	}
 
 	const projectionRange = parseProjectionRange(event.cookies.get('projectionRange'));
-	const projectionMonths = projectionMonthsForRange(projectionRange);
 	const inflationRate = parseRate(event.cookies.get('inflationRate'), 2.0);
 
 	const [cashflows, accounts, assets, assetAccounts, autoFundingRules, accountBalanceTargets, autoSweepRules] =
@@ -73,8 +59,8 @@ export const GET: RequestHandler = async (event) => {
 
 	const projection = buildProjection({
 		inflationRate,
-		projectionRange,
-		maxMonths: projectionMonths,
+		projectionRange: 'all',
+		maxMonths: null,
 		cashflows,
 		accounts,
 		assets,

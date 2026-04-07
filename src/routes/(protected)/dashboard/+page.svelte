@@ -1519,9 +1519,7 @@ type Stage3Assessment = {
 				const formData = new FormData();
 				formData.set('projectionRange', range);
 				await fetch('?/updateRange', { method: 'POST', body: formData });
-				await refreshProjection({ force: true });
-			},
-			true
+			}
 		).catch((error) => {
 			projectionError =
 				error instanceof Error ? error.message : 'Unable to refresh the projection.';
@@ -2772,6 +2770,45 @@ type Stage3Assessment = {
 		return normalized === null ? null : fromYearMonthInt(normalized);
 	};
 
+	const getRangeMonths = (range: ProjectionRange) => {
+		switch (range) {
+			case '1y':
+				return 12;
+			case '5y':
+				return 60;
+			case '10y':
+				return 120;
+			default:
+				return null;
+		}
+	};
+
+	const getRangeEndDate = (startDate: number, range: ProjectionRange) => {
+		const months = getRangeMonths(range);
+		if (!months) return null;
+		const start = fromYearMonthInt(startDate);
+		if (!start) return null;
+		return toYearMonthInt(addMonthsToYearMonth(start, months - 1));
+	};
+
+	$: projectionRangeEndDate = getRangeEndDate(projectionData.startDate, projectionRange);
+
+	const clipSeriesPointsByRange = <
+		T extends {
+			date: number;
+		}
+	>(
+		points: T[]
+	) => {
+		if (projectionRangeEndDate === null) return points;
+		return points.filter((point) => point.date <= projectionRangeEndDate);
+	};
+
+	const clipTransactionsByRange = (transactions: typeof projectionData.transactions) => {
+		if (projectionRangeEndDate === null) return transactions;
+		return transactions.filter((transaction) => transaction.date <= projectionRangeEndDate);
+	};
+
 	type ChartPoint = { date: number; monthLabel: string; balance: number };
 	type ChartSeries = { id: string; name: string; points: ChartPoint[] };
 
@@ -2854,14 +2891,17 @@ type Stage3Assessment = {
 			return {
 				series: activeSeries.map((series) => ({
 					...series,
-					points: getAnnualPoints(series.points)
+					points: getAnnualPoints(clipSeriesPointsByRange(series.points))
 				})),
-				transactions: projectionData.transactions ?? []
+				transactions: clipTransactionsByRange(projectionData.transactions ?? [])
 			};
 		}
 		return {
-			series: activeSeries,
-			transactions: projectionData.transactions ?? []
+			series: activeSeries.map((series) => ({
+				...series,
+				points: clipSeriesPointsByRange(series.points)
+			})),
+			transactions: clipTransactionsByRange(projectionData.transactions ?? [])
 		};
 	})();
 	$: totalSeries = (() => {
@@ -2893,12 +2933,7 @@ type Stage3Assessment = {
 			: chartProjection.series
 	);
 	$: chartAxisPoints = (() => {
-		const basePointsRaw =
-			projectionData.accounts?.[0]?.points ?? chartProjection.series[0]?.points ?? [];
-		const basePoints =
-			projectionRange === '10y' || projectionRange === 'all'
-				? getAnnualPoints(basePointsRaw)
-				: basePointsRaw;
+		const basePoints = chartProjection.series[0]?.points ?? [];
 		return basePoints.map((point) => ({
 			date: point.date,
 			monthLabel:
@@ -2948,7 +2983,7 @@ type Stage3Assessment = {
 	};
 
 	$: profitLossTree = (() => {
-		if (projectionData.transactions.length === 0) return [];
+		if (chartProjection.transactions.length === 0) return [];
 		const headers = chartAxisPoints.map((point) => point.monthLabel);
 		const indexByLabel = new Map<string, number>();
 		headers.forEach((label, index) => indexByLabel.set(label, index));
@@ -2957,7 +2992,7 @@ type Stage3Assessment = {
 		const incomeMap = buildMaps();
 		const expenseMap = buildMaps();
 
-		for (const transaction of projectionData.transactions) {
+		for (const transaction of chartProjection.transactions) {
 			if (transaction.cashflowType === 'transfer') continue;
 			const label =
 				projectionRange === '10y' || projectionRange === 'all'
@@ -3250,7 +3285,13 @@ type Stage3Assessment = {
 		chart = null;
 	}
 
-	$: if (chart && projectionView === 'balances' && projectionVersion && projectionBalanceSource) {
+	$: if (
+		chart &&
+		projectionView === 'balances' &&
+		projectionVersion &&
+		projectionBalanceSource &&
+		projectionRange
+	) {
 		chart.data = buildChartData();
 		chart.options = buildChartOptions();
 		chart.update();
@@ -3629,7 +3670,7 @@ type Stage3Assessment = {
 							{/if}
 						</div>
 					{/if}
-				{:else if projectionData.transactions.length === 0}
+				{:else if chartProjection.transactions.length === 0}
 					<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
 				{:else}
 					<div class="relative mt-4 max-h-96 overflow-x-auto overflow-y-auto">
@@ -3648,7 +3689,7 @@ type Stage3Assessment = {
 								</tr>
 							</thead>
 							<tbody class="divide-y divide-slate-100 text-slate-700">
-								{#each projectionData.transactions as transaction}
+								{#each chartProjection.transactions as transaction}
 									<tr
 										class={`whitespace-nowrap ${
 											transaction.cashflowType === 'transfer'
