@@ -70,6 +70,13 @@ let whatIfPanelElement: HTMLElement | null = null;
 	type ProjectionRange = '1y' | '5y' | '10y' | 'all';
 	type AssetPanelTab = 'assets' | 'accounts' | 'transfers' | 'reserves' | 'caps';
 	type ProjectionBalanceSource = 'accounts' | 'assets' | 'net_worth' | 'liquidity';
+	type TransactionSortKey =
+		| 'assetName'
+		| 'accountName'
+		| 'type'
+		| 'category'
+		| 'description';
+	type TransactionSortDirection = 'asc' | 'desc';
 	type CashflowDraft = {
 		type: 'income' | 'expense';
 		category:
@@ -117,6 +124,10 @@ let fundingSweepRulesByAccount: Record<string, typeof autoSweepRules> = {};
 let fundingSweepDestinationOptionsByAccount: Record<string, typeof transferAccountOptions> = {};
 let fundingCapPriorityRowCount = 1;
 let fundingTabError = '';
+	let transactionSortKey: TransactionSortKey = 'assetName';
+	let transactionSortDirection: TransactionSortDirection = 'asc';
+	let pnlExpandableNodeIds: string[] = [];
+	let isAllPnlExpanded = false;
 	let personRetirementAges: Record<string, number> = {};
 	let personDetails: Record<string, { name: string; startDate: string; dob: string }> = {};
 	let cashflowAmounts: Record<string, number> = {};
@@ -1471,6 +1482,14 @@ type Stage3Assessment = {
 			next.add(id);
 		}
 		expandedPnlNodes = next;
+	};
+
+	const expandAllPnlNodes = () => {
+		expandedPnlNodes = new Set(pnlExpandableNodeIds);
+	};
+
+	const collapseAllPnlNodes = () => {
+		expandedPnlNodes = new Set();
 	};
 
 	const refreshProjection = async (options?: { includeCashflows?: boolean; force?: boolean }) => {
@@ -2963,6 +2982,124 @@ type Stage3Assessment = {
 		return rows;
 	})();
 
+	$: transactionPivot = (() => {
+		const transactions = chartProjection.transactions ?? [];
+		const isAnnualRange = projectionRange === '10y' || projectionRange === 'all';
+		if (transactions.length === 0) {
+			return {
+				headers: [] as string[],
+				totalValues: [] as number[],
+				rows: [] as {
+					assetName: string;
+					accountName: string;
+					type: string;
+					category: string;
+					description: string;
+					values: number[];
+				}[]
+			};
+		}
+
+		const headerLabels = (() => {
+			if (isAnnualRange) {
+				const years = new Set<number>();
+				for (const transaction of transactions) {
+					const parsed = fromYearMonthInt(transaction.date);
+					if (!parsed) continue;
+					years.add(parsed.year);
+				}
+				return Array.from(years)
+					.sort((a, b) => a - b)
+					.map((year) => String(year));
+			}
+			const labelsByDate = new Map<number, string>();
+			for (const transaction of transactions) {
+				if (!labelsByDate.has(transaction.date)) {
+					labelsByDate.set(transaction.date, transaction.monthLabel);
+				}
+			}
+			return Array.from(labelsByDate.entries())
+				.sort((a, b) => a[0] - b[0])
+				.map((entry) => entry[1]);
+		})();
+
+		const headerIndexByLabel = new Map<string, number>();
+		headerLabels.forEach((label, index) => headerIndexByLabel.set(label, index));
+		const rowMap = new Map<
+			string,
+			{
+				assetName: string;
+				accountName: string;
+				type: string;
+				category: string;
+				description: string;
+				values: number[];
+			}
+		>();
+
+		for (const transaction of transactions) {
+			const label = isAnnualRange
+				? String(fromYearMonthInt(transaction.date)?.year ?? '')
+				: transaction.monthLabel;
+			const headerIndex = headerIndexByLabel.get(label);
+			if (headerIndex === undefined) continue;
+
+			const assetName = transaction.assetName ?? '';
+			const accountName = transaction.accountName ?? '';
+			const type = formatLabel(transaction.cashflowType);
+			const category = formatLabel(transaction.category);
+			const description = (transaction.description ?? '').trim();
+			const rowKey = [assetName, accountName, type, category, description].join('|');
+			const row =
+				rowMap.get(rowKey) ??
+				{
+					assetName,
+					accountName,
+					type,
+					category,
+					description,
+					values: Array(headerLabels.length).fill(0)
+				};
+			row.values[headerIndex] += transaction.amount;
+			rowMap.set(rowKey, row);
+		}
+
+		const rows = Array.from(rowMap.values()).sort((a, b) => {
+			const primaryDiff = (a[transactionSortKey] ?? '').localeCompare(b[transactionSortKey] ?? '');
+			if (primaryDiff !== 0) return transactionSortDirection === 'asc' ? primaryDiff : -primaryDiff;
+			const assetDiff = a.assetName.localeCompare(b.assetName);
+			if (assetDiff !== 0) return assetDiff;
+			const accountDiff = a.accountName.localeCompare(b.accountName);
+			if (accountDiff !== 0) return accountDiff;
+			const typeDiff = a.type.localeCompare(b.type);
+			if (typeDiff !== 0) return typeDiff;
+			const categoryDiff = a.category.localeCompare(b.category);
+			if (categoryDiff !== 0) return categoryDiff;
+			return a.description.localeCompare(b.description);
+		});
+		const totalValues = Array(headerLabels.length).fill(0);
+		for (const row of rows) {
+			row.values.forEach((value, idx) => {
+				totalValues[idx] += value;
+			});
+		}
+
+		return {
+			headers: headerLabels,
+			totalValues,
+			rows
+		};
+	})();
+
+	const toggleTransactionSort = (key: TransactionSortKey) => {
+		if (transactionSortKey === key) {
+			transactionSortDirection = transactionSortDirection === 'asc' ? 'desc' : 'asc';
+			return;
+		}
+		transactionSortKey = key;
+		transactionSortDirection = 'asc';
+	};
+
 	type PnlNode = {
 		id: string;
 		label: string;
@@ -3090,6 +3227,12 @@ type Stage3Assessment = {
 
 		return [
 			{
+				id: 'net',
+				label: 'Net',
+				level: 0,
+				values: netTotals
+			},
+			{
 				id: 'income',
 				label: 'Income',
 				level: 0,
@@ -3102,12 +3245,6 @@ type Stage3Assessment = {
 				level: 0,
 				values: expenseTotals,
 				children: expenseAccounts
-			},
-			{
-				id: 'net',
-				label: 'Net',
-				level: 0,
-				values: netTotals
 			}
 		] as PnlNode[];
 	})();
@@ -3124,6 +3261,21 @@ type Stage3Assessment = {
 	};
 
 	$: profitLossRows = flattenPnl(profitLossTree, expandedPnlNodes);
+	$: pnlExpandableNodeIds = (() => {
+		const ids: string[] = [];
+		const walk = (nodes: PnlNode[]) => {
+			for (const node of nodes) {
+				if (!node.children?.length) continue;
+				ids.push(node.id);
+				walk(node.children);
+			}
+		};
+		walk(profitLossTree);
+		return ids;
+	})();
+	$: isAllPnlExpanded =
+		pnlExpandableNodeIds.length > 0 &&
+		pnlExpandableNodeIds.every((id) => expandedPnlNodes.has(id));
 
 	const formatAxisCurrency = (value: number) =>
 		new Intl.NumberFormat('en-AU', {
@@ -3604,6 +3756,15 @@ type Stage3Assessment = {
 					{#if profitLossRows.length === 0}
 						<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
 					{:else}
+						<div class="mt-3 flex justify-end">
+							<button
+								type="button"
+								class="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+								on:click={isAllPnlExpanded ? collapseAllPnlNodes : expandAllPnlNodes}
+							>
+								{isAllPnlExpanded ? 'Collapse all levels' : 'Expand all levels'}
+							</button>
+						</div>
 						<div class="relative mt-4">
 							<div class="max-h-96 overflow-x-auto overflow-y-auto">
 								<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
@@ -3619,14 +3780,19 @@ type Stage3Assessment = {
 									</thead>
 									<tbody class="divide-y divide-slate-100 text-slate-700">
 										{#each profitLossRows as row, rowIndex}
+											{@const isNetRow = row.id === 'net' && row.level === 0}
 											<tr
 												class={`whitespace-nowrap ${
 													row.level === 0 ? 'font-semibold text-slate-900' : ''
 												}`}
 											>
 												<td
-													class={`sticky left-0 z-10 px-4 py-3 ${
-														row.level === 0 ? 'bg-white text-slate-900' : 'bg-white'
+													class={`sticky left-0 px-4 py-3 ${
+														isNetRow
+															? 'top-10 z-30 bg-slate-100 text-slate-900'
+															: row.level === 0
+																? 'z-10 bg-white text-slate-900'
+																: 'z-10 bg-white'
 													}`}
 												>
 													<div
@@ -3651,10 +3817,17 @@ type Stage3Assessment = {
 												{#each row.values as value}
 													<td
 														class={`px-4 py-3 text-right ${
-															value >= 0 ? 'text-emerald-600' : 'text-rose-600'
+															isNetRow ? 'sticky top-10 z-20 bg-slate-100' : ''
+														} ${
+															value === 0
+																? 'text-slate-400'
+																: value > 0
+																	? 'text-emerald-600'
+																	: 'text-rose-600'
+														}
 														}`}
 													>
-														{formatWholeCurrency(value)}
+														{value === 0 ? '-' : formatWholeCurrency(value)}
 													</td>
 												{/each}
 											</tr>
@@ -3679,40 +3852,169 @@ type Stage3Assessment = {
 				{:else}
 					<div class="relative mt-4">
 						<div class="max-h-96 overflow-x-auto overflow-y-auto">
-							<table class="min-w-full divide-y divide-slate-200 text-xs">
+							<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
 								<thead
-									class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
+									class="sticky top-0 z-40 bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
 								>
 									<tr>
-										<th class="px-4 py-3">Date</th>
-										<th class="px-4 py-3">Type</th>
-										<th class="px-4 py-3">Asset</th>
-										<th class="px-4 py-3">Category</th>
-										<th class="px-4 py-3">Description</th>
-										<th class="px-4 py-3">Account</th>
-										<th class="px-4 py-3 text-right">Amount</th>
+										<th class="sticky top-0 left-0 z-50 min-w-[160px] bg-slate-50 px-4 py-3">
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 text-left"
+												on:click={() => toggleTransactionSort('assetName')}
+											>
+												<span>Asset</span>
+												<span class="text-[10px] text-slate-400">
+													{transactionSortKey === 'assetName'
+														? transactionSortDirection === 'asc'
+															? '▲'
+															: '▼'
+														: '↕'}
+												</span>
+											</button>
+										</th>
+										<th
+											class="sticky top-0 z-50 min-w-[160px] bg-slate-50 px-4 py-3"
+											style="left: 160px;"
+										>
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 text-left"
+												on:click={() => toggleTransactionSort('accountName')}
+											>
+												<span>Account</span>
+												<span class="text-[10px] text-slate-400">
+													{transactionSortKey === 'accountName'
+														? transactionSortDirection === 'asc'
+															? '▲'
+															: '▼'
+														: '↕'}
+												</span>
+											</button>
+										</th>
+										<th
+											class="sticky top-0 z-50 min-w-[110px] bg-slate-50 px-4 py-3"
+											style="left: 320px;"
+										>
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 text-left"
+												on:click={() => toggleTransactionSort('type')}
+											>
+												<span>Type</span>
+												<span class="text-[10px] text-slate-400">
+													{transactionSortKey === 'type'
+														? transactionSortDirection === 'asc'
+															? '▲'
+															: '▼'
+														: '↕'}
+												</span>
+											</button>
+										</th>
+										<th
+											class="sticky top-0 z-50 min-w-[140px] bg-slate-50 px-4 py-3"
+											style="left: 430px;"
+										>
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 text-left"
+												on:click={() => toggleTransactionSort('category')}
+											>
+												<span>Category</span>
+												<span class="text-[10px] text-slate-400">
+													{transactionSortKey === 'category'
+														? transactionSortDirection === 'asc'
+															? '▲'
+															: '▼'
+														: '↕'}
+												</span>
+											</button>
+										</th>
+										<th
+											class="sticky top-0 z-50 min-w-[220px] bg-slate-50 px-4 py-3"
+											style="left: 570px;"
+										>
+											<button
+												type="button"
+												class="inline-flex items-center gap-1 text-left"
+												on:click={() => toggleTransactionSort('description')}
+											>
+												<span>Description</span>
+												<span class="text-[10px] text-slate-400">
+													{transactionSortKey === 'description'
+														? transactionSortDirection === 'asc'
+															? '▲'
+															: '▼'
+														: '↕'}
+												</span>
+											</button>
+										</th>
+										{#each transactionPivot.headers as header}
+											<th class="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right">{header}</th>
+										{/each}
 									</tr>
 								</thead>
 								<tbody class="divide-y divide-slate-100 text-slate-700">
-									{#each chartProjection.transactions as transaction}
-										<tr
-											class={`whitespace-nowrap ${
-												transaction.cashflowType === 'transfer'
-													? 'text-amber-600'
-													: transaction.amount >= 0
-														? 'text-emerald-600'
-														: 'text-rose-600'
-											}`}
-										>
-											<td class="px-4 py-3">{transaction.monthLabel}</td>
-											<td class="px-4 py-3">{formatLabel(transaction.cashflowType)}</td>
-											<td class="px-4 py-3">{transaction.assetName ?? ''}</td>
-											<td class="px-4 py-3">{formatLabel(transaction.category)}</td>
-											<td class="px-4 py-3">{transaction.description ?? ''}</td>
-											<td class="px-4 py-3">{transaction.accountName}</td>
-											<td class="px-4 py-3 text-right font-medium">
-												{formatSignedCurrency(transaction.amount)}
+									<tr class="font-semibold text-slate-900">
+										<td class="sticky top-10 left-0 z-40 bg-slate-100 px-4 py-3">Total</td>
+										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 160px;">
+											All accounts
+										</td>
+										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 320px;">
+											All types
+										</td>
+										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 430px;">
+											All categories
+										</td>
+										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 570px;">
+											All descriptions
+										</td>
+										{#each transactionPivot.totalValues as value}
+											<td
+												class={`sticky top-10 z-30 bg-slate-100 px-4 py-3 text-right ${
+													value === 0
+														? 'text-slate-500'
+														: value > 0
+															? 'text-emerald-700'
+															: 'text-rose-700'
+												}`}
+											>
+												{value === 0 ? '-' : formatWholeCurrency(value)}
 											</td>
+										{/each}
+									</tr>
+									{#each transactionPivot.rows as row}
+										<tr
+											class="whitespace-nowrap"
+										>
+											<td class="sticky left-0 z-10 bg-white px-4 py-3">{row.assetName}</td>
+											<td class="sticky z-10 bg-white px-4 py-3" style="left: 160px;">
+												{row.accountName}
+											</td>
+											<td class="sticky z-10 bg-white px-4 py-3" style="left: 320px;">
+												{row.type}
+											</td>
+											<td class="sticky z-10 bg-white px-4 py-3" style="left: 430px;">
+												{row.category}
+											</td>
+											<td class="sticky z-10 bg-white px-4 py-3" style="left: 570px;">
+												{row.description}
+											</td>
+											{#each row.values as value}
+												<td
+													class={`px-4 py-3 text-right ${
+														value === 0
+															? 'text-slate-400'
+															: row.type === 'Transfer'
+																? 'text-amber-600'
+																: value > 0
+																? 'text-emerald-600'
+																: 'text-rose-600'
+													}`}
+												>
+													{value === 0 ? '-' : formatWholeCurrency(value)}
+												</td>
+											{/each}
 										</tr>
 									{/each}
 								</tbody>
@@ -6776,65 +7078,64 @@ type Stage3Assessment = {
 						Your reserves and resilience are in a healthy range.
 					</div>
 				{/if}
-				{#if stage3Reached && plannerAdvancedOpenStage === 'stage3'}
-					{#if stage3Assessment}
-						<div class="mt-3 space-y-2 text-xs text-sky-900">
-							<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
-									<div class="flex items-center gap-1">
-										<span class="font-semibold">Safety Buffer Score</span>
-										<span class="group relative inline-flex">
-											<button
-												type="button"
-												class="grid h-4 w-4 place-items-center rounded-full border border-current/30 bg-white/80 text-[10px] leading-none font-bold"
-												aria-label="What is the Stage 3 safety buffer score?"
-											>
-												i
-											</button>
-											<span
-												role="tooltip"
-												class="pointer-events-none absolute top-full left-1/2 z-20 mt-2 w-72 -translate-x-1/2 rounded-md border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-900 opacity-0 shadow-md transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
-											>
-												Measures how many months you could survive on your liquid buffer given living
-												expenses, asset ownership expenses and mortgage repayments. Current coverage is
-												{Math.floor(stage3Assessment.safetyMonths)} months.
-											</span>
+				{#if stage3Reached && stage3Assessment}
+					<div class="mt-3 space-y-2 text-xs text-sky-900">
+						<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
+								<div class="flex items-center gap-1">
+									<span class="font-semibold">Safety Buffer Score</span>
+									<span class="group relative inline-flex">
+										<button
+											type="button"
+											class="grid h-4 w-4 place-items-center rounded-full border border-current/30 bg-white/80 text-[10px] leading-none font-bold"
+											aria-label="What is the Stage 3 safety buffer score?"
+										>
+											i
+										</button>
+										<span
+											role="tooltip"
+											class="pointer-events-none absolute top-full left-1/2 z-20 mt-2 w-72 -translate-x-1/2 rounded-md border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-900 opacity-0 shadow-md transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+										>
+											Measures how many months you could survive on your liquid buffer given living
+											expenses, asset ownership expenses and mortgage repayments. Current coverage is
+											{Math.floor(stage3Assessment.safetyMonths)} months.
 										</span>
-									</div>
-									<span class="font-semibold">{stage3Assessment.safetyScore}/100</span>
-							</div>
-							<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
-									<div class="flex items-center gap-1">
-										<span class="font-semibold">Resilience Score</span>
-										<span class="group relative inline-flex">
-											<button
-												type="button"
-												class="grid h-4 w-4 place-items-center rounded-full border border-current/30 bg-white/80 text-[10px] leading-none font-bold"
-												aria-label="What is the Stage 3 resilience score?"
-											>
-												i
-											</button>
-											<span
-												role="tooltip"
-												class="pointer-events-none absolute top-full left-1/2 z-20 mt-2 w-72 -translate-x-1/2 rounded-md border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-900 opacity-0 shadow-md transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
-											>
-												Measures the largest drop in liquidity over any rolling 12-month window in
-												your projection. Worst window:
-												{stage3Assessment.worstDrawdownStartDate
-													? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
-													: 'N/A'}{' '}
-												to{' '}
-												{stage3Assessment.worstDrawdownEndDate
-													? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
-													: 'N/A'}
-												, drawdown: {stage3Assessment.worstDrawdownPct}%. Formula: 100 - (drawdown%
-												x 2), clamped 0 to 100.
-											</span>
-										</span>
-									</div>
-									<span class="font-semibold">{stage3Assessment.resilienceScore}/100</span>
-							</div>
+									</span>
+								</div>
+								<span class="font-semibold">{stage3Assessment.safetyScore}/100</span>
 						</div>
-					{/if}
+						<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
+								<div class="flex items-center gap-1">
+									<span class="font-semibold">Resilience Score</span>
+									<span class="group relative inline-flex">
+										<button
+											type="button"
+											class="grid h-4 w-4 place-items-center rounded-full border border-current/30 bg-white/80 text-[10px] leading-none font-bold"
+											aria-label="What is the Stage 3 resilience score?"
+										>
+											i
+										</button>
+										<span
+											role="tooltip"
+											class="pointer-events-none absolute top-full left-1/2 z-20 mt-2 w-72 -translate-x-1/2 rounded-md border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-900 opacity-0 shadow-md transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+										>
+											Measures the largest drop in liquidity over any rolling 12-month window in
+											your projection. Worst window:
+											{stage3Assessment.worstDrawdownStartDate
+												? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
+												: 'N/A'}{' '}
+											to{' '}
+											{stage3Assessment.worstDrawdownEndDate
+												? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
+												: 'N/A'}
+											, drawdown: {stage3Assessment.worstDrawdownPct}%.
+										</span>
+									</span>
+								</div>
+								<span class="font-semibold">{stage3Assessment.resilienceScore}/100</span>
+						</div>
+					</div>
+				{/if}
+				{#if stage3Reached && plannerAdvancedOpenStage === 'stage3' && !stage3Passed}
 					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 						<div class="font-semibold">Set Reserve Settings In What If</div>
 						<div class="mt-1 text-xs">
