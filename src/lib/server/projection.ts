@@ -269,6 +269,23 @@ const maxYearMonth = (left: YearMonth | null, right: YearMonth | null): YearMont
 	return yearMonthIndex(left) >= yearMonthIndex(right) ? left : right;
 };
 
+const getPointValueAtDate = <
+	T extends {
+		date: number;
+		balance?: number;
+		value?: number;
+	}
+>(
+	points: T[],
+	date: number
+) => {
+	const point = points.find((entry) => entry.date === date);
+	if (!point) return 0;
+	if (typeof point.balance === 'number' && Number.isFinite(point.balance)) return point.balance;
+	if (typeof point.value === 'number' && Number.isFinite(point.value)) return point.value;
+	return 0;
+};
+
 export const buildProjection = (input: {
 	inflationRate?: number | null;
 	projectionRange?: '1y' | '5y' | '10y' | 'all';
@@ -354,6 +371,7 @@ export const buildProjection = (input: {
 		accountName: account.name,
 		points: []
 	}));
+	const accountSeriesById = new Map(accountSeries.map((series) => [series.accountId, series]));
 	const assetSeries: AssetValueSeries[] = input.assets
 		.filter(
 			(asset) =>
@@ -374,6 +392,7 @@ export const buildProjection = (input: {
 			assetType: asset.asset_type,
 			points: []
 		}));
+	const assetSeriesById = new Map(assetSeries.map((series) => [series.assetId, series]));
 	const cashAccountIds = input.accounts
 		.filter((account) => account.account_type === 'cash_account')
 		.map((account) => account.id);
@@ -398,6 +417,11 @@ export const buildProjection = (input: {
 					: 0
 		}))
 		.sort((a, b) => a.targetAccountId.localeCompare(b.targetAccountId) || a.priorityOrder - b.priorityOrder);
+	const autoFundingRulesByTarget = new Map<string, typeof autoFundingRules>();
+	for (const rule of autoFundingRules) {
+		const existing = autoFundingRulesByTarget.get(rule.targetAccountId) ?? [];
+		autoFundingRulesByTarget.set(rule.targetAccountId, [...existing, rule]);
+	}
 	const accountBalanceTargets = (input.accountBalanceTargets ?? [])
 		.map((target) => ({
 			accountId: target.account_id,
@@ -424,6 +448,11 @@ export const buildProjection = (input: {
 					: Number.MAX_SAFE_INTEGER
 		}))
 		.sort((a, b) => a.sourceAccountId.localeCompare(b.sourceAccountId) || a.priorityOrder - b.priorityOrder);
+	const autoSweepRulesBySource = new Map<string, typeof autoSweepRules>();
+	for (const rule of autoSweepRules) {
+		const existing = autoSweepRulesBySource.get(rule.sourceAccountId) ?? [];
+		autoSweepRulesBySource.set(rule.sourceAccountId, [...existing, rule]);
+	}
 
 	const cashflowMeta = input.cashflows.map((cashflow) => {
 		const start = parseYearMonth(cashflow.start_date);
@@ -758,7 +787,14 @@ export const buildProjection = (input: {
 		}))
 	];
 	const liquiditySeriesById = new Map(liquiditySeries.map((series) => [series.id, series]));
-	let plannerFirstShortfall: ProjectionResult['planner']['firstShortfall'] = null;
+	let plannerFirstShortfallCandidate: {
+		targetAccountId: string;
+		targetAccountName: string;
+		minBalance: number;
+		startDate: number;
+		monthLabel: string;
+	} | null = null;
+	let hasCapBreach = false;
 
 	for (let i = 0; i <= totalMonths; i += 1) {
 		const current = addMonthsToYearMonth(startYearMonth, i);
@@ -1472,11 +1508,6 @@ export const buildProjection = (input: {
 			});
 		}
 
-		const autoFundingRulesByTarget = new Map<string, typeof autoFundingRules>();
-		for (const rule of autoFundingRules) {
-			const existing = autoFundingRulesByTarget.get(rule.targetAccountId) ?? [];
-			autoFundingRulesByTarget.set(rule.targetAccountId, [...existing, rule]);
-		}
 		for (const [targetAccountId, rules] of autoFundingRulesByTarget.entries()) {
 			const targetAccount = accountMap.get(targetAccountId);
 			if (!targetAccount) continue;
@@ -1585,11 +1616,6 @@ export const buildProjection = (input: {
 			}
 		}
 
-		const autoSweepRulesBySource = new Map<string, typeof autoSweepRules>();
-		for (const rule of autoSweepRules) {
-			const existing = autoSweepRulesBySource.get(rule.sourceAccountId) ?? [];
-			autoSweepRulesBySource.set(rule.sourceAccountId, [...existing, rule]);
-		}
 		for (const [sourceAccountId, rules] of autoSweepRulesBySource.entries()) {
 			const sourceAccount = accountMap.get(sourceAccountId);
 			if (!sourceAccount) continue;
@@ -1721,6 +1747,7 @@ export const buildProjection = (input: {
 			}
 
 			if (remainingExcess > 0.0000001 && !blockedAutoSweepSourceIds.has(sourceAccountId)) {
+				hasCapBreach = true;
 				events.push({
 					tone: 'negative',
 					monthLabel,
@@ -1847,79 +1874,13 @@ export const buildProjection = (input: {
 			const targetBalanceSettings = accountBalanceTargetsByAccountId.get(accountId);
 			const minBalance = targetBalanceSettings?.minBalance ?? 0;
 			if (accountInfo.balance < minBalance) {
-				if (!plannerFirstShortfall) {
-					const availableSourceAccounts: {
-						accountId: string;
-						accountName: string;
-						availableNow: boolean;
-						availableFromDate: number | null;
-					}[] = [];
-					for (const [candidateId, candidateAccount] of accountMap.entries()) {
-						if (candidateId === accountId) continue;
-						const accountStarted =
-							!candidateAccount.startDate ||
-							monthsBetweenYearMonths(candidateAccount.startDate, current) >= 0;
-						let availableNow = false;
-						let availableFrom: YearMonth | null = candidateAccount.startDate ?? null;
-
-						if (candidateAccount.type === 'cash_account') {
-							availableNow = accountStarted && candidateAccount.balance > 0;
-							availableSourceAccounts.push({
-								accountId: candidateId,
-								accountName: candidateAccount.name,
-								availableNow,
-								availableFromDate: availableFrom ? toYearMonthInt(availableFrom) : null
-							});
-							continue;
-						}
-						if (candidateAccount.type === 'brokerage') {
-							const shareAssetId = brokerageShareByAccountId.get(candidateId);
-							const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
-							if (!shareState) continue;
-							availableFrom = maxYearMonth(availableFrom, shareState.startDate);
-							const shareStarted =
-								!shareState.startDate || monthsBetweenYearMonths(shareState.startDate, current) >= 0;
-							availableNow =
-								accountStarted && shareStarted && (shareState.currentValue ?? 0) > 0;
-							availableSourceAccounts.push({
-								accountId: candidateId,
-								accountName: candidateAccount.name,
-								availableNow,
-								availableFromDate: availableFrom ? toYearMonthInt(availableFrom) : null
-							});
-							continue;
-						}
-						if (candidateAccount.type === 'super_account') {
-							const superAssetId = superByAccountId.get(candidateId);
-							const superState = superAssetId ? superStates.get(superAssetId) : null;
-							if (!superState) continue;
-							availableFrom = maxYearMonth(availableFrom, superState.startDate);
-							availableFrom = maxYearMonth(availableFrom, superState.preservationDate);
-							const superStarted =
-								!superState.startDate || monthsBetweenYearMonths(superState.startDate, current) >= 0;
-							const preservationReached =
-								!superState.preservationDate ||
-								monthsBetweenYearMonths(superState.preservationDate, current) >= 0;
-							availableNow =
-								accountStarted &&
-								superStarted &&
-								preservationReached &&
-								(superState.currentValue ?? 0) > 0;
-							availableSourceAccounts.push({
-								accountId: candidateId,
-								accountName: candidateAccount.name,
-								availableNow,
-								availableFromDate: availableFrom ? toYearMonthInt(availableFrom) : null
-							});
-						}
-					}
-					plannerFirstShortfall = {
+				if (!plannerFirstShortfallCandidate) {
+					plannerFirstShortfallCandidate = {
 						targetAccountId: accountId,
 						targetAccountName: accountInfo.name,
 						minBalance,
 						startDate: currentDate,
-						monthLabel,
-						availableSourceAccounts
+						monthLabel
 					};
 				}
 				events.push({
@@ -1937,10 +1898,61 @@ export const buildProjection = (input: {
 
 	const firstLiquidityDeficitPoint =
 		liquidityPoints.find((point) => point.balance < 0) ?? null;
-	const hasCapBreach = events.some(
-		(event) => event.tone === 'negative' && event.message.startsWith('Auto-sweep from ')
-	);
-	const firstShortfall = plannerFirstShortfall;
+	const firstShortfall: ProjectionResult['planner']['firstShortfall'] = plannerFirstShortfallCandidate
+		? {
+				...plannerFirstShortfallCandidate,
+				availableSourceAccounts: (() => {
+					const shortfallDate = plannerFirstShortfallCandidate.startDate;
+					const shortfallYM = fromYearMonthInt(shortfallDate) ?? startYearMonth;
+					const shortfallIndex = yearMonthIndex(shortfallYM);
+					const availableSourceAccounts: NonNullable<
+						ProjectionResult['planner']['firstShortfall']
+					>['availableSourceAccounts'] = [];
+					for (const [candidateId, candidateAccount] of accountMap.entries()) {
+						if (candidateId === plannerFirstShortfallCandidate.targetAccountId) continue;
+
+						let availableFrom: YearMonth | null = candidateAccount.startDate ?? null;
+						let availableValue = 0;
+
+						if (candidateAccount.type === 'cash_account') {
+							const series = accountSeriesById.get(candidateId);
+							availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
+						} else if (candidateAccount.type === 'brokerage') {
+							const shareAssetId = brokerageShareByAccountId.get(candidateId);
+							const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+							if (!shareState || !shareAssetId) continue;
+							availableFrom = maxYearMonth(availableFrom, shareState.startDate);
+							const series = assetSeriesById.get(shareAssetId);
+							availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
+						} else if (candidateAccount.type === 'super_account') {
+							const superAssetId = superByAccountId.get(candidateId);
+							const superState = superAssetId ? superStates.get(superAssetId) : null;
+							if (!superState || !superAssetId) continue;
+							availableFrom = maxYearMonth(availableFrom, superState.startDate);
+							availableFrom = maxYearMonth(availableFrom, superState.preservationDate);
+							const series = assetSeriesById.get(superAssetId);
+							availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
+						} else {
+							continue;
+						}
+
+						const availableFromDate = availableFrom ? toYearMonthInt(availableFrom) : null;
+						const availableFromIndex = availableFrom
+							? yearMonthIndex(availableFrom)
+							: Number.NEGATIVE_INFINITY;
+						const availableNow = availableFromIndex <= shortfallIndex && availableValue > 0;
+
+						availableSourceAccounts.push({
+							accountId: candidateId,
+							accountName: candidateAccount.name,
+							availableNow,
+							availableFromDate
+						});
+					}
+					return availableSourceAccounts;
+				})()
+			}
+		: null;
 	const stage: ProjectionResult['planner']['stage'] = firstLiquidityDeficitPoint
 		? 'liquidity'
 		: firstShortfall || hasCapBreach

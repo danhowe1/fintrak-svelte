@@ -1,13 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-	countScenariosForUser: vi.fn(),
-	getAuthenticatedUserId: vi.fn()
+	countScenariosForUser: vi.fn()
 }));
 
 vi.mock('$lib/server/database', () => ({
-	countScenariosForUser: mocks.countScenariosForUser,
-	getAuthenticatedUserId: mocks.getAuthenticatedUserId
+	countScenariosForUser: mocks.countScenariosForUser
 }));
 
 import { load as protectedLayoutLoad } from '../src/routes/(protected)/+layout.server';
@@ -28,13 +26,15 @@ describe('protected layout routing', () => {
 	});
 
 	it('redirects users with no scenarios to scenarios/create for non-create routes', async () => {
-		const session = { user: { id: '00000000-0000-0000-0000-000000000001' } };
-		mocks.getAuthenticatedUserId.mockReturnValue(session.user.id);
 		mocks.countScenariosForUser.mockResolvedValue(0);
 
 		const event = {
 			locals: {
-				auth: vi.fn().mockResolvedValue(session)
+				appUserId: '00000000-0000-0000-0000-000000000001'
+			},
+			cookies: {
+				get: vi.fn().mockReturnValue('2.0'),
+				set: vi.fn()
 			},
 			url: new URL('http://localhost/dashboard')
 		};
@@ -46,19 +46,22 @@ describe('protected layout routing', () => {
 	});
 
 	it('allows access to scenarios/create when the user has no scenarios', async () => {
-		const session = { user: { id: '00000000-0000-0000-0000-000000000001' } };
-		mocks.getAuthenticatedUserId.mockReturnValue(session.user.id);
 		mocks.countScenariosForUser.mockResolvedValue(0);
 
 		const event = {
 			locals: {
-				auth: vi.fn().mockResolvedValue(session)
+				appUserId: '00000000-0000-0000-0000-000000000001'
+			},
+			cookies: {
+				get: vi.fn().mockReturnValue('2.0'),
+				set: vi.fn()
 			},
 			url: new URL('http://localhost/scenarios/create')
 		};
 
-		await expect(protectedLayoutLoad(event as never)).resolves.toEqual({
-			scenarioCount: 0
+		await expect(protectedLayoutLoad(event as never)).resolves.toMatchObject({
+			scenarioCount: 0,
+			sessionRates: { inflationRate: 2 }
 		});
 	});
 });
