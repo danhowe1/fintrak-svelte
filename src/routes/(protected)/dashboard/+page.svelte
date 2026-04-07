@@ -242,6 +242,7 @@ let plannerSourceAccountId = '';
 let autoFundingRuleError = '';
 let plannerLiquidityShortcutError = '';
 let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
+let wasStage3Passed = false;
 type Stage3Profile = 'Conservative' | 'Balanced' | 'Growth';
 type Stage3Assessment = {
 	profile: Stage3Profile;
@@ -253,6 +254,8 @@ type Stage3Assessment = {
 	safetyMonths: number;
 	growthAllocationPct: number;
 	worstDrawdownPct: number;
+	worstDrawdownStartDate: number | null;
+	worstDrawdownEndDate: number | null;
 	horizonMonths: number;
 };
 	let stage3Assessment: Stage3Assessment | null = null;
@@ -347,6 +350,12 @@ type Stage3Assessment = {
 		stage4Reached &&
 		(stage3Assessment?.growthScore ?? 0) >= 60 &&
 		(stage3Assessment?.goalMatchScore ?? 0) >= 60;
+	$: {
+		if (stage3Passed && !wasStage3Passed) {
+			plannerAdvancedOpenStage = 'stage4';
+		}
+		wasStage3Passed = stage3Passed;
+	}
 	$: stage3Assessment = (() => {
 		if (!stage3Reached) return null;
 		const startYearMonth = fromYearMonthInt(projectionData.startDate);
@@ -430,19 +439,27 @@ type Stage3Assessment = {
 					: (growthAllocationPct / 45) * 40;
 		const liquidityPoints = projectionData.liquidity?.points ?? [];
 		let worstDrawdownPct = 0;
+		let worstDrawdownStartDate: number | null = null;
+		let worstDrawdownEndDate: number | null = null;
 		for (let pointIndex = 0; pointIndex < liquidityPoints.length; pointIndex += 1) {
 			const startBalance = liquidityPoints[pointIndex]?.balance ?? 0;
 			if (startBalance <= 0) continue;
 			const endIndex = Math.min(pointIndex + 12, liquidityPoints.length - 1);
 			let minBalanceInWindow = startBalance;
+			let minBalanceIndex = pointIndex;
 			for (let sampleIndex = pointIndex + 1; sampleIndex <= endIndex; sampleIndex += 1) {
-				minBalanceInWindow = Math.min(
-					minBalanceInWindow,
-					liquidityPoints[sampleIndex]?.balance ?? startBalance
-				);
+				const sampleBalance = liquidityPoints[sampleIndex]?.balance ?? startBalance;
+				if (sampleBalance < minBalanceInWindow) {
+					minBalanceInWindow = sampleBalance;
+					minBalanceIndex = sampleIndex;
+				}
 			}
 			const drawdownPct = ((startBalance - minBalanceInWindow) / startBalance) * 100;
-			worstDrawdownPct = Math.max(worstDrawdownPct, drawdownPct);
+			if (drawdownPct > worstDrawdownPct) {
+				worstDrawdownPct = drawdownPct;
+				worstDrawdownStartDate = liquidityPoints[pointIndex]?.date ?? null;
+				worstDrawdownEndDate = liquidityPoints[minBalanceIndex]?.date ?? null;
+			}
 		}
 		const resilienceScore = clamp(100 - worstDrawdownPct * 2, 0, 100);
 		const horizonMonths = Math.max(1, (projectionData.liquidity?.points?.length ?? 1) - 1);
@@ -470,6 +487,8 @@ type Stage3Assessment = {
 		safetyMonths: Math.max(0, Number(safetyMonths.toFixed(1))),
 		growthAllocationPct: Math.max(0, Number(growthAllocationPct.toFixed(1))),
 		worstDrawdownPct: Math.max(0, Number(worstDrawdownPct.toFixed(1))),
+		worstDrawdownStartDate,
+		worstDrawdownEndDate,
 		horizonMonths
 		};
 	})();
@@ -6727,9 +6746,17 @@ type Stage3Assessment = {
 												role="tooltip"
 												class="pointer-events-none absolute top-full left-1/2 z-20 mt-2 w-72 -translate-x-1/2 rounded-md border border-sky-200 bg-gradient-to-br from-sky-50 via-cyan-50 to-teal-50 px-2 py-1.5 text-[11px] leading-relaxed text-sky-900 opacity-0 shadow-md transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
 											>
-												Based on worst 12-month drawdown in liquidity. Current worst drawdown is
-												{stage3Assessment.worstDrawdownPct}%. Formula: 100 - (drawdown% x 2), clamped
-												0 to 100.
+												Measures the largest drop in liquidity over any rolling 12-month window in
+												your projection. Worst window:
+												{stage3Assessment.worstDrawdownStartDate
+													? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
+													: 'N/A'}{' '}
+												to{' '}
+												{stage3Assessment.worstDrawdownEndDate
+													? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
+													: 'N/A'}
+												, drawdown: {stage3Assessment.worstDrawdownPct}%. Formula: 100 - (drawdown%
+												x 2), clamped 0 to 100.
 											</span>
 										</span>
 									</div>
@@ -6806,9 +6833,7 @@ type Stage3Assessment = {
 						</div>
 					{:else}
 						{#if stage3Assessment}
-							<div class="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
-								<div class="font-semibold">Stage 4 growth scorecard</div>
-								<div class="mt-2 space-y-2">
+							<div class="mt-3 space-y-2 text-xs text-sky-900">
 									<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
 										<div class="flex items-center gap-1">
 											<span class="font-semibold">Growth Allocation Score</span>
@@ -6854,30 +6879,31 @@ type Stage3Assessment = {
 										</div>
 										<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
 									</div>
-								</div>
-								<div class="mt-2 text-[11px] text-sky-800">
+								<div class="text-[11px] text-sky-800">
 									Current profile: {stage3Assessment.profile} ({stage3Assessment.totalScore}/100).
 								</div>
 							</div>
 						{/if}
-						<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-							<div class="font-semibold">Set Cap Settings In What If</div>
-							<div class="mt-1 text-xs">
-								Use the Caps tab in the What if?... section to set cap amounts and sweep destination
-								priorities.
+						{#if !stage4Passed}
+							<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+								<div class="font-semibold">Set Cap Settings In What If</div>
+								<div class="mt-1 text-xs">
+									Use the Caps tab in the What if?... section to set cap amounts and sweep destination
+									priorities.
+								</div>
+								<div class="mt-2 text-xs">
+									Head down to the
+									<a
+										href="#what-if-panel"
+										class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
+										on:click|preventDefault={jumpToWhatIfCaps}
+									>
+										What if?...
+									</a>
+									section below to make your changes.
+								</div>
 							</div>
-							<div class="mt-2 text-xs">
-								Head down to the
-								<a
-									href="#what-if-panel"
-									class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-									on:click|preventDefault={jumpToWhatIfCaps}
-								>
-									What if?...
-								</a>
-								section below to make your changes.
-							</div>
-						</div>
+						{/if}
 					{/if}
 				{/if}
 			</div>
