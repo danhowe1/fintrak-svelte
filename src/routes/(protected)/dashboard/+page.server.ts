@@ -426,7 +426,16 @@ export const actions: Actions = {
 		if (!scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await reorderAutoFundingRules(scenarioId, targetAccountId, ruleIds);
+		try {
+			await reorderAutoFundingRules(scenarioId, targetAccountId, ruleIds);
+		} catch (error) {
+			const message =
+				error instanceof Error && error.message.trim().length > 0
+					? error.message
+					: 'Unable to reorder reserve funding rules.';
+			const status = message === 'Invalid rule ordering payload.' ? 400 : 500;
+			return fail(status, { error: message });
+		}
 		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
 		return { success: true, autoFundingRules };
 	},

@@ -926,6 +926,21 @@ export async function reorderAutoFundingRules(
 		) {
 			throw new Error('Invalid rule ordering payload.');
 		}
+		// Use a temporary offset first to avoid violating the unique
+		// (scenario_id, target_account_id, priority_order) constraint while swapping.
+		const TEMP_PRIORITY_OFFSET = 1_000_000;
+		for (let index = 0; index < ruleIdsInOrder.length; index += 1) {
+			await client.query(
+				`
+					update auto_funding_rules
+					set priority_order = $4::int
+					where scenario_id = $1::uuid
+					  and target_account_id = $2::uuid
+					  and id = $3::uuid
+				`,
+				[scenarioId, targetAccountId, ruleIdsInOrder[index], TEMP_PRIORITY_OFFSET + index + 1]
+			);
+		}
 		for (let index = 0; index < ruleIdsInOrder.length; index += 1) {
 			await client.query(
 				`
@@ -972,6 +987,21 @@ export async function reorderAutoSweepRules(
 			existingIds.some((id) => !ruleIdsInOrder.includes(id))
 		) {
 			throw new Error('Invalid rule ordering payload.');
+		}
+		// Use a temporary offset first to avoid violating the unique
+		// (scenario_id, source_account_id, priority_order) constraint while swapping.
+		const TEMP_PRIORITY_OFFSET = 1_000_000;
+		for (let index = 0; index < ruleIdsInOrder.length; index += 1) {
+			await client.query(
+				`
+					update auto_sweep_rules
+					set priority_order = $4::int
+					where scenario_id = $1::uuid
+					  and source_account_id = $2::uuid
+					  and id = $3::uuid
+				`,
+				[scenarioId, sourceAccountId, ruleIdsInOrder[index], TEMP_PRIORITY_OFFSET + index + 1]
+			);
 		}
 		for (let index = 0; index < ruleIdsInOrder.length; index += 1) {
 			await client.query(
