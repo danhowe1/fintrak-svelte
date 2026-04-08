@@ -1,5 +1,7 @@
 <script lang="ts">
+	import Button from '$lib/components/ui/Button.svelte';
 	import InfoTooltip from '$lib/components/ui/InfoTooltip.svelte';
+	import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
 
 	export let stage1Passed: boolean;
 	export let plannerStage: string;
@@ -40,16 +42,16 @@
 
 <div class="space-y-4">
 	<div class="relative rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-		<h3 class="text-sm font-semibold text-slate-900">Funding Planner</h3>
+		<h3 class="app-title-sm">Funding Planner</h3>
 		<div
 			class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${stage1Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}
 		>
 			<div class="flex items-center gap-2">
 				<span class="font-semibold">Stage 1: Liquidity</span>
 				<InfoTooltip label="What is Stage 1 liquidity?">
-					Stage 1 checks whether you are living within your means by seeing if you run out of accessible
-					money in any month. Accessible money is in either cash accounts, shares or pension/superannuation
-					funds (if available).
+					Stage 1 checks whether you are living within your means by seeing if you run out of
+					accessible money in any month. Accessible money is in either cash accounts, shares or
+					pension/superannuation funds (if available).
 				</InfoTooltip>
 			</div>
 			<span
@@ -59,12 +61,14 @@
 			</span>
 		</div>
 		{#if stage1Passed}
-			<div class="mt-2 text-xs text-emerald-700">You are living within your means.</div>
+			<StatusMessage tone="success" class="mt-2 border-0 bg-transparent px-0 py-0 text-emerald-700">
+				You are living within your means.
+			</StatusMessage>
 		{/if}
 		{#if plannerStage === 'liquidity'}
-			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+			<StatusMessage tone="warning" class="mt-3">
 				{stage1PlannerMessage}
-			</div>
+			</StatusMessage>
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 				<div class="font-semibold">Fix Liquidity First</div>
 				<div class="mt-1 text-xs">
@@ -76,7 +80,9 @@
 					<li>Increase income or add an income stream.</li>
 					<li>Add an income generating asset.</li>
 					<li>
-						Sell an asset to bring in income{assetsList.some((asset) => asset.asset_type === 'property')
+						Sell an asset to bring in income{assetsList.some(
+							(asset) => asset.asset_type === 'property'
+						)
 							? ' (e.g. property).'
 							: '.'}
 					</li>
@@ -102,7 +108,8 @@
 				<span class="font-semibold">Stage 2: Accessibility</span>
 				<InfoTooltip label="What is Stage 2 accessibility?">
 					Once we've established you have enough to live on we need to ensure all of your accounts
-					remain in the black. Stage 2 is about ensuring you have access to funds when you need them.
+					remain in the black. Stage 2 is about ensuring you have access to funds when you need
+					them.
 				</InfoTooltip>
 			</div>
 			<span
@@ -112,12 +119,14 @@
 			</span>
 		</div>
 		{#if stage2Passed}
-			<div class="mt-2 text-xs text-emerald-700">None of your accounts run out of money.</div>
+			<StatusMessage tone="success" class="mt-2 border-0 bg-transparent px-0 py-0 text-emerald-700">
+				None of your accounts run out of money.
+			</StatusMessage>
 		{/if}
 		{#if stage2Reached && !stage2Passed}
-			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+			<StatusMessage tone="warning" class="mt-3">
 				{stage2PlannerMessage}
-			</div>
+			</StatusMessage>
 			{#if stage2AccessibilityShortfall}
 				<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
 					<div class="font-semibold">
@@ -129,25 +138,26 @@
 							{#each plannerExistingRules ?? [] as rule}
 								{@const sourceAccountName =
 									accountsList.find((account) => account.id === rule.source_account_id)?.name ??
-										'Source account'}
+									'Source account'}
 								<div
 									class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1"
 								>
 									<span>Priority {rule.priority_order}: {sourceAccountName}</span>
-									<button
+									<Button
 										type="button"
-										class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-										on:click={() => removeAutoFundingRule(rule.id)}
+										variant="secondary"
+										size="2xs"
+										onclick={() => removeAutoFundingRule(rule.id)}
 									>
 										Remove
-									</button>
+									</Button>
 								</div>
 							{/each}
 						</div>
 					{/if}
-					<div class="mt-2 block text-xs text-slate-600">
+					<div class="app-hint mt-2 block">
 						<select
-							class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+							class="app-input-compact app-input-compact-lg w-full"
 							bind:value={plannerSourceAccountId}
 						>
 							{#if plannerSourceOptions.length === 0}
@@ -161,28 +171,31 @@
 						</select>
 					</div>
 					{#if plannerSourceAvailabilityWarning}
-						<div class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800">
+						<div
+							class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800"
+						>
 							{plannerSourceAvailabilityWarning}
 						</div>
 					{/if}
 					<div class="mt-2">
-						<button
+						<Button
 							type="button"
-							class="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+							variant="secondary"
+							size="xs"
 							disabled={!plannerSourceAccountId || plannerSourceOptions.length === 0}
-							on:click={saveAutoFundingRule}
+							onclick={saveAutoFundingRule}
 						>
 							Add Funding Account
-						</button>
+						</Button>
 					</div>
 					{#if autoFundingRuleError}
-						<div class="mt-2 text-xs text-rose-600">{autoFundingRuleError}</div>
+						<StatusMessage tone="error" class="mt-2">{autoFundingRuleError}</StatusMessage>
 					{/if}
 				</div>
 			{:else}
-				<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700">
+				<StatusMessage tone="info" class="mt-3 border-slate-200 bg-slate-50 text-slate-700">
 					Stage 2 is active. Review auto-funding priorities until account runout is resolved.
-				</div>
+				</StatusMessage>
 			{/if}
 		{/if}
 
@@ -212,22 +225,28 @@
 			</span>
 		</div>
 		{#if stage3Passed}
-			<div class="mt-2 text-xs text-emerald-700">Your reserves and resilience are in a healthy range.</div>
+			<StatusMessage tone="success" class="mt-2 border-0 bg-transparent px-0 py-0 text-emerald-700">
+				Your reserves and resilience are in a healthy range.
+			</StatusMessage>
 		{/if}
 		{#if stage3Reached && stage3Assessment}
 			<div class="mt-3 space-y-2 text-xs text-sky-900">
-				<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
+				<div
+					class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
+				>
 					<div class="flex items-center gap-1">
 						<span class="font-semibold">Safety Buffer Score</span>
 						<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
-							Measures how many months you could survive on your liquid buffer given living expenses,
-							asset ownership expenses and mortgage repayments. Current coverage is
+							Measures how many months you could survive on your liquid buffer given living
+							expenses, asset ownership expenses and mortgage repayments. Current coverage is
 							{Math.floor(stage3Assessment.safetyMonths)} months.
 						</InfoTooltip>
 					</div>
 					<span class="font-semibold">{stage3Assessment.safetyScore}/100</span>
 				</div>
-				<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
+				<div
+					class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
+				>
 					<div class="flex items-center gap-1">
 						<span class="font-semibold">Resilience Score</span>
 						<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
@@ -249,7 +268,8 @@
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 				<div class="font-semibold">Set Reserve Settings In What If</div>
 				<div class="mt-1 text-xs">
-					Use the Reserves tab in the What if?... section to set reserve amounts and funding source priorities.
+					Use the Reserves tab in the What if?... section to set reserve amounts and funding source
+					priorities.
 				</div>
 				<div class="mt-2 text-xs">
 					Head down to the
@@ -291,27 +311,33 @@
 			</span>
 		</div>
 		{#if stage4Passed}
-			<div class="mt-2 text-xs text-emerald-700">Your cap settings support growth and match your horizon.</div>
+			<StatusMessage tone="success" class="mt-2 border-0 bg-transparent px-0 py-0 text-emerald-700">
+				Your cap settings support growth and match your horizon.
+			</StatusMessage>
 		{/if}
 		{#if stage3Reached && plannerAdvancedOpenStage === 'stage4'}
 			{#if !stage4Reached}
-				<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+				<div class="app-hint mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
 					Complete Stage 3 safety targets first to unlock Stage 4.
 				</div>
 			{:else}
 				{#if stage3Assessment}
 					<div class="mt-3 space-y-2 text-xs text-sky-900">
-						<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
+						<div
+							class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
+						>
 							<div class="flex items-center gap-1">
 								<span class="font-semibold">Growth Allocation Score</span>
 								<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
-									Shows how much of current value is in growth assets (shares, super, property) versus
-									defensive cash. Current growth allocation is {stage3Assessment.growthAllocationPct}%.
+									Shows how much of current value is in growth assets (shares, super, property)
+									versus defensive cash. Current growth allocation is {stage3Assessment.growthAllocationPct}%.
 								</InfoTooltip>
 							</div>
 							<span class="font-semibold">{stage3Assessment.growthScore}/100</span>
 						</div>
-						<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
+						<div
+							class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
+						>
 							<div class="flex items-center gap-1">
 								<span class="font-semibold">Goal Match Score</span>
 								<InfoTooltip label="What is the Stage 4 goal match score?" theme="sky">
@@ -327,7 +353,9 @@
 					</div>
 				{/if}
 				{#if !stage4Passed}
-					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+					<div
+						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+					>
 						<div class="font-semibold">Set Cap Settings In What If</div>
 						<div class="mt-1 text-xs">
 							Use the Caps tab in the What if?... section to set cap amounts and funding destination
@@ -361,7 +389,7 @@
 	</div>
 	{#if (projectionEvents?.length ?? 0) > 0}
 		<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-			<h3 class="text-sm font-semibold text-slate-900">Events</h3>
+			<h3 class="app-title-sm">Events</h3>
 			<div class="mt-3 space-y-2">
 				{#each projectionEvents as event}
 					<div
@@ -378,4 +406,3 @@
 		</div>
 	{/if}
 </div>
-

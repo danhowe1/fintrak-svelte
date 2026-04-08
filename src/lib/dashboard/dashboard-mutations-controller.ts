@@ -24,7 +24,10 @@ import {
 	removeSweepRuleCommand,
 	upsertFundingTargetForAccountCommand
 } from '$lib/dashboard/funding-commands';
-import { runScenarioMutationCommand, saveAccountEditDraftCommand } from '$lib/dashboard/entity-commands';
+import {
+	runScenarioMutationCommand,
+	saveAccountEditDraftCommand
+} from '$lib/dashboard/entity-commands';
 import {
 	removeAutoFundingRuleCommand,
 	saveAutoFundingRuleCommand
@@ -32,7 +35,10 @@ import {
 
 type WithLock = (key: string, run: () => Promise<void>, showSpinner?: boolean) => Promise<void>;
 
-type RefreshProjection = (options?: { includeCashflows?: boolean; force?: boolean }) => Promise<void>;
+type RefreshProjection = (options?: {
+	includeCashflows?: boolean;
+	force?: boolean;
+}) => Promise<void>;
 
 type SetProjectionError = (message: string | null) => void;
 
@@ -70,9 +76,15 @@ export type DashboardMutationControllerDeps = {
 	setCashflowDrafts: (drafts: Record<string, CashflowDraft>) => void;
 	getCashflowFormErrors: () => Record<string, string>;
 	setCashflowFormErrors: (errors: Record<string, string>) => void;
-	setActiveCashflowForm: (form: { assetId: string; type: 'income' | 'expense'; cashflowId?: string } | null) => void;
+	setActiveCashflowForm: (
+		form: { assetId: string; type: 'income' | 'expense'; cashflowId?: string } | null
+	) => void;
 	getAssetType: (assetId: string) => string;
-	getDefaultDraft: (assetId: string, type: 'income' | 'expense', assetType: string) => CashflowDraft;
+	getDefaultDraft: (
+		assetId: string,
+		type: 'income' | 'expense',
+		assetType: string
+	) => CashflowDraft;
 	getDraftKey: (assetId: string, type: 'income' | 'expense') => string;
 	isValidMonthYear: (value: unknown) => boolean;
 	toMonthYearInput: (value: unknown) => string;
@@ -570,4 +582,3 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		confirmDeleteCashflow
 	};
 };
-

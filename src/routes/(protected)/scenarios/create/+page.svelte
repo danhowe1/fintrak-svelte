@@ -19,7 +19,7 @@
 <p>No scenarios were found for your account.</p>
 <p>Create your first scenario here to start modelling accounts, assets, and ownership.</p>
 
-<section class="not-prose mt-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+<section class="not-prose app-panel mt-8">
 	<style>
 		.no-spin::-webkit-outer-spin-button,
 		.no-spin::-webkit-inner-spin-button {
@@ -30,8 +30,8 @@
 			-moz-appearance: textfield;
 		}
 	</style>
-	<h2 class="text-lg font-semibold text-slate-900">Scenario setup</h2>
-	<p class="mt-2 text-sm text-slate-600">
+	<h2 class="app-title-lg">Scenario setup</h2>
+	<p class="app-text-muted mt-2">
 		Enter the scenario details and the first person asset. Inflation defaults to 2.0% and interest
 		rate change defaults to 0.00%.
 	</p>
@@ -153,8 +153,6 @@
 			</div>
 		</FormSection>
 
-		<Button type="submit" class="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm">
-			Create scenario
-		</Button>
+		<Button type="submit" variant="primary" size="sm">Create scenario</Button>
 	</form>
 </section>

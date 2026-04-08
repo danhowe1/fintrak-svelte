@@ -11,7 +11,8 @@ export const PLANNER_LIQUIDITY_ERRORS = {
 	missingPersonAsset: 'Add a person asset first so income can be modeled.',
 	missingExpenseCashflow:
 		'No existing expense cashflows found. Add one first, then reduce it to improve liquidity.',
-	missingSaleSource: 'No shares/super sale source is available for the first liquidity deficit month.',
+	missingSaleSource:
+		'No shares/super sale source is available for the first liquidity deficit month.',
 	missingPropertyAsset: 'No property asset found to schedule a sale.'
 } as const;
 
@@ -91,7 +92,8 @@ export const buildLiquidityPropertySaleDetails = (input: {
 	monthLabelFromDate: (value: number) => string;
 	formatYearMonthInput: (value: unknown) => string;
 }): PropertyDetail => {
-	const { property, existing, firstLiquidityDeficit, monthLabelFromDate, formatYearMonthInput } = input;
+	const { property, existing, firstLiquidityDeficit, monthLabelFromDate, formatYearMonthInput } =
+		input;
 	const saleDate = firstLiquidityDeficit?.startDate
 		? monthLabelFromDate(firstLiquidityDeficit.startDate)
 		: '';

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import FormRow from '$lib/components/ui/FormRow.svelte';
 	import InlineError from '$lib/components/ui/InlineError.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
 
 	type CashflowDraftModel = {
 		type: 'income' | 'expense';
@@ -49,16 +50,18 @@
 
 <div class="mt-3 rounded-lg border border-slate-200 bg-white p-3">
 	<div class="text-xs font-semibold text-slate-700">
-		{isEdit ? 'Edit' : 'New'} {draft.type === 'income' ? 'Income' : 'Expense'}
+		{isEdit ? 'Edit' : 'New'}
+		{draft.type === 'income' ? 'Income' : 'Expense'}
 	</div>
 	<FormRow label="Category">
 		<select
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.category}
 			disabled={categoryOptions.length === 1}
 			onchange={(event) =>
 				onUpdate({
-					category: (event.currentTarget as HTMLSelectElement).value as CashflowDraftModel['category']
+					category: (event.currentTarget as HTMLSelectElement)
+						.value as CashflowDraftModel['category']
 				})}
 		>
 			{#each categoryOptions as option}
@@ -69,15 +72,16 @@
 	<FormRow label="Description">
 		<input
 			type="text"
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.description}
-			oninput={(event) => onUpdate({ description: (event.currentTarget as HTMLInputElement).value })}
+			oninput={(event) =>
+				onUpdate({ description: (event.currentTarget as HTMLInputElement).value })}
 		/>
 	</FormRow>
 	<FormRow label="Amount">
 		<input
 			type="number"
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.amount}
 			step={amountStep}
 			oninput={(event) => onUpdate({ amount: (event.currentTarget as HTMLInputElement).value })}
@@ -88,7 +92,7 @@
 			type="text"
 			inputmode="numeric"
 			pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.startDate}
 			oninput={(event) => onUpdate({ startDate: (event.currentTarget as HTMLInputElement).value })}
 		/>
@@ -98,17 +102,20 @@
 			type="text"
 			inputmode="numeric"
 			pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.endDate}
 			oninput={(event) => onUpdate({ endDate: (event.currentTarget as HTMLInputElement).value })}
 		/>
 	</FormRow>
 	<FormRow label="Frequency">
 		<select
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.frequency}
 			onchange={(event) =>
-				onUpdate({ frequency: (event.currentTarget as HTMLSelectElement).value as CashflowDraftModel['frequency'] })}
+				onUpdate({
+					frequency: (event.currentTarget as HTMLSelectElement)
+						.value as CashflowDraftModel['frequency']
+				})}
 		>
 			{#each frequencyOptions as option}
 				<option value={option.value}>{option.label}</option>
@@ -117,7 +124,7 @@
 	</FormRow>
 	<FormRow label="Account">
 		<select
-			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="app-input-block-compact"
 			value={draft.assetAccountId}
 			onchange={(event) =>
 				onUpdate({ assetAccountId: (event.currentTarget as HTMLSelectElement).value })}
@@ -127,7 +134,7 @@
 			{/each}
 		</select>
 	</FormRow>
-	<label class="mt-2 flex items-center gap-2 text-xs text-slate-600">
+	<label class="app-hint mt-2 flex items-center gap-2">
 		<input
 			type="checkbox"
 			checked={draft.inflationAffected}
@@ -141,20 +148,23 @@
 		<InlineError message={error} />
 	{/if}
 	<div class="mt-3 flex items-center gap-2">
-		<button
+		<Button
 			type="button"
-			class="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
+			variant="secondary"
+			size="xs"
+			class="border-slate-200 text-slate-600"
 			onclick={onCancel}
 		>
 			Cancel
-		</button>
-		<button
+		</Button>
+		<Button
 			type="button"
-			class="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+			variant="primary"
+			size="xs"
 			disabled={!draft.assetAccountId}
 			onclick={onSubmit}
 		>
 			{isEdit ? 'Save' : 'Add'}
-		</button>
+		</Button>
 	</div>
 </div>

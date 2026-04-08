@@ -6,7 +6,10 @@ type WithLock = (
 	requiresAutoRun?: boolean
 ) => Promise<void>;
 
-type RefreshProjection = (options?: { includeCashflows?: boolean; force?: boolean }) => Promise<void>;
+type RefreshProjection = (options?: {
+	includeCashflows?: boolean;
+	force?: boolean;
+}) => Promise<void>;
 
 const postFormAction = async (
 	action: string,

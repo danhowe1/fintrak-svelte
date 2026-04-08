@@ -263,7 +263,10 @@ export type ReservesTabActionsProps = {
 	upsertFundingTargetForAccount: (accountId: string) => Promise<void>;
 	moveReserveRule: (targetAccountId: string, ruleId: string, direction: -1 | 1) => Promise<void>;
 	removeReserveRule: (ruleId: string) => Promise<void>;
-	addReserveRuleForTarget: (targetAccountId: string, selectedSourceAccountId: string) => Promise<void>;
+	addReserveRuleForTarget: (
+		targetAccountId: string,
+		selectedSourceAccountId: string
+	) => Promise<void>;
 };
 
 export type ReservesTabUiProps = {

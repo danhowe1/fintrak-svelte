@@ -28,9 +28,9 @@
 </script>
 
 <h1>Add {assetTypeTitle}</h1>
-<p class="text-sm text-slate-600">Scenario: {data.scenario.name}</p>
+<p class="app-text-muted">Scenario: {data.scenario.name}</p>
 
-<section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+<section class="not-prose app-panel mt-6">
 	<style>
 		.no-spin::-webkit-outer-spin-button,
 		.no-spin::-webkit-inner-spin-button {
@@ -178,13 +178,9 @@
 
 		{#if selectedType === 'mortgage'}
 			<FormSection title={`${assetTypeLabel} DETAILS`}>
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
+				<label class="app-label">
 					Secured by property
-					<select
-						name="mortgagePropertyId"
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-						required
-					>
+					<select name="mortgagePropertyId" class="app-input" required>
 						<option value="" disabled selected={(form?.values?.mortgagePropertyId ?? '') === ''}>
 							Select a property
 						</option>
@@ -198,7 +194,7 @@
 						{/each}
 					</select>
 					{#if form?.errors?.mortgagePropertyId?.[0]}
-						<span class="text-xs text-rose-600">{form.errors.mortgagePropertyId[0]}</span>
+						<span class="app-error">{form.errors.mortgagePropertyId[0]}</span>
 					{/if}
 				</label>
 
@@ -228,7 +224,7 @@
 					/>
 				</div>
 
-				<label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+				<label class="app-label-inline">
 					<input
 						type="checkbox"
 						name="mortgageInterestOnly"
@@ -290,24 +286,23 @@
 
 		{#if selectedType === 'superannuation'}
 			<FormSection title={`${assetTypeLabel} DETAILS`}>
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
+				<label class="app-label">
 					Associated person
-					<select
-						name="superPersonId"
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-						required
-					>
+					<select name="superPersonId" class="app-input" required>
 						<option value="" disabled selected={(form?.values?.superPersonId ?? '') === ''}>
 							Select a person
 						</option>
 						{#each data.people as person}
-							<option value={person.id} selected={(form?.values?.superPersonId ?? '') === person.id}>
+							<option
+								value={person.id}
+								selected={(form?.values?.superPersonId ?? '') === person.id}
+							>
 								{person.name}
 							</option>
 						{/each}
 					</select>
 					{#if form?.errors?.superPersonId?.[0]}
-						<span class="text-xs text-rose-600">{form.errors.superPersonId[0]}</span>
+						<span class="app-error">{form.errors.superPersonId[0]}</span>
 					{/if}
 				</label>
 				<div class="grid gap-4 md:grid-cols-3">
@@ -360,11 +355,11 @@
 						required
 					/>
 
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label">
 						Expenses account
 						<select
 							name="expenseAccountChoice"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							class="app-input"
 							required
 							bind:value={expenseAccountChoice}
 						>
@@ -377,7 +372,7 @@
 							{/each}
 						</select>
 						{#if form?.errors?.expenseAccountChoice?.[0]}
-							<span class="text-xs text-rose-600">
+							<span class="app-error">
 								{form.errors.expenseAccountChoice[0]}
 							</span>
 						{/if}
@@ -427,7 +422,7 @@
 						error={form?.errors?.employmentIncome?.[0]}
 					/>
 
-					<label class="flex items-center gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label-inline">
 						<input
 							type="checkbox"
 							name="useSameAccount"
@@ -457,11 +452,11 @@
 							/>
 						{/if}
 					{:else}
-						<label class="grid gap-2 text-sm font-medium text-slate-700">
+						<label class="app-label">
 							Income account
 							<select
 								name="incomeAccountChoice"
-								class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+								class="app-input"
 								required
 								bind:value={incomeAccountChoice}
 							>
@@ -474,7 +469,7 @@
 								{/each}
 							</select>
 							{#if form?.errors?.incomeAccountChoice?.[0]}
-								<span class="text-xs text-rose-600">{form.errors.incomeAccountChoice[0]}</span>
+								<span class="app-error">{form.errors.incomeAccountChoice[0]}</span>
 							{/if}
 						</label>
 
@@ -526,11 +521,11 @@
 						required
 					/>
 
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label">
 						Expenses account
 						<select
 							name="expenseAccountChoice"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							class="app-input"
 							required
 							bind:value={expenseAccountChoice}
 						>
@@ -543,7 +538,7 @@
 							{/each}
 						</select>
 						{#if form?.errors?.expenseAccountChoice?.[0]}
-							<span class="text-xs text-rose-600">{form.errors.expenseAccountChoice[0]}</span>
+							<span class="app-error">{form.errors.expenseAccountChoice[0]}</span>
 						{/if}
 					</label>
 
@@ -616,11 +611,11 @@
 				</div>
 
 				<div class="mt-4 grid gap-4">
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label">
 						Payment source account
 						<select
 							name="mortgagePaymentSourceChoice"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+							class="app-input"
 							required
 							bind:value={mortgagePaymentSourceChoice}
 						>
@@ -633,7 +628,7 @@
 							{/each}
 						</select>
 						{#if form?.errors?.mortgagePaymentSourceChoice?.[0]}
-							<span class="text-xs text-rose-600">
+							<span class="app-error">
 								{form.errors.mortgagePaymentSourceChoice[0]}
 							</span>
 						{/if}
@@ -673,13 +668,9 @@
 				</div>
 
 				<div class="mt-4 grid gap-4">
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label">
 						Offset account
-						<select
-							name="mortgageOffsetChoice"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-							bind:value={mortgageOffsetChoice}
-						>
+						<select name="mortgageOffsetChoice" class="app-input" bind:value={mortgageOffsetChoice}>
 							<option value="none">None</option>
 							<option value="same_as_payment_source">Same as payment source</option>
 							<option value="new">Create new cash account</option>
@@ -688,7 +679,7 @@
 							{/each}
 						</select>
 						{#if form?.errors?.mortgageOffsetChoice?.[0]}
-							<span class="text-xs text-rose-600">
+							<span class="app-error">
 								{form.errors.mortgageOffsetChoice[0]}
 							</span>
 						{/if}
@@ -730,7 +721,7 @@
 
 			{#if selectedType === 'shares'}
 				<div class="grid gap-4">
-					<div class="text-sm text-slate-600">
+					<div class="app-text-muted">
 						A brokerage account will be created automatically as:
 						<span class="font-semibold text-slate-900">
 							{String(form?.values?.name ?? '').trim() || 'Asset name'} Brokerage
@@ -746,13 +737,9 @@
 						error={form?.errors?.shareBrokerageAccountOpeningBalance?.[0]}
 						required
 					/>
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label">
 						Pays into (cash account)
-						<select
-							name="sharePaysIntoAccountId"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-							required
-						>
+						<select name="sharePaysIntoAccountId" class="app-input" required>
 							<option
 								value=""
 								disabled
@@ -770,14 +757,14 @@
 							{/each}
 						</select>
 						{#if form?.errors?.sharePaysIntoAccountId?.[0]}
-							<span class="text-xs text-rose-600">{form.errors.sharePaysIntoAccountId[0]}</span>
+							<span class="app-error">{form.errors.sharePaysIntoAccountId[0]}</span>
 						{/if}
 					</label>
 				</div>
 			{/if}
 			{#if selectedType === 'superannuation'}
 				<div class="grid gap-4">
-					<div class="text-sm text-slate-600">
+					<div class="app-text-muted">
 						A super account will be created automatically as:
 						<span class="font-semibold text-slate-900">
 							{String(form?.values?.name ?? '').trim() || 'Asset name'} Super
@@ -793,13 +780,9 @@
 						error={form?.errors?.superOpeningBalance?.[0]}
 						required
 					/>
-					<label class="grid gap-2 text-sm font-medium text-slate-700">
+					<label class="app-label">
 						Pays into (cash account)
-						<select
-							name="superPaysIntoAccountId"
-							class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
-							required
-						>
+						<select name="superPaysIntoAccountId" class="app-input" required>
 							<option
 								value=""
 								disabled
@@ -817,7 +800,7 @@
 							{/each}
 						</select>
 						{#if form?.errors?.superPaysIntoAccountId?.[0]}
-							<span class="text-xs text-rose-600">{form.errors.superPaysIntoAccountId[0]}</span>
+							<span class="app-error">{form.errors.superPaysIntoAccountId[0]}</span>
 						{/if}
 					</label>
 				</div>
@@ -825,13 +808,10 @@
 		</FormSection>
 
 		<div class="flex flex-wrap items-center gap-3">
-			<Button type="submit" class="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm">
-				Add asset
-			</Button>
+			<Button type="submit" variant="primary" size="sm">Add asset</Button>
 			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/dashboard">
 				Cancel
 			</a>
 		</div>
 	</form>
 </section>
-

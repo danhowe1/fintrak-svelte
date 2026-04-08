@@ -1,6 +1,8 @@
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
 	import type { AssetPanelTab } from '$lib/dashboard/types';
+	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
+	import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
 	import AssetsTab from '$lib/components/dashboard/tabs/AssetsTab.svelte';
 	import AccountsTab from '$lib/components/dashboard/tabs/AccountsTab.svelte';
 	import TransfersTab from '$lib/components/dashboard/tabs/TransfersTab.svelte';
@@ -17,15 +19,19 @@
 	export let transfersTabProps: ComponentProps<typeof TransfersTab>;
 	export let reservesTabProps: ComponentProps<typeof ReservesTab>;
 	export let capsTabProps: ComponentProps<typeof CapsTab>;
+
+	const assetTabOptions = [
+		{ value: 'assets', label: 'Assets' },
+		{ value: 'accounts', label: 'Accounts' },
+		{ value: 'transfers', label: 'Transfers' },
+		{ value: 'reserves', label: 'Reserves' },
+		{ value: 'caps', label: 'Caps' }
+	];
 </script>
 
-<div
-	id="what-if-panel"
-	bind:this={whatIfPanelElement}
-	class="relative rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
->
+<div id="what-if-panel" bind:this={whatIfPanelElement} class="app-panel relative">
 	<div class="flex items-center gap-2">
-		<h3 class="text-lg font-semibold text-slate-900">What if?...</h3>
+		<h3 class="app-title-lg">What if?...</h3>
 		<span class="group relative inline-flex">
 			<button
 				type="button"
@@ -47,59 +53,13 @@
 			</span>
 		</span>
 	</div>
-	<div class="mt-3 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold">
-		<button
-			type="button"
-			class={`rounded-full px-3 py-1 transition ${
-				assetPanelTab === 'assets' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
-			}`}
-			on:click={() => (assetPanelTab = 'assets')}
-		>
-			Assets
-		</button>
-		<button
-			type="button"
-			class={`rounded-full px-3 py-1 transition ${
-				assetPanelTab === 'accounts'
-					? 'bg-slate-900 text-white'
-					: 'text-slate-600 hover:text-slate-900'
-			}`}
-			on:click={() => (assetPanelTab = 'accounts')}
-		>
-			Accounts
-		</button>
-		<button
-			type="button"
-			class={`rounded-full px-3 py-1 transition ${
-				assetPanelTab === 'transfers'
-					? 'bg-slate-900 text-white'
-					: 'text-slate-600 hover:text-slate-900'
-			}`}
-			on:click={() => (assetPanelTab = 'transfers')}
-		>
-			Transfers
-		</button>
-		<button
-			type="button"
-			class={`rounded-full px-3 py-1 transition ${
-				assetPanelTab === 'reserves'
-					? 'bg-slate-900 text-white'
-					: 'text-slate-600 hover:text-slate-900'
-			}`}
-			on:click={() => (assetPanelTab = 'reserves')}
-		>
-			Reserves
-		</button>
-		<button
-			type="button"
-			class={`rounded-full px-3 py-1 transition ${
-				assetPanelTab === 'caps' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
-			}`}
-			on:click={() => (assetPanelTab = 'caps')}
-		>
-			Caps
-		</button>
-	</div>
+	<SegmentedControl
+		class="mt-3 text-xs font-semibold"
+		options={assetTabOptions}
+		value={assetPanelTab}
+		onChange={(next) =>
+			(assetPanelTab = next as 'assets' | 'accounts' | 'transfers' | 'reserves' | 'caps')}
+	/>
 	{#if !isInitialWhatIfLoading}
 		{#if assetPanelTab === 'assets'}
 			<AssetsTab
@@ -135,9 +95,9 @@
 		{/if}
 	{/if}
 	{#if whatIfLoadError}
-		<div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+		<StatusMessage tone="error" class="mt-4">
 			{whatIfLoadError}
-		</div>
+		</StatusMessage>
 	{/if}
 	{#if isInitialWhatIfLoading}
 		<div class="absolute inset-0 z-20 rounded-2xl bg-white/85 p-6">

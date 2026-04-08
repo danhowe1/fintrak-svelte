@@ -141,12 +141,7 @@ type ProjectionCashflow = {
 
 type ProjectionAccount = {
 	id: string;
-	account_type:
-		| 'cash_account'
-		| 'mortgage_account'
-		| 'credit_card'
-		| 'brokerage'
-		| 'super_account';
+	account_type: 'cash_account' | 'mortgage_account' | 'credit_card' | 'brokerage' | 'super_account';
 	name: string;
 	start_date: number;
 	opening_balance: number;
@@ -358,7 +353,10 @@ export const buildProjection = (input: {
 	);
 
 	for (const [, accountInfo] of accountMap) {
-		if (!accountInfo.startDate || monthsBetweenYearMonths(accountInfo.startDate, startYearMonth) >= 0) {
+		if (
+			!accountInfo.startDate ||
+			monthsBetweenYearMonths(accountInfo.startDate, startYearMonth) >= 0
+		) {
 			accountInfo.balance = accountInfo.openingBalance;
 		}
 	}
@@ -416,24 +414,26 @@ export const buildProjection = (input: {
 					? rule.min_target_balance
 					: 0
 		}))
-		.sort((a, b) => a.targetAccountId.localeCompare(b.targetAccountId) || a.priorityOrder - b.priorityOrder);
+		.sort(
+			(a, b) =>
+				a.targetAccountId.localeCompare(b.targetAccountId) || a.priorityOrder - b.priorityOrder
+		);
 	const autoFundingRulesByTarget = new Map<string, typeof autoFundingRules>();
 	for (const rule of autoFundingRules) {
 		const existing = autoFundingRulesByTarget.get(rule.targetAccountId) ?? [];
 		autoFundingRulesByTarget.set(rule.targetAccountId, [...existing, rule]);
 	}
-	const accountBalanceTargets = (input.accountBalanceTargets ?? [])
-		.map((target) => ({
-			accountId: target.account_id,
-			minBalance:
-				typeof target.min_balance === 'number' && Number.isFinite(target.min_balance)
-					? Math.max(0, target.min_balance)
-					: 0,
-			maxBalance:
-				typeof target.max_balance === 'number' && Number.isFinite(target.max_balance)
-					? Math.max(0, target.max_balance)
-					: null
-		}));
+	const accountBalanceTargets = (input.accountBalanceTargets ?? []).map((target) => ({
+		accountId: target.account_id,
+		minBalance:
+			typeof target.min_balance === 'number' && Number.isFinite(target.min_balance)
+				? Math.max(0, target.min_balance)
+				: 0,
+		maxBalance:
+			typeof target.max_balance === 'number' && Number.isFinite(target.max_balance)
+				? Math.max(0, target.max_balance)
+				: null
+	}));
 	const accountBalanceTargetsByAccountId = new Map(
 		accountBalanceTargets.map((target) => [target.accountId, target])
 	);
@@ -447,7 +447,10 @@ export const buildProjection = (input: {
 					? rule.priority_order
 					: Number.MAX_SAFE_INTEGER
 		}))
-		.sort((a, b) => a.sourceAccountId.localeCompare(b.sourceAccountId) || a.priorityOrder - b.priorityOrder);
+		.sort(
+			(a, b) =>
+				a.sourceAccountId.localeCompare(b.sourceAccountId) || a.priorityOrder - b.priorityOrder
+		);
 	const autoSweepRulesBySource = new Map<string, typeof autoSweepRules>();
 	for (const rule of autoSweepRules) {
 		const existing = autoSweepRulesBySource.get(rule.sourceAccountId) ?? [];
@@ -460,9 +463,9 @@ export const buildProjection = (input: {
 		const interval = getFrequencyInterval(cashflow.frequency);
 		const assetName =
 			cashflow.cashflow_type === 'expense'
-				? cashflow.source_asset_name ?? null
+				? (cashflow.source_asset_name ?? null)
 				: cashflow.cashflow_type === 'income'
-					? cashflow.destination_asset_name ?? null
+					? (cashflow.destination_asset_name ?? null)
 					: null;
 		return { cashflow, start, end, interval, assetName };
 	});
@@ -632,9 +635,9 @@ export const buildProjection = (input: {
 		const startDate = parseYearMonth(asset.start_date);
 		const propertySaleDate =
 			asset.property_id && propertySaleDates.has(asset.property_id)
-				? propertySaleDates.get(asset.property_id) ?? null
+				? (propertySaleDates.get(asset.property_id) ?? null)
 				: null;
-		const propertyName = asset.property_id ? propertyNames.get(asset.property_id) ?? null : null;
+		const propertyName = asset.property_id ? (propertyNames.get(asset.property_id) ?? null) : null;
 		let mortgageAccountId: string | null = null;
 		let fundingSourceAccountId: string | null = null;
 		let offsetAccountId: string | null = null;
@@ -721,7 +724,9 @@ export const buildProjection = (input: {
 		}
 		if (!superAccountId) continue;
 		const openingBalance = accountMap.get(superAccountId)?.openingBalance ?? 0;
-		const linkedPerson = asset.person_id ? input.assets.find((item) => item.id === asset.person_id) : null;
+		const linkedPerson = asset.person_id
+			? input.assets.find((item) => item.id === asset.person_id)
+			: null;
 		const personDob = linkedPerson ? parseYearMonth(linkedPerson.details?.dob) : null;
 		const preservationDate =
 			personDob && preservationAge !== null && Number.isFinite(preservationAge)
@@ -821,7 +826,8 @@ export const buildProjection = (input: {
 		) => {
 			const accountInfo = accountMap.get(accountId);
 			if (!accountInfo) return;
-			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0) return;
+			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0)
+				return;
 			accountInfo.balance += signedAmount;
 			transactions.push({
 				cashflowId,
@@ -909,9 +915,7 @@ export const buildProjection = (input: {
 			if (!Number.isFinite(baseAmount)) {
 				continue;
 			}
-			const rawAmount = cashflow.inflation_affected
-				? baseAmount * inflationFactor
-				: baseAmount;
+			const rawAmount = cashflow.inflation_affected ? baseAmount * inflationFactor : baseAmount;
 
 			if (cashflow.cashflow_type === 'income') {
 				if (cashflow.destination_account_id) {
@@ -943,13 +947,15 @@ export const buildProjection = (input: {
 				const sourceAccount = sourceId ? accountMap.get(sourceId) : null;
 				const destinationAccount = destinationId ? accountMap.get(destinationId) : null;
 				const destinationShareAssetId = destinationId
-					? brokerageShareByAccountId.get(destinationId) ?? null
+					? (brokerageShareByAccountId.get(destinationId) ?? null)
 					: null;
-				const sourceShareAssetId = sourceId ? brokerageShareByAccountId.get(sourceId) ?? null : null;
+				const sourceShareAssetId = sourceId
+					? (brokerageShareByAccountId.get(sourceId) ?? null)
+					: null;
 				const destinationSuperAssetId = destinationId
-					? superByAccountId.get(destinationId) ?? null
+					? (superByAccountId.get(destinationId) ?? null)
 					: null;
-				const sourceSuperAssetId = sourceId ? superByAccountId.get(sourceId) ?? null : null;
+				const sourceSuperAssetId = sourceId ? (superByAccountId.get(sourceId) ?? null) : null;
 
 				const isShareBuyTransfer =
 					sourceId &&
@@ -1186,7 +1192,8 @@ export const buildProjection = (input: {
 				monthsBetweenYearMonths(state.dividendsTakenAsIncomeDate as YearMonth, current) >= 0;
 
 			if (!hasDividendIncomeDate || !reachedDividendIncomeDate) {
-				const combinedGrowthAmount = state.currentValue * (capitalMonthlyRate + dividendMonthlyRate);
+				const combinedGrowthAmount =
+					state.currentValue * (capitalMonthlyRate + dividendMonthlyRate);
 				state.currentValue += combinedGrowthAmount;
 				continue;
 			}
@@ -1255,7 +1262,11 @@ export const buildProjection = (input: {
 				state.monthlyDrawdownAmount = (state.currentValue * 0.04) / 12;
 			}
 
-			if (preservationReached && state.drawdownMonthsRemaining > 0 && state.monthlyDrawdownAmount > 0) {
+			if (
+				preservationReached &&
+				state.drawdownMonthsRemaining > 0 &&
+				state.monthlyDrawdownAmount > 0
+			) {
 				const drawdownAmount = Math.min(state.currentValue, state.monthlyDrawdownAmount);
 				if (drawdownAmount > 0) {
 					pushTransaction(
@@ -1643,7 +1654,9 @@ export const buildProjection = (input: {
 					continue;
 				}
 
-				const destinationBalanceSettings = accountBalanceTargetsByAccountId.get(rule.destinationAccountId);
+				const destinationBalanceSettings = accountBalanceTargetsByAccountId.get(
+					rule.destinationAccountId
+				);
 				const maxDestinationBalance = destinationBalanceSettings?.maxBalance ?? null;
 				const destinationCapacity =
 					maxDestinationBalance === null
@@ -1870,7 +1883,8 @@ export const buildProjection = (input: {
 			if (insolventEventAccountIds.has(accountId)) continue;
 			const accountInfo = accountMap.get(accountId);
 			if (!accountInfo) continue;
-			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0) continue;
+			if (accountInfo.startDate && monthsBetweenYearMonths(accountInfo.startDate, current) < 0)
+				continue;
 			const targetBalanceSettings = accountBalanceTargetsByAccountId.get(accountId);
 			const minBalance = targetBalanceSettings?.minBalance ?? 0;
 			if (accountInfo.balance < minBalance) {
@@ -1896,63 +1910,63 @@ export const buildProjection = (input: {
 		}
 	}
 
-	const firstLiquidityDeficitPoint =
-		liquidityPoints.find((point) => point.balance < 0) ?? null;
-	const firstShortfall: ProjectionResult['planner']['firstShortfall'] = plannerFirstShortfallCandidate
-		? {
-				...plannerFirstShortfallCandidate,
-				availableSourceAccounts: (() => {
-					const shortfallDate = plannerFirstShortfallCandidate.startDate;
-					const shortfallYM = fromYearMonthInt(shortfallDate) ?? startYearMonth;
-					const shortfallIndex = yearMonthIndex(shortfallYM);
-					const availableSourceAccounts: NonNullable<
-						ProjectionResult['planner']['firstShortfall']
-					>['availableSourceAccounts'] = [];
-					for (const [candidateId, candidateAccount] of accountMap.entries()) {
-						if (candidateId === plannerFirstShortfallCandidate.targetAccountId) continue;
+	const firstLiquidityDeficitPoint = liquidityPoints.find((point) => point.balance < 0) ?? null;
+	const firstShortfall: ProjectionResult['planner']['firstShortfall'] =
+		plannerFirstShortfallCandidate
+			? {
+					...plannerFirstShortfallCandidate,
+					availableSourceAccounts: (() => {
+						const shortfallDate = plannerFirstShortfallCandidate.startDate;
+						const shortfallYM = fromYearMonthInt(shortfallDate) ?? startYearMonth;
+						const shortfallIndex = yearMonthIndex(shortfallYM);
+						const availableSourceAccounts: NonNullable<
+							ProjectionResult['planner']['firstShortfall']
+						>['availableSourceAccounts'] = [];
+						for (const [candidateId, candidateAccount] of accountMap.entries()) {
+							if (candidateId === plannerFirstShortfallCandidate.targetAccountId) continue;
 
-						let availableFrom: YearMonth | null = candidateAccount.startDate ?? null;
-						let availableValue = 0;
+							let availableFrom: YearMonth | null = candidateAccount.startDate ?? null;
+							let availableValue = 0;
 
-						if (candidateAccount.type === 'cash_account') {
-							const series = accountSeriesById.get(candidateId);
-							availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
-						} else if (candidateAccount.type === 'brokerage') {
-							const shareAssetId = brokerageShareByAccountId.get(candidateId);
-							const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
-							if (!shareState || !shareAssetId) continue;
-							availableFrom = maxYearMonth(availableFrom, shareState.startDate);
-							const series = assetSeriesById.get(shareAssetId);
-							availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
-						} else if (candidateAccount.type === 'super_account') {
-							const superAssetId = superByAccountId.get(candidateId);
-							const superState = superAssetId ? superStates.get(superAssetId) : null;
-							if (!superState || !superAssetId) continue;
-							availableFrom = maxYearMonth(availableFrom, superState.startDate);
-							availableFrom = maxYearMonth(availableFrom, superState.preservationDate);
-							const series = assetSeriesById.get(superAssetId);
-							availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
-						} else {
-							continue;
+							if (candidateAccount.type === 'cash_account') {
+								const series = accountSeriesById.get(candidateId);
+								availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
+							} else if (candidateAccount.type === 'brokerage') {
+								const shareAssetId = brokerageShareByAccountId.get(candidateId);
+								const shareState = shareAssetId ? shareStates.get(shareAssetId) : null;
+								if (!shareState || !shareAssetId) continue;
+								availableFrom = maxYearMonth(availableFrom, shareState.startDate);
+								const series = assetSeriesById.get(shareAssetId);
+								availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
+							} else if (candidateAccount.type === 'super_account') {
+								const superAssetId = superByAccountId.get(candidateId);
+								const superState = superAssetId ? superStates.get(superAssetId) : null;
+								if (!superState || !superAssetId) continue;
+								availableFrom = maxYearMonth(availableFrom, superState.startDate);
+								availableFrom = maxYearMonth(availableFrom, superState.preservationDate);
+								const series = assetSeriesById.get(superAssetId);
+								availableValue = series ? getPointValueAtDate(series.points, shortfallDate) : 0;
+							} else {
+								continue;
+							}
+
+							const availableFromDate = availableFrom ? toYearMonthInt(availableFrom) : null;
+							const availableFromIndex = availableFrom
+								? yearMonthIndex(availableFrom)
+								: Number.NEGATIVE_INFINITY;
+							const availableNow = availableFromIndex <= shortfallIndex && availableValue > 0;
+
+							availableSourceAccounts.push({
+								accountId: candidateId,
+								accountName: candidateAccount.name,
+								availableNow,
+								availableFromDate
+							});
 						}
-
-						const availableFromDate = availableFrom ? toYearMonthInt(availableFrom) : null;
-						const availableFromIndex = availableFrom
-							? yearMonthIndex(availableFrom)
-							: Number.NEGATIVE_INFINITY;
-						const availableNow = availableFromIndex <= shortfallIndex && availableValue > 0;
-
-						availableSourceAccounts.push({
-							accountId: candidateId,
-							accountName: candidateAccount.name,
-							availableNow,
-							availableFromDate
-						});
-					}
-					return availableSourceAccounts;
-				})()
-			}
-		: null;
+						return availableSourceAccounts;
+					})()
+				}
+			: null;
 	const stage: ProjectionResult['planner']['stage'] = firstLiquidityDeficitPoint
 		? 'liquidity'
 		: firstShortfall || hasCapBreach

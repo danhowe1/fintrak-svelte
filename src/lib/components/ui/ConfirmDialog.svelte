@@ -1,4 +1,6 @@
 <script lang="ts">
+	import Button from '$lib/components/ui/Button.svelte';
+
 	export let open = false;
 	export let title = 'Confirm';
 	export let message = '';
@@ -14,20 +16,18 @@
 			<h3 class="text-sm font-semibold text-slate-900">{title}</h3>
 			<p class="mt-2 text-xs text-slate-600">{message}</p>
 			<div class="mt-4 flex items-center justify-end gap-2">
-				<button
+				<Button
 					type="button"
-					class="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
-					on:click={onCancel}
+					variant="secondary"
+					size="xs"
+					class="border-slate-200 text-slate-600"
+					onclick={onCancel}
 				>
 					{cancelLabel}
-				</button>
-				<button
-					type="button"
-					class="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white"
-					on:click={onConfirm}
-				>
+				</Button>
+				<Button type="button" variant="danger" size="xs" onclick={onConfirm}>
 					{confirmLabel}
-				</button>
+				</Button>
 			</div>
 		</div>
 	</div>

@@ -1,5 +1,13 @@
-import type { CashflowDraft, CashflowSummary, TransferDraft, TransferEditDraft } from '$lib/dashboard/types';
-import { validateNewTransferDraft, validateTransferEditDraft } from '$lib/dashboard/transfer-validation';
+import type {
+	CashflowDraft,
+	CashflowSummary,
+	TransferDraft,
+	TransferEditDraft
+} from '$lib/dashboard/types';
+import {
+	validateNewTransferDraft,
+	validateTransferEditDraft
+} from '$lib/dashboard/transfer-validation';
 
 type WithLock = (
 	key: string,
@@ -7,7 +15,10 @@ type WithLock = (
 	requiresAutoRun?: boolean
 ) => Promise<void>;
 
-type RefreshProjection = (options?: { includeCashflows?: boolean; force?: boolean }) => Promise<void>;
+type RefreshProjection = (options?: {
+	includeCashflows?: boolean;
+	force?: boolean;
+}) => Promise<void>;
 
 const parseCashflowsPayload = (payload: any): CashflowSummary[] | null => {
 	const nextCashflows = payload?.cashflows ?? payload?.data?.cashflows;

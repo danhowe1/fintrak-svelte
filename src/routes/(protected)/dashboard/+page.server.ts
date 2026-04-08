@@ -587,7 +587,9 @@ export const actions: Actions = {
 		const startDate = String(formData.get('startDate') ?? '').trim();
 		const capitalGrowthRateRaw = Number(formData.get('capitalGrowthRate'));
 		const dividendYieldRaw = Number(formData.get('dividendYield'));
-		const dividendsTakenAsIncomeDate = String(formData.get('dividendsTakenAsIncomeDate') ?? '').trim();
+		const dividendsTakenAsIncomeDate = String(
+			formData.get('dividendsTakenAsIncomeDate') ?? ''
+		).trim();
 		const capitalGrowthRate = Number.isFinite(capitalGrowthRateRaw)
 			? Math.round(capitalGrowthRateRaw * 10) / 10
 			: Number.NaN;
@@ -827,13 +829,11 @@ export const actions: Actions = {
 		]);
 		const sourceLink =
 			assetAccounts.find(
-				(link) =>
-					link.account_id === sourceAccountId && link.relationship_role === 'held_in'
+				(link) => link.account_id === sourceAccountId && link.relationship_role === 'held_in'
 			) ?? assetAccounts.find((link) => link.account_id === sourceAccountId);
 		const destinationLink =
 			assetAccounts.find(
-				(link) =>
-					link.account_id === destinationAccountId && link.relationship_role === 'held_in'
+				(link) => link.account_id === destinationAccountId && link.relationship_role === 'held_in'
 			) ?? assetAccounts.find((link) => link.account_id === destinationAccountId);
 
 		if (!sourceLink || !destinationLink) {
@@ -996,13 +996,11 @@ export const actions: Actions = {
 		]);
 		const sourceLink =
 			assetAccounts.find(
-				(link) =>
-					link.account_id === sourceAccountId && link.relationship_role === 'held_in'
+				(link) => link.account_id === sourceAccountId && link.relationship_role === 'held_in'
 			) ?? assetAccounts.find((link) => link.account_id === sourceAccountId);
 		const destinationLink =
 			assetAccounts.find(
-				(link) =>
-					link.account_id === destinationAccountId && link.relationship_role === 'held_in'
+				(link) => link.account_id === destinationAccountId && link.relationship_role === 'held_in'
 			) ?? assetAccounts.find((link) => link.account_id === destinationAccountId);
 		if (!sourceLink || !destinationLink) {
 			return fail(400, { error: 'Account linkage is invalid for transfer.' });
@@ -1139,7 +1137,10 @@ export const actions: Actions = {
 					link.asset_id === assetId &&
 					link.relationship_role === 'held_in'
 			)?.id ?? null;
-		if (!resolvedAssetAccountId && (asset.asset_type === 'person' || asset.asset_type === 'property')) {
+		if (
+			!resolvedAssetAccountId &&
+			(asset.asset_type === 'person' || asset.asset_type === 'property')
+		) {
 			const selectedAccountId = parseSelectedAccountId(assetAccountId);
 			const selectedAccount = selectedAccountId
 				? accounts.find((account) => account.id === selectedAccountId)
@@ -1159,11 +1160,7 @@ export const actions: Actions = {
 			if (type === 'expense' && category !== 'living_expenses') {
 				return fail(400, { error: 'Invalid category for person expense.' });
 			}
-			if (
-				type === 'income' &&
-				category !== 'employment_income' &&
-				category !== 'misc_income'
-			) {
+			if (type === 'income' && category !== 'employment_income' && category !== 'misc_income') {
 				return fail(400, { error: 'Invalid category for person income.' });
 			}
 		}
@@ -1285,7 +1282,10 @@ export const actions: Actions = {
 					link.asset_id === assetId &&
 					link.relationship_role === 'held_in'
 			)?.id ?? null;
-		if (!resolvedAssetAccountId && (asset.asset_type === 'person' || asset.asset_type === 'property')) {
+		if (
+			!resolvedAssetAccountId &&
+			(asset.asset_type === 'person' || asset.asset_type === 'property')
+		) {
 			const selectedAccountId = parseSelectedAccountId(assetAccountId);
 			const selectedAccount = selectedAccountId
 				? accounts.find((account) => account.id === selectedAccountId)
@@ -1305,11 +1305,7 @@ export const actions: Actions = {
 			if (type === 'expense' && category !== 'living_expenses') {
 				return fail(400, { error: 'Invalid category for person expense.' });
 			}
-			if (
-				type === 'income' &&
-				category !== 'employment_income' &&
-				category !== 'misc_income'
-			) {
+			if (type === 'income' && category !== 'employment_income' && category !== 'misc_income') {
 				return fail(400, { error: 'Invalid category for person income.' });
 			}
 		}

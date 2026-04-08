@@ -231,7 +231,10 @@ const createAssetSchema = z
 					path: ['propertyMarketValue']
 				});
 			}
-			if (data.propertySaleDate && !/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.propertySaleDate)) {
+			if (
+				data.propertySaleDate &&
+				!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.propertySaleDate)
+			) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					message: 'Sale date must be MM YYYY',
@@ -504,10 +507,7 @@ const createAssetSchema = z
 		}
 
 		if (data.assetType === 'shares') {
-			if (
-				!data.shareCapitalGrowthRate ||
-				!/^-?\d+(\.\d)?$/.test(data.shareCapitalGrowthRate)
-			) {
+			if (!data.shareCapitalGrowthRate || !/^-?\d+(\.\d)?$/.test(data.shareCapitalGrowthRate)) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					message: 'Capital growth rate is required',
@@ -593,7 +593,10 @@ const createAssetSchema = z
 					path: ['superCapitalGrowthRate']
 				});
 			}
-			if (!data.superManagementFeeRate || !/^-?\d+(\.\d{1,2})?$/.test(data.superManagementFeeRate)) {
+			if (
+				!data.superManagementFeeRate ||
+				!/^-?\d+(\.\d{1,2})?$/.test(data.superManagementFeeRate)
+			) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					message: 'Management fee rate is required',
@@ -711,7 +714,8 @@ export const actions: Actions = {
 			shareCapitalGrowthRate: formData.get('shareCapitalGrowthRate') ?? '',
 			shareDividendYield: formData.get('shareDividendYield') ?? '',
 			shareDividendsTakenAsIncomeDate: formData.get('shareDividendsTakenAsIncomeDate') ?? '',
-			shareBrokerageAccountOpeningBalance: formData.get('shareBrokerageAccountOpeningBalance') ?? '',
+			shareBrokerageAccountOpeningBalance:
+				formData.get('shareBrokerageAccountOpeningBalance') ?? '',
 			sharePaysIntoAccountId: formData.get('sharePaysIntoAccountId') ?? '',
 			superPersonId: formData.get('superPersonId') ?? '',
 			superPreservationAge: formData.get('superPreservationAge') ?? '',
@@ -908,9 +912,7 @@ export const actions: Actions = {
 									type: 'new',
 									name: mortgagePaymentSourceName ?? 'Payment source account',
 									interestRate: roundToTwo(
-										decimalUpToTwoPlacesSchema.parse(
-											mortgagePaymentSourceInterestRate ?? '0'
-										)
+										decimalUpToTwoPlacesSchema.parse(mortgagePaymentSourceInterestRate ?? '0')
 									),
 									openingBalance: currencySchema.parse(mortgagePaymentSourceOpeningBalance ?? '0')
 								}
@@ -923,23 +925,19 @@ export const actions: Actions = {
 							? { type: 'none' }
 							: mortgageOffsetChoice === 'same_as_payment_source'
 								? { type: 'same_as_payment_source' }
-							: mortgageOffsetChoice === 'new'
-								? {
-										type: 'new',
-										name: mortgageOffsetName ?? 'Offset account',
-										interestRate: roundToTwo(
-											decimalUpToTwoPlacesSchema.parse(
-												mortgageOffsetInterestRate ?? '0'
-											)
-										),
-										openingBalance: currencySchema.parse(
-											mortgageOffsetOpeningBalance ?? '0'
-										)
-									}
-								: {
-										type: 'existing',
-										accountId: mortgageOffsetChoice ?? ''
-									}
+								: mortgageOffsetChoice === 'new'
+									? {
+											type: 'new',
+											name: mortgageOffsetName ?? 'Offset account',
+											interestRate: roundToTwo(
+												decimalUpToTwoPlacesSchema.parse(mortgageOffsetInterestRate ?? '0')
+											),
+											openingBalance: currencySchema.parse(mortgageOffsetOpeningBalance ?? '0')
+										}
+									: {
+											type: 'existing',
+											accountId: mortgageOffsetChoice ?? ''
+										}
 				});
 			} else if (assetType.data === 'shares') {
 				const cashAccountIds = new Set(

@@ -10,7 +10,6 @@
 		labelExpanded?: string;
 		labelCollapsed?: string;
 	}>();
-
 </script>
 
 <button

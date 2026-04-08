@@ -25,7 +25,9 @@ export const getPayloadErrorMessage = (payload: any, fallback: string): string =
 	toErrorMessage(payload?.error ?? payload?.data?.error ?? payload?.message, fallback);
 
 export const getThrownErrorMessage = (error: unknown, fallback: string): string =>
-	error instanceof Error ? toErrorMessage(error.message, fallback) : toErrorMessage(error, fallback);
+	error instanceof Error
+		? toErrorMessage(error.message, fallback)
+		: toErrorMessage(error, fallback);
 
 export const postAction = async (
 	actionName: string,

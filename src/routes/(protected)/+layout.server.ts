@@ -16,10 +16,7 @@ export const load: LayoutServerLoad = async (event) => {
 		return Number.isFinite(parsed) ? parsed : fallback;
 	};
 
-	const inflationRate = parseRate(
-		event.cookies.get('inflationRate'),
-		defaultInflationRate
-	);
+	const inflationRate = parseRate(event.cookies.get('inflationRate'), defaultInflationRate);
 
 	if (!event.cookies.get('inflationRate')) {
 		event.cookies.set('inflationRate', defaultInflationRate.toFixed(1), {

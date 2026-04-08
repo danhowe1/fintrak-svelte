@@ -1,38 +1,41 @@
 <script lang="ts">
 	import type { MonthFrequency, TransfersTabProps } from './types';
+	import AppTable from '$lib/components/ui/AppTable.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
 
 	let { data, handlers, ui }: TransfersTabProps = $props();
 </script>
 
 <div class="mt-5 space-y-4">
-	<div class="rounded-xl border border-slate-200 bg-white p-3">
-		<h3 class="text-sm font-semibold text-slate-900">Existing transfers</h3>
+	<div class="app-card">
+		<h3 class="app-title-sm">Existing transfers</h3>
 		{#if data.transferCashflows.length === 0}
-			<div class="mt-2 text-sm text-slate-600">No transfers configured.</div>
+			<div class="app-text-muted mt-2">No transfers configured.</div>
 		{:else}
 			<div class="mt-2 overflow-x-auto">
-				<table class="min-w-full divide-y divide-slate-200 text-xs">
+				<AppTable>
 					<thead class="bg-slate-50 text-left text-slate-500 uppercase">
 						<tr>
-							<th class="px-2 py-2">From</th>
-							<th class="px-2 py-2">To</th>
-							<th class="px-2 py-2">Category</th>
-							<th class="px-2 py-2">Inflation</th>
-							<th class="px-2 py-2">Amount</th>
-							<th class="px-2 py-2">Frequency</th>
-							<th class="px-2 py-2">Start</th>
-							<th class="px-2 py-2">End</th>
-							<th class="px-2 py-2">Description</th>
-							<th class="px-2 py-2"></th>
+							<th class="app-cell">From</th>
+							<th class="app-cell">To</th>
+							<th class="app-cell">Category</th>
+							<th class="app-cell">Inflation</th>
+							<th class="app-cell">Amount</th>
+							<th class="app-cell">Frequency</th>
+							<th class="app-cell">Start</th>
+							<th class="app-cell">End</th>
+							<th class="app-cell">Description</th>
+							<th class="app-cell"></th>
 						</tr>
 					</thead>
-					<tbody class="divide-y divide-slate-100 text-slate-700">
+					<tbody class="app-table-body">
 						{#each data.transferCashflows as transfer}
 							{@const transferDraftRow = data.transferEditDrafts[transfer.id]}
 							<tr>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									<select
-										class="w-40 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+										class="app-input-compact w-40"
 										value={transferDraftRow?.sourceAccountId ?? transfer.source_account_id ?? ''}
 										onchange={(event) => {
 											handlers.setTransferEditDraft(transfer.id, {
@@ -49,10 +52,12 @@
 										{/each}
 									</select>
 								</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									<select
-										class="w-40 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
-										value={transferDraftRow?.destinationAccountId ?? transfer.destination_account_id ?? ''}
+										class="app-input-compact w-40"
+										value={transferDraftRow?.destinationAccountId ??
+											transfer.destination_account_id ??
+											''}
 										onchange={(event) => {
 											handlers.setTransferEditDraft(transfer.id, {
 												destinationAccountId: (event.currentTarget as HTMLSelectElement).value
@@ -68,8 +73,8 @@
 										{/each}
 									</select>
 								</td>
-								<td class="px-2 py-2">{ui.formatLabel(transfer.category)}</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">{ui.formatLabel(transfer.category)}</td>
+								<td class="app-cell">
 									<input
 										type="checkbox"
 										class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
@@ -81,12 +86,12 @@
 											)}
 									/>
 								</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									<input
 										type="number"
 										min="0"
 										step="0.01"
-										class="no-spin w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+										class="no-spin app-input-compact w-24"
 										value={transferDraftRow?.amount ?? String(transfer.amount)}
 										oninput={(event) =>
 											handlers.setTransferEditDraft(transfer.id, {
@@ -98,16 +103,17 @@
 											)}
 									/>
 								</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									<select
-										class="rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+										class="app-input-compact"
 										value={transferDraftRow?.frequency ?? transfer.frequency}
 										onchange={(event) => {
 											const nextFrequency = (event.currentTarget as HTMLSelectElement)
 												.value as MonthFrequency;
 											handlers.setTransferEditDraft(transfer.id, {
 												frequency: nextFrequency,
-												endDate: nextFrequency === 'one_time' ? '' : (transferDraftRow?.endDate ?? '')
+												endDate:
+													nextFrequency === 'one_time' ? '' : (transferDraftRow?.endDate ?? '')
 											});
 											ui.scheduleUpdate(`transfer-edit:${transfer.id}`, () =>
 												handlers.saveTransferEditDraft(transfer.id)
@@ -119,12 +125,12 @@
 										{/each}
 									</select>
 								</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									<input
 										type="text"
 										inputmode="numeric"
 										pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-										class="w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+										class="app-input-compact w-24"
 										value={transferDraftRow?.startDate ?? ui.toMonthYearInput(transfer.start_date)}
 										oninput={(event) =>
 											handlers.setTransferEditDraft(transfer.id, {
@@ -136,7 +142,7 @@
 											)}
 									/>
 								</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									{#if (transferDraftRow?.frequency ?? transfer.frequency) === 'one_time'}
 										<span class="text-slate-400">—</span>
 									{:else}
@@ -144,7 +150,7 @@
 											type="text"
 											inputmode="numeric"
 											pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-											class="w-24 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+											class="app-input-compact w-24"
 											value={transferDraftRow?.endDate ?? ui.toMonthYearInput(transfer.end_date)}
 											oninput={(event) =>
 												handlers.setTransferEditDraft(transfer.id, {
@@ -157,10 +163,10 @@
 										/>
 									{/if}
 								</td>
-								<td class="px-2 py-2">
+								<td class="app-cell">
 									<input
 										type="text"
-										class="w-40 rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+										class="app-input-compact w-40"
 										value={transferDraftRow?.description ?? transfer.description ?? ''}
 										oninput={(event) =>
 											handlers.setTransferEditDraft(transfer.id, {
@@ -172,7 +178,7 @@
 											)}
 									/>
 								</td>
-								<td class="px-2 py-2 text-right">
+								<td class="app-cell text-right">
 									<button
 										type="button"
 										class="text-rose-500 hover:text-rose-600"
@@ -200,21 +206,21 @@
 							</tr>
 						{/each}
 					</tbody>
-				</table>
+				</AppTable>
 			</div>
 			{#if data.transferInlineError}
-				<div class="mt-2 text-xs text-rose-600">{data.transferInlineError}</div>
+				<StatusMessage tone="error" class="mt-2">{data.transferInlineError}</StatusMessage>
 			{/if}
 		{/if}
 	</div>
 
-	<div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-		<h3 class="text-sm font-semibold text-slate-900">New transfer</h3>
+	<div class="app-card-muted">
+		<h3 class="app-title-sm">New transfer</h3>
 		<div class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-			<label class="text-xs text-slate-600">
-				<span class="mb-1 block text-slate-500">From account</span>
+			<label class="app-hint">
+				<span class="app-field-caption">From account</span>
 				<select
-					class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+					class="app-input-compact app-input-compact-lg w-full"
 					value={data.transferDraft.sourceAccountId}
 					onchange={(event) =>
 						handlers.onTransferDraftChange({
@@ -227,10 +233,10 @@
 					{/each}
 				</select>
 			</label>
-			<label class="text-xs text-slate-600">
-				<span class="mb-1 block text-slate-500">To account</span>
+			<label class="app-hint">
+				<span class="app-field-caption">To account</span>
 				<select
-					class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+					class="app-input-compact app-input-compact-lg w-full"
 					value={data.transferDraft.destinationAccountId}
 					onchange={(event) =>
 						handlers.onTransferDraftChange({
@@ -243,13 +249,13 @@
 					{/each}
 				</select>
 			</label>
-			<label class="text-xs text-slate-600">
-				<span class="mb-1 block text-slate-500">Amount</span>
+			<label class="app-hint">
+				<span class="app-field-caption">Amount</span>
 				<input
 					type="number"
 					min="0"
 					step="0.01"
-					class="no-spin w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+					class="no-spin app-input-compact app-input-compact-lg w-full"
 					value={data.transferDraft.amount}
 					oninput={(event) =>
 						handlers.onTransferDraftChange({
@@ -257,13 +263,14 @@
 						})}
 				/>
 			</label>
-			<label class="text-xs text-slate-600">
-				<span class="mb-1 block text-slate-500">Frequency</span>
+			<label class="app-hint">
+				<span class="app-field-caption">Frequency</span>
 				<select
-					class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+					class="app-input-compact app-input-compact-lg w-full"
 					value={data.transferDraft.frequency}
 					onchange={(event) => {
-						const nextFrequency = (event.currentTarget as HTMLSelectElement).value as MonthFrequency;
+						const nextFrequency = (event.currentTarget as HTMLSelectElement)
+							.value as MonthFrequency;
 						handlers.onTransferDraftChange({
 							frequency: nextFrequency,
 							endDate: nextFrequency === 'one_time' ? '' : data.transferDraft.endDate
@@ -275,13 +282,13 @@
 					{/each}
 				</select>
 			</label>
-			<label class="text-xs text-slate-600">
-				<span class="mb-1 block text-slate-500">Start date (MM YYYY)</span>
+			<label class="app-hint">
+				<span class="app-field-caption">Start date (MM YYYY)</span>
 				<input
 					type="text"
 					inputmode="numeric"
 					pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-					class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+					class="app-input-compact app-input-compact-lg w-full"
 					value={data.transferDraft.startDate}
 					oninput={(event) =>
 						handlers.onTransferDraftChange({
@@ -290,13 +297,13 @@
 				/>
 			</label>
 			{#if data.transferDraft.frequency !== 'one_time'}
-				<label class="text-xs text-slate-600">
-					<span class="mb-1 block text-slate-500">End date (optional)</span>
+				<label class="app-hint">
+					<span class="app-field-caption">End date (optional)</span>
 					<input
 						type="text"
 						inputmode="numeric"
 						pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-						class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+						class="app-input-compact app-input-compact-lg w-full"
 						value={data.transferDraft.endDate}
 						oninput={(event) =>
 							handlers.onTransferDraftChange({
@@ -305,8 +312,8 @@
 					/>
 				</label>
 			{/if}
-			<label class="text-xs text-slate-600 sm:col-span-2 lg:col-span-3">
-				<span class="mb-1 block text-slate-500">Inflation affected</span>
+			<label class="app-hint sm:col-span-2 lg:col-span-3">
+				<span class="app-field-caption">Inflation affected</span>
 				<label class="inline-flex items-center gap-2">
 					<input
 						type="checkbox"
@@ -320,11 +327,11 @@
 					<span class="text-xs text-slate-700">Apply inflation over time</span>
 				</label>
 			</label>
-			<label class="text-xs text-slate-600 sm:col-span-2 lg:col-span-3">
-				<span class="mb-1 block text-slate-500">Description (optional)</span>
+			<label class="app-hint sm:col-span-2 lg:col-span-3">
+				<span class="app-field-caption">Description (optional)</span>
 				<input
 					type="text"
-					class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+					class="app-input-compact app-input-compact-lg w-full"
 					value={data.transferDraft.description}
 					oninput={(event) =>
 						handlers.onTransferDraftChange({
@@ -337,17 +344,15 @@
 			<div class="mt-2 text-xs text-rose-600">{data.transferFormError}</div>
 		{/if}
 		<div class="mt-3 flex justify-end">
-			<button
+			<Button
 				type="button"
-				class="rounded-lg bg-slate-900 px-3 py-1 text-xs font-semibold text-white"
+				variant="primary"
+				size="xs"
 				disabled={data.transferAccountOptions.length < 2}
 				onclick={handlers.createTransferCashflow}
 			>
 				Add transfer
-			</button>
+			</Button>
 		</div>
 	</div>
 </div>
-
-
-

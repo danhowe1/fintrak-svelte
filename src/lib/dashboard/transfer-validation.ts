@@ -1,8 +1,6 @@
 import type { TransferDraft, TransferEditDraft } from './types';
 
-type ValidationResult =
-	| { ok: true; amount: number }
-	| { ok: false; message: string };
+type ValidationResult = { ok: true; amount: number } | { ok: false; message: string };
 
 const parsePositiveAmount = (value: string): number | null => {
 	const amount = Number(value);
@@ -53,11 +51,7 @@ export const validateTransferEditDraft = (
 	if (!isValidMonthYear(draft.startDate)) {
 		return { ok: false, message: 'Transfer start date must use MM YYYY.' };
 	}
-	if (
-		draft.frequency !== 'one_time' &&
-		draft.endDate.trim() &&
-		!isValidMonthYear(draft.endDate)
-	) {
+	if (draft.frequency !== 'one_time' && draft.endDate.trim() && !isValidMonthYear(draft.endDate)) {
 		return { ok: false, message: 'Transfer end date must use MM YYYY.' };
 	}
 	return { ok: true, amount };

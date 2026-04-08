@@ -219,12 +219,7 @@ export async function getAssetsForScenario(scenarioId: string) {
 
 export type AccountListItem = {
 	id: string;
-	account_type:
-		| 'cash_account'
-		| 'mortgage_account'
-		| 'credit_card'
-		| 'brokerage'
-		| 'super_account';
+	account_type: 'cash_account' | 'mortgage_account' | 'credit_card' | 'brokerage' | 'super_account';
 	name: string;
 	start_date: number;
 	opening_balance: number;
@@ -315,11 +310,7 @@ export async function updatePersonDetails(
 	);
 }
 
-export async function updateCashflowAmount(
-	scenarioId: string,
-	cashflowId: string,
-	amount: number
-) {
+export async function updateCashflowAmount(scenarioId: string, cashflowId: string, amount: number) {
 	await getPool().query(
 		`
 			update cashflows
@@ -570,13 +561,7 @@ export async function updateMortgageDetails(
 			  and a.scenario_id = $1::uuid
 			  and a.account_type = 'mortgage_account'
 		`,
-		[
-			scenarioId,
-			assetId,
-			input.mortgageAccountName,
-			input.openingBalance,
-			input.startDate
-		]
+		[scenarioId, assetId, input.mortgageAccountName, input.openingBalance, input.startDate]
 	);
 }
 
@@ -612,13 +597,7 @@ export async function updateSuperannuationDetails(
 			  and scenario_id = $1::uuid
 			  and asset_type = 'superannuation'
 		`,
-		[
-			scenarioId,
-			assetId,
-			input.preservationAge,
-			input.capitalGrowthRate,
-			input.managementFeeRate
-		]
+		[scenarioId, assetId, input.preservationAge, input.capitalGrowthRate, input.managementFeeRate]
 	);
 }
 
@@ -811,7 +790,8 @@ export async function createAutoFundingRule(input: {
 				`,
 				[input.scenarioId, input.targetAccountId]
 			)
-		).rows[0]?.max_priority_order ?? 0;
+		).rows[0]?.max_priority_order ??
+		0;
 
 	const result = await getPool().query<AutoFundingRule>(
 		`
@@ -878,7 +858,8 @@ export async function createAutoSweepRule(input: {
 				`,
 				[input.scenarioId, input.sourceAccountId]
 			)
-		).rows[0]?.max_priority_order ?? 0;
+		).rows[0]?.max_priority_order ??
+		0;
 
 	const result = await getPool().query<AutoSweepRule>(
 		`
@@ -1357,7 +1338,9 @@ export async function createAccount(input: CreateAccountInput, client?: DbClient
 	return accountId;
 }
 
-export async function createAccountWithHolders(input: CreateAccountInput & { holderAssetIds: string[] }) {
+export async function createAccountWithHolders(
+	input: CreateAccountInput & { holderAssetIds: string[] }
+) {
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
@@ -1672,7 +1655,13 @@ async function insertDefaultAccount(
 			)
 			returning id
 		`,
-		[scenarioId, input.accountName, input.accountInterestRate, input.openingBalance, input.startDate]
+		[
+			scenarioId,
+			input.accountName,
+			input.accountInterestRate,
+			input.openingBalance,
+			input.startDate
+		]
 	);
 
 	const accountId = accountResult.rows[0]?.id;

@@ -27,8 +27,15 @@ export const GET: RequestHandler = async (event) => {
 	const projectionRange = parseProjectionRange(event.cookies.get('projectionRange'));
 	const inflationRate = parseRateCookie(event.cookies.get('inflationRate'), 2.0);
 
-	const [cashflows, accounts, assets, assetAccounts, autoFundingRules, accountBalanceTargets, autoSweepRules] =
-		await Promise.all([
+	const [
+		cashflows,
+		accounts,
+		assets,
+		assetAccounts,
+		autoFundingRules,
+		accountBalanceTargets,
+		autoSweepRules
+	] = await Promise.all([
 		getCashflowsForScenario(scenario.id),
 		getAccountsForScenario(scenario.id),
 		getAssetsForScenario(scenario.id),

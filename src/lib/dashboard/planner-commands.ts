@@ -81,8 +81,7 @@ export const saveAutoFundingRuleCommand = async <TRule>(
 			nextPlannerSourceAccountId: ''
 		};
 	} catch (error) {
-		const message =
-			error instanceof Error ? error.message : 'Unable to save auto-funding rule.';
+		const message = error instanceof Error ? error.message : 'Unable to save auto-funding rule.';
 		return {
 			autoFundingRuleError: message,
 			projectionError: message
@@ -135,8 +134,7 @@ export const removeAutoFundingRuleCommand = async <TRule>(
 		);
 		return { autoFundingRuleError: '', projectionError: null };
 	} catch (error) {
-		const message =
-			error instanceof Error ? error.message : 'Unable to remove auto-funding rule.';
+		const message = error instanceof Error ? error.message : 'Unable to remove auto-funding rule.';
 		return {
 			autoFundingRuleError: message,
 			projectionError: message
@@ -152,7 +150,8 @@ export const jumpToWhatIfFundingInput = async (params: {
 	whatIfPanelElement: HTMLElement | null;
 	getElementById: (id: string) => HTMLElement | null;
 }) => {
-	const { tab, firstCashAccountId, setAssetPanelTab, tick, whatIfPanelElement, getElementById } = params;
+	const { tab, firstCashAccountId, setAssetPanelTab, tick, whatIfPanelElement, getElementById } =
+		params;
 	setAssetPanelTab(tab);
 	await tick();
 	whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -170,4 +169,3 @@ export const jumpToWhatIfFundingInput = async (params: {
 		// Number inputs may not support text selection across browsers.
 	}
 };
-

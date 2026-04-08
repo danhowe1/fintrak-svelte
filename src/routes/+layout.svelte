@@ -68,10 +68,10 @@
 	</header>
 
 	<main class="mx-auto w-full px-4 py-12">
-		<article class="prose max-w-none prose-slate">
+		<div class="max-w-none">
 			{#key $page.url.pathname}
 				{@render children()}
 			{/key}
-		</article>
+		</div>
 	</main>
 </div>

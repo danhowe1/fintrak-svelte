@@ -56,7 +56,8 @@ export const upsertFundingTargetForAccountCommand = async <TTarget>(params: {
 	setAccountBalanceTargets: (targets: TTarget[]) => void;
 	refreshProjection: RefreshProjection;
 }): Promise<string> => {
-	const { accountId, minDraft, maxDraft, scenarioId, autoRunProjection, withLock, postAction } = params;
+	const { accountId, minDraft, maxDraft, scenarioId, autoRunProjection, withLock, postAction } =
+		params;
 	const minBalance = Number(minDraft ?? '0');
 	const maxRaw = (maxDraft ?? '').trim();
 	const maxBalance = maxRaw.length > 0 ? Number(maxRaw) : null;
@@ -396,4 +397,3 @@ export const moveSweepRuleCommand = async <
 		return error instanceof Error ? error.message : 'Unable to reorder auto-sweep rules.';
 	}
 };
-

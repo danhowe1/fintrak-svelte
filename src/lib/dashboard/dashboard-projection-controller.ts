@@ -62,7 +62,10 @@ const getRangeEndDate = (startDate: number, range: ProjectionRange) => {
 	return year * 100 + month;
 };
 
-const clipSeriesPointsByRange = <T extends { date: number }>(points: T[], rangeEndDate: number | null) => {
+const clipSeriesPointsByRange = <T extends { date: number }>(
+	points: T[],
+	rangeEndDate: number | null
+) => {
 	if (rangeEndDate === null) return points;
 	return points.filter((point) => point.date <= rangeEndDate);
 };
@@ -72,7 +75,11 @@ const clipTransactionsByRange = (transactions: any[], rangeEndDate: number | nul
 	return transactions.filter((transaction) => transaction.date <= rangeEndDate);
 };
 
-const normalizeAccountSeries = (series: { accountId: string; accountName: string; points: any[] }) => ({
+const normalizeAccountSeries = (series: {
+	accountId: string;
+	accountName: string;
+	points: any[];
+}) => ({
 	id: series.accountId,
 	name: series.accountName,
 	points: (series.points ?? []).map((point) => ({
@@ -195,14 +202,20 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 						...series,
 						points: getAnnualPoints(clipSeriesPointsByRange(series.points, projectionRangeEndDate))
 					})),
-					transactions: clipTransactionsByRange(projectionData.transactions ?? [], projectionRangeEndDate)
+					transactions: clipTransactionsByRange(
+						projectionData.transactions ?? [],
+						projectionRangeEndDate
+					)
 				}
 			: {
 					series: activeSeries.map((series: any) => ({
 						...series,
 						points: clipSeriesPointsByRange(series.points, projectionRangeEndDate)
 					})),
-					transactions: clipTransactionsByRange(projectionData.transactions ?? [], projectionRangeEndDate)
+					transactions: clipTransactionsByRange(
+						projectionData.transactions ?? [],
+						projectionRangeEndDate
+					)
 				};
 
 	const seriesList = chartProjection.series ?? [];
@@ -230,7 +243,9 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 	})();
 
 	const balanceExtent = getBalanceExtent(
-		totalSeries ? [...chartProjection.series, normalizeAccountSeries(totalSeries)] : chartProjection.series
+		totalSeries
+			? [...chartProjection.series, normalizeAccountSeries(totalSeries)]
+			: chartProjection.series
 	);
 
 	const chartAxisPoints = (chartProjection.series[0]?.points ?? []).map((point: any) => ({
@@ -285,7 +300,8 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 			}
 			const labelsByDate = new Map<number, string>();
 			for (const transaction of transactions) {
-				if (!labelsByDate.has(transaction.date)) labelsByDate.set(transaction.date, transaction.monthLabel);
+				if (!labelsByDate.has(transaction.date))
+					labelsByDate.set(transaction.date, transaction.monthLabel);
 			}
 			return Array.from(labelsByDate.entries())
 				.sort((a, b) => a[0] - b[0])
@@ -318,16 +334,14 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 			const category = formatLabel(transaction.category);
 			const description = (transaction.description ?? '').trim();
 			const rowKey = [assetName, accountName, type, category, description].join('|');
-			const row =
-				rowMap.get(rowKey) ??
-				{
-					assetName,
-					accountName,
-					type,
-					category,
-					description,
-					values: Array(headerLabels.length).fill(0)
-				};
+			const row = rowMap.get(rowKey) ?? {
+				assetName,
+				accountName,
+				type,
+				category,
+				description,
+				values: Array(headerLabels.length).fill(0)
+			};
 			row.values[headerIndex] += transaction.amount;
 			rowMap.set(rowKey, row);
 		}
@@ -456,7 +470,13 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 		return [
 			{ id: 'net', label: 'Net', level: 0, values: netTotals },
 			{ id: 'income', label: 'Income', level: 0, values: incomeTotals, children: incomeAccounts },
-			{ id: 'expenses', label: 'Expenses', level: 0, values: expenseTotals, children: expenseAccounts }
+			{
+				id: 'expenses',
+				label: 'Expenses',
+				level: 0,
+				values: expenseTotals,
+				children: expenseAccounts
+			}
 		] as PnlNode[];
 	})();
 
@@ -474,8 +494,7 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 		return ids;
 	})();
 	const isAllPnlExpanded =
-		pnlExpandableNodeIds.length > 0 &&
-		pnlExpandableNodeIds.every((id) => expandedPnlNodes.has(id));
+		pnlExpandableNodeIds.length > 0 && pnlExpandableNodeIds.every((id) => expandedPnlNodes.has(id));
 
 	return {
 		chartProjection,

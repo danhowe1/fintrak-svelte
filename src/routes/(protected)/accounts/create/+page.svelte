@@ -11,9 +11,7 @@
 	const formErrors = (form?.errors ?? {}) as Record<string, string[]>;
 	const formValues = (form?.values ?? {}) as Record<string, string>;
 
-	const selectedPersonIds = Array.isArray(form?.values?.personIds)
-		? form?.values?.personIds
-		: null;
+	const selectedPersonIds = Array.isArray(form?.values?.personIds) ? form?.values?.personIds : null;
 
 	let accountTypeSelect: HTMLSelectElement | null = null;
 
@@ -24,9 +22,9 @@
 </script>
 
 <h1>Add account</h1>
-<p class="text-sm text-slate-600">Scenario: {data.scenario.name}</p>
+<p class="app-text-muted">Scenario: {data.scenario.name}</p>
 
-<section class="not-prose mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+<section class="not-prose app-panel mt-6">
 	<style>
 		.no-spin::-webkit-outer-spin-button,
 		.no-spin::-webkit-inner-spin-button {
@@ -40,12 +38,12 @@
 	<form method="POST" class="grid gap-6">
 		<FormSection title="Account details">
 			<div class="grid gap-4 md:grid-cols-4">
-				<label class="grid gap-2 text-sm font-medium text-slate-700">
+				<label class="app-label">
 					Type
 					<select
 						name="accountType"
 						bind:this={accountTypeSelect}
-						class="w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none"
+						class="app-input"
 						required
 						value={formValues.accountType ?? 'cash_account'}
 					>
@@ -101,7 +99,7 @@
 
 		<FormSection title="Account holders">
 			{#if data.people.length === 0}
-				<p class="text-sm text-slate-600">No people available to assign to this account.</p>
+				<p class="app-text-muted">No people available to assign to this account.</p>
 			{:else}
 				<div class="flex flex-wrap items-center gap-4 text-sm text-slate-700">
 					{#each data.people as person}
@@ -124,9 +122,7 @@
 		</FormSection>
 
 		<div class="flex flex-wrap items-center gap-3">
-			<Button type="submit" class="rounded-lg px-4 py-2 text-sm font-semibold shadow-sm">
-				Add account
-			</Button>
+			<Button type="submit" variant="primary" size="sm">Add account</Button>
 			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/dashboard">
 				Cancel
 			</a>

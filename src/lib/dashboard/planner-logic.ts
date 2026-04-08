@@ -1,8 +1,4 @@
-import {
-	addMonthsToYearMonth,
-	fromYearMonthInt,
-	toYearMonthInt
-} from '$lib/yearMonth';
+import { addMonthsToYearMonth, fromYearMonthInt, toYearMonthInt } from '$lib/yearMonth';
 import type { Stage3Assessment, Stage3Profile } from '$lib/dashboard/types';
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -151,7 +147,10 @@ export const calculateStage3Assessment = (input: {
 	const liquidBufferAccountIds = new Set([...cashAccountIds, ...offsetAccountIds]);
 
 	const openingBalanceByAccountId = new Map(
-		(projectionData.accounts ?? []).map((series) => [series.accountId, series.points?.[0]?.balance ?? 0])
+		(projectionData.accounts ?? []).map((series) => [
+			series.accountId,
+			series.points?.[0]?.balance ?? 0
+		])
 	);
 	const reserveByAccountId = new Map(
 		(accountBalanceTargets ?? [])
@@ -285,7 +284,9 @@ export const getStage2AccessibilityShortfall = (
 ): PlannerShortfallLike | null =>
 	firstShortfall && (firstShortfall.minBalance ?? 0) <= 0 ? firstShortfall : null;
 
-export const getPlannerExistingRules = <TRule extends { target_account_id: string; enabled: boolean; priority_order: number }>(
+export const getPlannerExistingRules = <
+	TRule extends { target_account_id: string; enabled: boolean; priority_order: number }
+>(
 	stage2AccessibilityShortfall: PlannerShortfallLike | null,
 	autoFundingRules: TRule[]
 ): TRule[] | null =>
@@ -370,13 +371,9 @@ const getSeriesPointBalanceAtDate = (
 	date: number
 ) => series?.points?.find((point) => point.date === date)?.balance ?? 0;
 
-const getAssetHeldInAccountId = (
-	assetId: string,
-	assetAccounts: PlannerAssetAccountLike[]
-) =>
-	assetAccounts.find(
-		(link) => link.asset_id === assetId && link.relationship_role === 'held_in'
-	)?.account_id ?? null;
+const getAssetHeldInAccountId = (assetId: string, assetAccounts: PlannerAssetAccountLike[]) =>
+	assetAccounts.find((link) => link.asset_id === assetId && link.relationship_role === 'held_in')
+		?.account_id ?? null;
 
 const getPrimaryCashAccountId = (accounts: PlannerAccountLike[]) =>
 	accounts.find((account) => account.account_type === 'cash_account')?.id ?? '';
@@ -400,7 +397,8 @@ export const getPlannerLiquiditySaleShortcut = (input: {
 	const deficit = firstLiquidityDeficit;
 	if (!deficit) return null;
 
-	const targetAccountId = plannerFirstShortfall?.targetAccountId ?? getPrimaryCashAccountId(accounts);
+	const targetAccountId =
+		plannerFirstShortfall?.targetAccountId ?? getPrimaryCashAccountId(accounts);
 	if (!targetAccountId) return null;
 	const targetAccount = accounts.find((account) => account.id === targetAccountId);
 	if (!targetAccount) return null;
@@ -410,7 +408,8 @@ export const getPlannerLiquiditySaleShortcut = (input: {
 		if (!item.id.startsWith('asset:')) continue;
 		const assetId = item.id.slice('asset:'.length);
 		const asset = assets.find((entry) => entry.id === assetId);
-		if (!asset || (asset.asset_type !== 'shares' && asset.asset_type !== 'superannuation')) continue;
+		if (!asset || (asset.asset_type !== 'shares' && asset.asset_type !== 'superannuation'))
+			continue;
 		const accountId = getAssetHeldInAccountId(assetId, assetAccounts);
 		if (!accountId || accountId === targetAccountId) continue;
 		const account = accounts.find((entry) => entry.id === accountId);
@@ -437,4 +436,3 @@ export const getPlannerLiquiditySaleShortcut = (input: {
 		amount
 	};
 };
-

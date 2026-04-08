@@ -14,13 +14,10 @@
 	>();
 </script>
 
-<label class="grid gap-2 text-sm font-medium text-slate-700">
+<label class="app-label">
 	{label}
-	<input
-		{...rest}
-		class={`w-full rounded-lg border border-slate-200 px-3 py-2 text-slate-900 shadow-sm focus:border-slate-400 focus:outline-none ${className}`.trim()}
-	/>
+	<input {...rest} class={`app-input ${className}`.trim()} />
 	{#if error}
-		<span class="text-xs text-rose-600">{error}</span>
+		<span class="app-error">{error}</span>
 	{/if}
 </label>

@@ -2,10 +2,7 @@
 	import type { PageData } from './$types';
 	import { afterUpdate, onDestroy, onMount, tick } from 'svelte';
 	import Chart from 'chart.js/auto';
-	import {
-		formatYearMonthInput,
-		normalizeYearMonthValue,
-	} from '$lib/yearMonth';
+	import { formatYearMonthInput, normalizeYearMonthValue } from '$lib/yearMonth';
 	import { postAction } from '$lib/dashboard/action-client';
 	import {
 		fetchDashboardProjection,
@@ -35,9 +32,7 @@
 		createDefaultCashflowDraft,
 		createEditCashflowDraft
 	} from '$lib/dashboard/cashflow-drafts';
-	import {
-		applyReserveOrderOverrides as applyReserveOrderOverridesToRules
-	} from '$lib/dashboard/funding-order';
+	import { applyReserveOrderOverrides as applyReserveOrderOverridesToRules } from '$lib/dashboard/funding-order';
 	import {
 		calculateStage3Assessment,
 		findStage2RunOutEvent,
@@ -221,16 +216,16 @@
 	let updateLocks = new Set<string>();
 	let expandedPnlNodes = new Set<string>();
 	let reserveOrderOverridesByTarget: Record<string, string[]> = {};
-let fundingReserveDrafts: Record<string, string> = {};
-let fundingCapDrafts: Record<string, string> = {};
-let fundingCashAccountOptions: AccountOption[] = [];
-let fundingReserveRulesByAccount: Record<string, typeof autoFundingRules> = {};
-let fundingReserveSourceOptionsByAccount: Record<string, AccountOption[]> = {};
-let fundingReservePriorityRowCount = 1;
-let fundingSweepRulesByAccount: Record<string, typeof autoSweepRules> = {};
-let fundingSweepDestinationOptionsByAccount: Record<string, AccountOption[]> = {};
-let fundingCapPriorityRowCount = 1;
-let fundingTabError = '';
+	let fundingReserveDrafts: Record<string, string> = {};
+	let fundingCapDrafts: Record<string, string> = {};
+	let fundingCashAccountOptions: AccountOption[] = [];
+	let fundingReserveRulesByAccount: Record<string, typeof autoFundingRules> = {};
+	let fundingReserveSourceOptionsByAccount: Record<string, AccountOption[]> = {};
+	let fundingReservePriorityRowCount = 1;
+	let fundingSweepRulesByAccount: Record<string, typeof autoSweepRules> = {};
+	let fundingSweepDestinationOptionsByAccount: Record<string, AccountOption[]> = {};
+	let fundingCapPriorityRowCount = 1;
+	let fundingTabError = '';
 	let transactionSortKey: TransactionSortKey = 'assetName';
 	let transactionSortDirection: TransactionSortDirection = 'asc';
 	let pnlExpandableNodeIds: string[] = [];
@@ -336,12 +331,12 @@ let fundingTabError = '';
 	let transferAccountOptions: AccountOption[] = [];
 	let transferEditDrafts: Record<string, TransferEditDraft>;
 	let accountEditDrafts: Record<string, AccountEditDraft>;
-let accountInlineError: string;
-let plannerSourceAccountId = '';
-let autoFundingRuleError = '';
-let plannerLiquidityShortcutError = '';
-let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
-let wasStage3Passed = false;
+	let accountInlineError: string;
+	let plannerSourceAccountId = '';
+	let autoFundingRuleError = '';
+	let plannerLiquidityShortcutError = '';
+	let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
+	let wasStage3Passed = false;
 	let stage3Assessment: Stage3Assessment | null = null;
 	let dashboardSections: DashboardSectionsControllerState;
 	let dashboardMutations: ReturnType<typeof createDashboardMutationController>;
@@ -418,7 +413,10 @@ let wasStage3Passed = false;
 		: 'Auto-funding needs attention.';
 	$: stage2AccessibilityShortfall = getStage2AccessibilityShortfall(plannerFirstShortfall);
 	$: plannerExistingRules = getPlannerExistingRules(stage2AccessibilityShortfall, autoFundingRules);
-	$: plannerSourceOptions = getPlannerSourceOptions(stage2AccessibilityShortfall, plannerExistingRules);
+	$: plannerSourceOptions = getPlannerSourceOptions(
+		stage2AccessibilityShortfall,
+		plannerExistingRules
+	);
 	$: plannerSelectedSourceOption =
 		plannerSourceOptions.find((option) => option.id === plannerSourceAccountId) ?? null;
 	$: plannerSourceAvailabilityWarning = getPlannerSourceAvailabilityWarning(
@@ -770,8 +768,8 @@ let wasStage3Passed = false;
 						(account.account_type === 'brokerage' && sharesBrokerageAccountIds.has(account.id)) ||
 						account.account_type === 'super_account')
 			)
-		.map((account) => ({ id: account.id, name: account.name }))
-		.sort((a, b) => a.name.localeCompare(b.name));
+			.map((account) => ({ id: account.id, name: account.name }))
+			.sort((a, b) => a.name.localeCompare(b.name));
 	})();
 	$: fundingCashAccountOptions = transferAccountOptions.filter(
 		(option) =>
@@ -1356,15 +1354,12 @@ let wasStage3Passed = false;
 	};
 
 	const updateProjectionRange = async (range: typeof projectionRange) => {
-		await withLock(
-			'projectionRange',
-			async () => {
-				dashboardProjectionState.setProjectionRange(range);
-				const formData = new FormData();
-				formData.set('projectionRange', range);
-				await fetch('?/updateRange', { method: 'POST', body: formData });
-			}
-		).catch((error) => {
+		await withLock('projectionRange', async () => {
+			dashboardProjectionState.setProjectionRange(range);
+			const formData = new FormData();
+			formData.set('projectionRange', range);
+			await fetch('?/updateRange', { method: 'POST', body: formData });
+		}).catch((error) => {
 			setProjectionError(
 				error instanceof Error ? error.message : 'Unable to refresh the projection.'
 			);
@@ -1516,7 +1511,10 @@ let wasStage3Passed = false;
 	const upsertFundingTargetForAccount = async (accountId: string) => {
 		await dashboardMutations.upsertFundingTargetForAccount(accountId);
 	};
-	const addReserveRuleForTarget = async (targetAccountId: string, selectedSourceAccountId: string) => {
+	const addReserveRuleForTarget = async (
+		targetAccountId: string,
+		selectedSourceAccountId: string
+	) => {
 		await dashboardMutations.addReserveRuleForTarget(targetAccountId, selectedSourceAccountId);
 	};
 	const removeReserveRule = async (ruleId: string) => {
@@ -1580,7 +1578,7 @@ let wasStage3Passed = false;
 	const handleTransferInflationToggle = (transferId: string, checked: boolean) => {
 		dashboardWhatIfState.setCashflows(
 			cashflows.map((item) =>
-			item.id === transferId ? { ...item, inflation_affected: checked } : item
+				item.id === transferId ? { ...item, inflation_affected: checked } : item
 			)
 		);
 		updateTransferInflationAffected(transferId, checked);
@@ -2221,7 +2219,7 @@ let wasStage3Passed = false;
 	});
 </script>
 
-<section class="not-prose -mt-8">
+<section class="dashboard-shell not-prose -mt-8">
 	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
 		<div class="space-y-4">
 			<ProjectionPanel
@@ -2255,3 +2253,11 @@ let wasStage3Passed = false;
 	onConfirm={confirmDeleteCashflow}
 />
 
+<style>
+	.dashboard-shell :global(input:not([type='checkbox']):not([type='radio']):not([type='range'])),
+	.dashboard-shell :global(select),
+	.dashboard-shell :global(textarea) {
+		font-size: 0.75rem;
+		line-height: 1rem;
+	}
+</style>

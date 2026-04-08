@@ -15,7 +15,9 @@ type InitialLoadState = {
 const parseError = (error: unknown, fallback: string) =>
 	error instanceof Error ? error.message : fallback;
 
-export const fetchDashboardWhatIf = async (scenarioId: string): Promise<DashboardWhatIfResponse> => {
+export const fetchDashboardWhatIf = async (
+	scenarioId: string
+): Promise<DashboardWhatIfResponse> => {
 	const url = new URL('/dashboard/data/what-if', window.location.origin);
 	url.searchParams.set('scenarioId', scenarioId);
 	const response = await fetch(url, { cache: 'no-store' });

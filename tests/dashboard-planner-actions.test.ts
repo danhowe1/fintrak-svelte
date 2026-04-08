@@ -48,13 +48,16 @@ describe('dashboard planner action helpers', () => {
 			{ id: 'person-1', asset_type: 'person' },
 			{ id: 'property-1', asset_type: 'property' }
 		] as any[];
-		const match = findBestLiquidityExpenseShortcut(assets as any, {
-			'person-1': [
-				{ id: 'c1', cashflow_type: 'expense', amount: 1000 },
-				{ id: 'c2', cashflow_type: 'expense', amount: 2500 }
-			],
-			'property-1': [{ id: 'c3', cashflow_type: 'expense', amount: 1800 }]
-		} as any);
+		const match = findBestLiquidityExpenseShortcut(
+			assets as any,
+			{
+				'person-1': [
+					{ id: 'c1', cashflow_type: 'expense', amount: 1000 },
+					{ id: 'c2', cashflow_type: 'expense', amount: 2500 }
+				],
+				'property-1': [{ id: 'c3', cashflow_type: 'expense', amount: 1800 }]
+			} as any
+		);
 		expect(match?.assetId).toBe('person-1');
 		expect(match?.cashflow.id).toBe('c2');
 	});
@@ -78,7 +81,13 @@ describe('dashboard planner action helpers', () => {
 
 	it('builds property sale details using existing details when present', () => {
 		const details = buildLiquidityPropertySaleDetails({
-			property: { id: 'p1', name: 'Home', start_date: 202001, details: {}, asset_type: 'property' } as any,
+			property: {
+				id: 'p1',
+				name: 'Home',
+				start_date: 202001,
+				details: {},
+				asset_type: 'property'
+			} as any,
 			existing: {
 				name: 'Home',
 				startDate: '01 2020',

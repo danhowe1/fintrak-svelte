@@ -55,7 +55,12 @@ describe('dashboard planner logic helpers', () => {
 			targetAccountName: 'Target',
 			availableSourceAccounts: [
 				{ accountId: 'src-2', accountName: 'Zeta', availableNow: true },
-				{ accountId: 'src-1', accountName: 'Alpha', availableNow: false, availableFromDate: 203004 },
+				{
+					accountId: 'src-1',
+					accountName: 'Alpha',
+					availableNow: false,
+					availableFromDate: 203004
+				},
 				{ accountId: 'target-1', accountName: 'Target', availableNow: true }
 			]
 		});
