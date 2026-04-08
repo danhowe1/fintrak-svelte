@@ -54,22 +54,39 @@ export const runInitialDashboardLoad = async (args: {
 		projectionError: null
 	}));
 
-	const [whatIfResult, projectionResult] = await Promise.allSettled([
-		args.loadWhatIf(),
-		args.refreshProjection()
-	]);
+	const projectionLoad = args
+		.refreshProjection()
+		.then(() => {
+			args.setState((state) => ({
+				...state,
+				isInitialProjectionLoading: false,
+				projectionError: null
+			}));
+		})
+		.catch((error) => {
+			args.setState((state) => ({
+				...state,
+				isInitialProjectionLoading: false,
+				projectionError: parseError(error, 'Unable to refresh the projection.')
+			}));
+		});
 
-	args.setState((state) => ({
-		...state,
-		isInitialWhatIfLoading: false,
-		isInitialProjectionLoading: false,
-		whatIfLoadError:
-			whatIfResult.status === 'rejected'
-				? parseError(whatIfResult.reason, 'Unable to load What-if data.')
-				: null,
-		projectionError:
-			projectionResult.status === 'rejected'
-				? parseError(projectionResult.reason, 'Unable to refresh the projection.')
-				: state.projectionError
-	}));
+	const whatIfLoad = args
+		.loadWhatIf()
+		.then(() => {
+			args.setState((state) => ({
+				...state,
+				isInitialWhatIfLoading: false,
+				whatIfLoadError: null
+			}));
+		})
+		.catch((error) => {
+			args.setState((state) => ({
+				...state,
+				isInitialWhatIfLoading: false,
+				whatIfLoadError: parseError(error, 'Unable to load What-if data.')
+			}));
+		});
+
+	await Promise.allSettled([projectionLoad, whatIfLoad]);
 };
