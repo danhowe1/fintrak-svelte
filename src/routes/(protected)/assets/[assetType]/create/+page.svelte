@@ -260,7 +260,7 @@
 						class="no-spin"
 						label="Capital growth rate (%)"
 						name="shareCapitalGrowthRate"
-						step="0.01"
+						step="0.1"
 						value={form?.values?.shareCapitalGrowthRate ?? ''}
 						error={form?.errors?.shareCapitalGrowthRate?.[0]}
 						required
@@ -270,7 +270,7 @@
 						class="no-spin"
 						label="Dividend yield (%)"
 						name="shareDividendYield"
-						step="0.01"
+						step="0.1"
 						value={form?.values?.shareDividendYield ?? ''}
 						error={form?.errors?.shareDividendYield?.[0]}
 						required

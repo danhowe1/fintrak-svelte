@@ -589,10 +589,10 @@ export const actions: Actions = {
 		const dividendYieldRaw = Number(formData.get('dividendYield'));
 		const dividendsTakenAsIncomeDate = String(formData.get('dividendsTakenAsIncomeDate') ?? '').trim();
 		const capitalGrowthRate = Number.isFinite(capitalGrowthRateRaw)
-			? Math.round(capitalGrowthRateRaw * 100) / 100
+			? Math.round(capitalGrowthRateRaw * 10) / 10
 			: Number.NaN;
 		const dividendYield = Number.isFinite(dividendYieldRaw)
-			? Math.round(dividendYieldRaw * 100) / 100
+			? Math.round(dividendYieldRaw * 10) / 10
 			: Number.NaN;
 		const normalizedStartDate = parseYearMonthInput(startDate);
 		const normalizedDividendDate = parseYearMonthInput(dividendsTakenAsIncomeDate);

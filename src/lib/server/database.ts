@@ -42,6 +42,7 @@ function getPool() {
 }
 
 type DbClient = Pool | PoolClient;
+const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
 
 export function getAuthenticatedUser(
 	session: {
@@ -450,11 +451,11 @@ export async function updateShareDetails(
 						jsonb_set(
 							coalesce(details, '{}'::jsonb),
 							'{capitalGrowthRate}',
-							to_jsonb($5::numeric),
+							to_jsonb(round($5::numeric, 1)),
 							true
 						),
 						'{dividendYield}',
-						to_jsonb($6::numeric),
+						to_jsonb(round($6::numeric, 1)),
 						true
 					),
 					'{dividendsTakenAsIncomeDate}',
@@ -2165,6 +2166,8 @@ export async function createShareAssetWithBrokerage(input: CreateShareAssetWithB
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
+		const capitalGrowthRate = roundToOneDecimal(input.capitalGrowthRate);
+		const dividendYield = roundToOneDecimal(input.dividendYield);
 
 		const assetId = await createAsset(
 			{
@@ -2173,8 +2176,8 @@ export async function createShareAssetWithBrokerage(input: CreateShareAssetWithB
 				name: input.name,
 				startDate: input.startDate,
 				details: {
-					capitalGrowthRate: input.capitalGrowthRate,
-					dividendYield: input.dividendYield,
+					capitalGrowthRate,
+					dividendYield,
 					dividendsTakenAsIncomeDate: input.dividendsTakenAsIncomeDate
 				}
 			},

@@ -607,8 +607,10 @@ let wasStage3Passed = false;
 			next[asset.id] = {
 				name: asset.name ?? '',
 				startDate: formatYearMonthInput(asset.start_date),
-				capitalGrowthRate: Number.isFinite(capitalGrowthRate) ? capitalGrowthRate : 0,
-				dividendYield: Number.isFinite(dividendYield) ? dividendYield : 0,
+				capitalGrowthRate: Number.isFinite(capitalGrowthRate)
+					? Math.round(capitalGrowthRate * 10) / 10
+					: 0,
+				dividendYield: Number.isFinite(dividendYield) ? Math.round(dividendYield * 10) / 10 : 0,
 				dividendsTakenAsIncomeDate: formatYearMonthInput(details.dividendsTakenAsIncomeDate)
 			};
 		}

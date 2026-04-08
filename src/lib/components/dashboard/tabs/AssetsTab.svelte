@@ -86,6 +86,7 @@
 	const validateMortgageDetails = $derived(mortgage.validateMortgageDetails);
 	// svelte-ignore state_referenced_locally
 	let { stepForValue, scheduleUpdate, formatLabel, toMonthYearInput, roundToTwo, formatRate, formatYearMonthInput } = ui;
+	const roundToOne = (value: number) => Math.round(value * 10) / 10;
 </script>
 
 					<div class="mt-3 flex flex-wrap gap-2">
@@ -615,15 +616,15 @@
 										<input
 											type="number"
 											class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-											value={formatRate(shareDetails[share.id]?.capitalGrowthRate ?? 0, 2)}
-											step="0.01"
+											value={formatRate(shareDetails[share.id]?.capitalGrowthRate ?? 0, 1)}
+											step="0.1"
 											oninput={(event) => {
 												const next = Number((event.currentTarget as HTMLInputElement).value);
 												const current = shareDetails[share.id];
 												if (!current) return;
 												setShareDetails(share.id, {
 													...current,
-													capitalGrowthRate: Number.isFinite(next) ? next : 0
+													capitalGrowthRate: Number.isFinite(next) ? roundToOne(next) : 0
 												});
 											}}
 											onchange={(event) => {
@@ -637,14 +638,14 @@
 												setShareError(share.id, 'capitalGrowthRate', '');
 												setShareDetails(share.id, {
 													...current,
-													capitalGrowthRate: roundToTwo(next)
+													capitalGrowthRate: roundToOne(next)
 												});
 												scheduleUpdate(`shares:${share.id}`, () =>
 													updateShareDetails(
 														share.id,
 														current.name,
 														current.startDate,
-														roundToTwo(next),
+														roundToOne(next),
 														current.dividendYield,
 														current.dividendsTakenAsIncomeDate
 													)
@@ -667,15 +668,15 @@
 										<input
 											type="number"
 											class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-											value={formatRate(shareDetails[share.id]?.dividendYield ?? 0, 2)}
-											step="0.01"
+											value={formatRate(shareDetails[share.id]?.dividendYield ?? 0, 1)}
+											step="0.1"
 											oninput={(event) => {
 												const next = Number((event.currentTarget as HTMLInputElement).value);
 												const current = shareDetails[share.id];
 												if (!current) return;
 												setShareDetails(share.id, {
 													...current,
-													dividendYield: Number.isFinite(next) ? next : 0
+													dividendYield: Number.isFinite(next) ? roundToOne(next) : 0
 												});
 											}}
 											onchange={(event) => {
@@ -687,14 +688,17 @@
 													return;
 												}
 												setShareError(share.id, 'dividendYield', '');
-												setShareDetails(share.id, { ...current, dividendYield: roundToTwo(next) });
+												setShareDetails(share.id, {
+													...current,
+													dividendYield: roundToOne(next)
+												});
 												scheduleUpdate(`shares:${share.id}`, () =>
 													updateShareDetails(
 														share.id,
 														current.name,
 														current.startDate,
 														current.capitalGrowthRate,
-														roundToTwo(next),
+														roundToOne(next),
 														current.dividendsTakenAsIncomeDate
 													)
 												);

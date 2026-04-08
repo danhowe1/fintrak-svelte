@@ -506,7 +506,7 @@ const createAssetSchema = z
 		if (data.assetType === 'shares') {
 			if (
 				!data.shareCapitalGrowthRate ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.shareCapitalGrowthRate)
+				!/^-?\d+(\.\d)?$/.test(data.shareCapitalGrowthRate)
 			) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -514,7 +514,7 @@ const createAssetSchema = z
 					path: ['shareCapitalGrowthRate']
 				});
 			}
-			if (!data.shareDividendYield || !/^-?\d+(\.\d{1,2})?$/.test(data.shareDividendYield)) {
+			if (!data.shareDividendYield || !/^-?\d+(\.\d)?$/.test(data.shareDividendYield)) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
 					message: 'Dividend yield is required',
@@ -960,8 +960,8 @@ export const actions: Actions = {
 					scenarioId: scenario.id,
 					name,
 					startDate,
-					capitalGrowthRate: decimalUpToTwoPlacesSchema.parse(shareCapitalGrowthRate ?? '0'),
-					dividendYield: decimalUpToTwoPlacesSchema.parse(shareDividendYield ?? '0'),
+					capitalGrowthRate: decimalUpToOnePlaceSchema.parse(shareCapitalGrowthRate ?? '0'),
+					dividendYield: decimalUpToOnePlaceSchema.parse(shareDividendYield ?? '0'),
 					dividendsTakenAsIncomeDate: normalizeMonth(shareDividendsTakenAsIncomeDate ?? ''),
 					brokerageOpeningBalance: currencySchema.parse(shareBrokerageAccountOpeningBalance ?? '0'),
 					paysIntoAccountId: sharePaysIntoAccountId ?? ''
