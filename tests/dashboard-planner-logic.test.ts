@@ -5,7 +5,7 @@ import {
 	getPlannerLiquiditySaleShortcut,
 	getPlannerSourceAvailabilityWarning,
 	getPlannerSourceOptions,
-	getStage2AllocationShortfall
+	getStage2AccessibilityShortfall
 } from '../src/lib/dashboard/planner-logic';
 
 describe('dashboard planner logic helpers', () => {
@@ -49,7 +49,7 @@ describe('dashboard planner logic helpers', () => {
 	});
 
 	it('derives source options from shortfall and existing rules', () => {
-		const shortfall = getStage2AllocationShortfall({
+		const shortfall = getStage2AccessibilityShortfall({
 			minBalance: -100,
 			targetAccountId: 'target-1',
 			targetAccountName: 'Target',

@@ -12,12 +12,12 @@ type PostAction = (
 	fallbackErrorMessage: string
 ) => Promise<ActionPayload>;
 
-type Stage2AllocationShortfallLike = {
+type Stage2AccessibilityShortfallLike = {
 	targetAccountId: string;
 };
 
 export type SaveAutoFundingRuleParams = {
-	stage2AllocationShortfall: Stage2AllocationShortfallLike | null;
+	stage2AccessibilityShortfall: Stage2AccessibilityShortfallLike | null;
 	plannerSourceAccountId: string;
 	scenarioId: string;
 	autoRunProjection: boolean;
@@ -39,7 +39,7 @@ export const saveAutoFundingRuleCommand = async <TRule>(
 	}
 ): Promise<PlannerAutoFundingResult> => {
 	const {
-		stage2AllocationShortfall,
+		stage2AccessibilityShortfall,
 		plannerSourceAccountId,
 		scenarioId,
 		autoRunProjection,
@@ -48,7 +48,7 @@ export const saveAutoFundingRuleCommand = async <TRule>(
 		setAutoFundingRules,
 		refreshProjection
 	} = params;
-	if (!stage2AllocationShortfall) {
+	if (!stage2AccessibilityShortfall) {
 		return { autoFundingRuleError: '', projectionError: null };
 	}
 	if (!plannerSourceAccountId) {
@@ -57,11 +57,11 @@ export const saveAutoFundingRuleCommand = async <TRule>(
 
 	try {
 		await withLock(
-			`auto-funding-save:${stage2AllocationShortfall.targetAccountId}`,
+			`auto-funding-save:${stage2AccessibilityShortfall.targetAccountId}`,
 			async () => {
 				const formData = new FormData();
 				formData.set('scenarioId', scenarioId);
-				formData.set('targetAccountId', stage2AllocationShortfall.targetAccountId);
+				formData.set('targetAccountId', stage2AccessibilityShortfall.targetAccountId);
 				formData.set('sourceAccountId', plannerSourceAccountId);
 				const payload = await postAction(
 					'upsertAutoFundingRule',
@@ -170,3 +170,4 @@ export const jumpToWhatIfFundingInput = async (params: {
 		// Number inputs may not support text selection across browsers.
 	}
 };
+

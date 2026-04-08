@@ -8,7 +8,7 @@ import {
 describe('dashboard planner command helpers', () => {
 	it('returns validation error when source account is missing', async () => {
 		const result = await saveAutoFundingRuleCommand({
-			stage2AllocationShortfall: { targetAccountId: 'target-1' },
+			stage2AccessibilityShortfall: { targetAccountId: 'target-1' },
 			plannerSourceAccountId: '',
 			scenarioId: 'sc-1',
 			autoRunProjection: true,
@@ -26,7 +26,7 @@ describe('dashboard planner command helpers', () => {
 		const refreshProjection = vi.fn(async () => {});
 		const postAction = vi.fn(async () => ({ autoFundingRules: [{ id: 'r1' }] }));
 		const result = await saveAutoFundingRuleCommand({
-			stage2AllocationShortfall: { targetAccountId: 'target-1' },
+			stage2AccessibilityShortfall: { targetAccountId: 'target-1' },
 			plannerSourceAccountId: 'src-1',
 			scenarioId: 'sc-1',
 			autoRunProjection: true,

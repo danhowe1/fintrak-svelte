@@ -45,7 +45,7 @@
 		getPlannerLiquiditySaleShortcut,
 		getPlannerSourceAvailabilityWarning,
 		getPlannerSourceOptions,
-		getStage2AllocationShortfall
+		getStage2AccessibilityShortfall
 	} from '$lib/dashboard/planner-logic';
 	import {
 		buildLiquidityIncomeDraftPatch,
@@ -416,9 +416,9 @@ let wasStage3Passed = false;
 			? `${stage2FirstRunOutEvent.monthLabel}: ${stage2FirstRunOutEvent.message}`
 			: stage2FirstRunOutEvent.message
 		: 'Auto-funding needs attention.';
-	$: stage2AllocationShortfall = getStage2AllocationShortfall(plannerFirstShortfall);
-	$: plannerExistingRules = getPlannerExistingRules(stage2AllocationShortfall, autoFundingRules);
-	$: plannerSourceOptions = getPlannerSourceOptions(stage2AllocationShortfall, plannerExistingRules);
+	$: stage2AccessibilityShortfall = getStage2AccessibilityShortfall(plannerFirstShortfall);
+	$: plannerExistingRules = getPlannerExistingRules(stage2AccessibilityShortfall, autoFundingRules);
+	$: plannerSourceOptions = getPlannerSourceOptions(stage2AccessibilityShortfall, plannerExistingRules);
 	$: plannerSelectedSourceOption =
 		plannerSourceOptions.find((option) => option.id === plannerSourceAccountId) ?? null;
 	$: plannerSourceAvailabilityWarning = getPlannerSourceAvailabilityWarning(
@@ -1885,7 +1885,7 @@ let wasStage3Passed = false;
 		withLock,
 		refreshProjection,
 		setProjectionError,
-		getStage2AllocationShortfall: () => stage2AllocationShortfall,
+		getStage2AccessibilityShortfall: () => stage2AccessibilityShortfall,
 		getPlannerSourceAccountId: () => plannerSourceAccountId,
 		setPlannerSourceAccountId: (value) => {
 			plannerSourceAccountId = value;
@@ -2154,7 +2154,7 @@ let wasStage3Passed = false;
 			stage2Reached,
 			stage2Passed,
 			stage2PlannerMessage,
-			stage2AllocationShortfall,
+			stage2AccessibilityShortfall,
 			plannerExistingRules,
 			accountsList,
 			removeAutoFundingRule,
@@ -2254,3 +2254,4 @@ let wasStage3Passed = false;
 	onCancel={cancelDeleteCashflow}
 	onConfirm={confirmDeleteCashflow}
 />
+

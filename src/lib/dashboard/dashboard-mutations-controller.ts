@@ -43,7 +43,7 @@ export type DashboardMutationControllerDeps = {
 	refreshProjection: RefreshProjection;
 	setProjectionError: SetProjectionError;
 
-	getStage2AllocationShortfall: () => unknown;
+	getStage2AccessibilityShortfall: () => unknown;
 	getPlannerSourceAccountId: () => string;
 	setPlannerSourceAccountId: (value: string) => void;
 	setAutoFundingRuleError: (value: string) => void;
@@ -89,7 +89,7 @@ export type DashboardMutationControllerDeps = {
 export const createDashboardMutationController = (deps: DashboardMutationControllerDeps) => {
 	const saveAutoFundingRule = async () => {
 		const result = await saveAutoFundingRuleCommand({
-			stage2AllocationShortfall: deps.getStage2AllocationShortfall() as any,
+			stage2AccessibilityShortfall: deps.getStage2AccessibilityShortfall() as any,
 			plannerSourceAccountId: deps.getPlannerSourceAccountId(),
 			scenarioId: deps.scenarioId,
 			autoRunProjection: deps.getAutoRunProjection(),
@@ -570,3 +570,4 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		confirmDeleteCashflow
 	};
 };
+

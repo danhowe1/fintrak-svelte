@@ -280,34 +280,34 @@ export type PlannerSourceOption = {
 	availableFromDate?: number | null;
 };
 
-export const getStage2AllocationShortfall = (
+export const getStage2AccessibilityShortfall = (
 	firstShortfall: PlannerShortfallLike | null
 ): PlannerShortfallLike | null =>
 	firstShortfall && (firstShortfall.minBalance ?? 0) <= 0 ? firstShortfall : null;
 
 export const getPlannerExistingRules = <TRule extends { target_account_id: string; enabled: boolean; priority_order: number }>(
-	stage2AllocationShortfall: PlannerShortfallLike | null,
+	stage2AccessibilityShortfall: PlannerShortfallLike | null,
 	autoFundingRules: TRule[]
 ): TRule[] | null =>
-	stage2AllocationShortfall
+	stage2AccessibilityShortfall
 		? autoFundingRules
 				.filter(
 					(rule) =>
-						rule.target_account_id === stage2AllocationShortfall.targetAccountId && rule.enabled
+						rule.target_account_id === stage2AccessibilityShortfall.targetAccountId && rule.enabled
 				)
 				.sort((a, b) => a.priority_order - b.priority_order)
 		: null;
 
 export const getPlannerSourceOptions = (
-	stage2AllocationShortfall: PlannerShortfallLike | null,
+	stage2AccessibilityShortfall: PlannerShortfallLike | null,
 	plannerExistingRules: { source_account_id: string }[] | null
 ): PlannerSourceOption[] => {
-	if (!stage2AllocationShortfall) return [];
+	if (!stage2AccessibilityShortfall) return [];
 	const usedSourceIds = new Set((plannerExistingRules ?? []).map((rule) => rule.source_account_id));
-	return (stage2AllocationShortfall.availableSourceAccounts ?? [])
+	return (stage2AccessibilityShortfall.availableSourceAccounts ?? [])
 		.filter(
 			(option) =>
-				option.accountId !== stage2AllocationShortfall.targetAccountId &&
+				option.accountId !== stage2AccessibilityShortfall.targetAccountId &&
 				!usedSourceIds.has(option.accountId)
 		)
 		.map((option) => ({
@@ -437,3 +437,4 @@ export const getPlannerLiquiditySaleShortcut = (input: {
 		amount
 	};
 };
+

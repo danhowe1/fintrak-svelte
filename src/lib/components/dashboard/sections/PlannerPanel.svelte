@@ -10,7 +10,7 @@
 	export let stage2Reached: boolean;
 	export let stage2Passed: boolean;
 	export let stage2PlannerMessage: string | null | undefined;
-	export let stage2AllocationShortfall: any;
+	export let stage2AccessibilityShortfall: any;
 	export let plannerExistingRules: any[] | null;
 	export let accountsList: Array<{ id: string; name?: string }>;
 	export let removeAutoFundingRule: (ruleId: string) => void;
@@ -99,11 +99,10 @@
 			class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage2Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage2Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}
 		>
 			<div class="flex items-center gap-2">
-				<span class="font-semibold">Stage 2: Allocation</span>
-				<InfoTooltip label="What is Stage 2 allocation?">
-					Now that we've established you have enough to live on we need to ensure all of your accounts
-					remain in the black. Stage 2 is about allocating funds to the right accounts at the right
-					time.
+				<span class="font-semibold">Stage 2: Accessibility</span>
+				<InfoTooltip label="What is Stage 2 accessibility?">
+					Once we've established you have enough to live on we need to ensure all of your accounts
+					remain in the black. Stage 2 is about ensuring you have access to funds when you need them.
 				</InfoTooltip>
 			</div>
 			<span
@@ -119,10 +118,10 @@
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
 				{stage2PlannerMessage}
 			</div>
-			{#if stage2AllocationShortfall}
+			{#if stage2AccessibilityShortfall}
 				<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
 					<div class="font-semibold">
-						Stage 2: Allocation for {stage2AllocationShortfall.targetAccountName} from {stage2AllocationShortfall.monthLabel}
+						Stage 2: Accessibility for {stage2AccessibilityShortfall.targetAccountName} from {stage2AccessibilityShortfall.monthLabel}
 						from which account...
 					</div>
 					{#if (plannerExistingRules?.length ?? 0) > 0}
@@ -379,3 +378,4 @@
 		</div>
 	{/if}
 </div>
+
