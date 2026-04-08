@@ -1,15 +1,30 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { afterUpdate, onDestroy, tick } from 'svelte';
+	import { afterUpdate, onDestroy, onMount, tick } from 'svelte';
 	import Chart from 'chart.js/auto';
 	import {
-		addMonthsToYearMonth,
 		formatYearMonthInput,
-		fromYearMonthInt,
 		normalizeYearMonthValue,
-		toYearMonthInt
 	} from '$lib/yearMonth';
 	import { postAction } from '$lib/dashboard/action-client';
+	import {
+		fetchDashboardProjection,
+		fetchDashboardWhatIf,
+		runInitialDashboardLoad
+	} from '$lib/dashboard/dashboard-data-orchestrator';
+	import { createDashboardMutationController } from '$lib/dashboard/dashboard-mutations-controller';
+	import {
+		createDashboardSectionsController,
+		type DashboardSectionsControllerState
+	} from '$lib/dashboard/dashboard-controller';
+	import { buildDashboardProjectionDerived } from '$lib/dashboard/dashboard-projection-controller';
+	import {
+		createDashboardLoadStateStore,
+		createDashboardProjectionStateStore,
+		createDashboardUiStateStore,
+		createDashboardWhatIfStateStore,
+		createDashboardScenarioResetState
+	} from '$lib/dashboard/dashboard-view-state';
 	import {
 		isValidMonthYearInput,
 		normalizeProjectionRange,
@@ -21,30 +36,8 @@
 		createEditCashflowDraft
 	} from '$lib/dashboard/cashflow-drafts';
 	import {
-		createAssetCashflowCommand,
-		createTransferCashflowCommand,
-		deleteCashflowCommand,
-		saveTransferEditDraftCommand,
-		updateAssetCashflowCommand,
-		updateCashflowAmountCommand,
-		updateTransferInflationAffectedCommand
-	} from '$lib/dashboard/cashflow-commands';
-	import {
 		applyReserveOrderOverrides as applyReserveOrderOverridesToRules
 	} from '$lib/dashboard/funding-order';
-	import {
-		addReserveRuleForTargetCommand,
-		addSweepRuleForSourceCommand,
-		moveReserveRuleCommand,
-		moveSweepRuleCommand,
-		removeReserveRuleCommand,
-		removeSweepRuleCommand,
-		upsertFundingTargetForAccountCommand
-	} from '$lib/dashboard/funding-commands';
-	import {
-		runScenarioMutationCommand,
-		saveAccountEditDraftCommand
-	} from '$lib/dashboard/entity-commands';
 	import {
 		calculateStage3Assessment,
 		findStage2RunOutEvent,
@@ -63,11 +56,7 @@
 		findFirstPropertyAsset,
 		PLANNER_LIQUIDITY_ERRORS
 	} from '$lib/dashboard/planner-actions';
-	import {
-		jumpToWhatIfFundingInput,
-		removeAutoFundingRuleCommand,
-		saveAutoFundingRuleCommand
-	} from '$lib/dashboard/planner-commands';
+	import { jumpToWhatIfFundingInput } from '$lib/dashboard/planner-commands';
 	import type {
 		AccountEditDraft,
 		AccountOption,
@@ -75,7 +64,6 @@
 		ChartSeries,
 		CashflowDraft,
 		CashflowSummary,
-		PnlNode,
 		ProjectionBalanceSource,
 		ProjectionRange,
 		ProjectionView,
@@ -85,14 +73,12 @@
 		TransactionSortDirection,
 		TransactionSortKey
 	} from '$lib/dashboard/types';
-	import InfoTooltip from '$lib/components/ui/InfoTooltip.svelte';
 	import DisclosureToggle from '$lib/components/ui/DisclosureToggle.svelte';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
 	import CashflowDraftForm from '$lib/components/dashboard/CashflowDraftForm.svelte';
-	import AssetsTab from '$lib/components/dashboard/tabs/AssetsTab.svelte';
-	import AccountsTab from '$lib/components/dashboard/tabs/AccountsTab.svelte';
-	import TransfersTab from '$lib/components/dashboard/tabs/TransfersTab.svelte';
-	import ReservesTab from '$lib/components/dashboard/tabs/ReservesTab.svelte';
-	import CapsTab from '$lib/components/dashboard/tabs/CapsTab.svelte';
+	import ProjectionPanel from '$lib/components/dashboard/sections/ProjectionPanel.svelte';
+	import WhatIfPanel from '$lib/components/dashboard/sections/WhatIfPanel.svelte';
+	import PlannerPanel from '$lib/components/dashboard/sections/PlannerPanel.svelte';
 
 	export let data: PageData;
 
@@ -118,14 +104,93 @@
 	const formatRate = (value: number, decimals: number) =>
 		Number.isFinite(value) ? value.toFixed(decimals) : '0';
 
-let projectionData = data.projection;
-let sessionRates = data.sessionRates;
-let projectionVersion = 1;
-let projectionError: string | null = null;
-let refreshProjectionRequestId = 0;
-let cashflows = data.cashflows ?? [];
-let autoRunProjection = true;
-let whatIfPanelElement: HTMLElement | null = null;
+	type ProjectionData = PageData['projection'];
+	type AssetItem = PageData['assets'][number];
+	type AccountItem = PageData['accounts'][number];
+	type AssetAccountItem = PageData['assetAccounts'][number];
+	type AutoFundingRuleItem = PageData['autoFundingRules'][number];
+	type AccountBalanceTargetItem = PageData['accountBalanceTargets'][number];
+	type AutoSweepRuleItem = PageData['autoSweepRules'][number];
+
+	const EMPTY_PROJECTION: ProjectionData = {
+		startDate: 0,
+		endDate: 0,
+		accounts: [],
+		assets: [],
+		transactions: [],
+		events: [],
+		liquidity: {
+			points: [],
+			series: []
+		},
+		planner: {
+			stage: 'reserves_caps',
+			status: 'on_track',
+			headline: '',
+			firstLiquidityDeficit: null,
+			hasCapBreach: false,
+			firstShortfall: null
+		}
+	};
+
+	const dashboardProjectionState = createDashboardProjectionStateStore<
+		ProjectionData,
+		PageData['sessionRates'],
+		ProjectionRange
+	>({
+		projectionData: data.projection ?? EMPTY_PROJECTION,
+		sessionRates: data.sessionRates,
+		projectionRange: normalizeProjectionRange(data.projectionRange),
+		projectionVersion: 1
+	});
+	let projectionData: ProjectionData;
+	let sessionRates: PageData['sessionRates'];
+	let projectionRange: ProjectionRange;
+	let projectionVersion: number;
+	$: projectionData = $dashboardProjectionState.projectionData;
+	$: sessionRates = $dashboardProjectionState.sessionRates;
+	$: projectionRange = $dashboardProjectionState.projectionRange;
+	$: projectionVersion = $dashboardProjectionState.projectionVersion;
+	let refreshProjectionRequestId = 0;
+	const dashboardWhatIfState = createDashboardWhatIfStateStore<
+		AssetItem,
+		AccountItem,
+		AssetAccountItem,
+		CashflowSummary,
+		AutoFundingRuleItem,
+		AccountBalanceTargetItem,
+		AutoSweepRuleItem
+	>({
+		assetsList: data.assets ?? [],
+		accountsList: data.accounts ?? [],
+		assetAccountsList: data.assetAccounts ?? [],
+		cashflows: data.cashflows ?? [],
+		autoFundingRules: data.autoFundingRules ?? [],
+		accountBalanceTargets: data.accountBalanceTargets ?? [],
+		autoSweepRules: data.autoSweepRules ?? []
+	});
+	let cashflows: CashflowSummary[];
+	let assetsList: AssetItem[];
+	let accountsList: AccountItem[];
+	let assetAccountsList: AssetAccountItem[];
+	let autoFundingRules: AutoFundingRuleItem[];
+	let accountBalanceTargets: AccountBalanceTargetItem[];
+	let autoSweepRules: AutoSweepRuleItem[];
+	$: assetsList = $dashboardWhatIfState.assetsList;
+	$: accountsList = $dashboardWhatIfState.accountsList;
+	$: assetAccountsList = $dashboardWhatIfState.assetAccountsList;
+	$: cashflows = $dashboardWhatIfState.cashflows;
+	$: autoFundingRules = $dashboardWhatIfState.autoFundingRules;
+	$: accountBalanceTargets = $dashboardWhatIfState.accountBalanceTargets;
+	$: autoSweepRules = $dashboardWhatIfState.autoSweepRules;
+	let autoRunProjection = true;
+	let whatIfPanelElement: HTMLElement | null = null;
+	const dashboardLoadState = createDashboardLoadStateStore();
+	const setProjectionError = (message: string | null) =>
+		dashboardLoadState.setProjectionError(message);
+	const setWhatIfLoadError = (message: string | null) =>
+		dashboardLoadState.setWhatIfLoadError(message);
+	const dashboardUiState = createDashboardUiStateStore();
 
 	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 	const cashflowCategoryOptions = [
@@ -151,18 +216,11 @@ let whatIfPanelElement: HTMLElement | null = null;
 
 	let projectionView: ProjectionView = 'balances';
 	let projectionBalanceSource: ProjectionBalanceSource = 'liquidity';
-	let projectionRange: ProjectionRange = normalizeProjectionRange(data.projectionRange);
 	let assetPanelTab: AssetPanelTab = 'assets';
 	let isUpdating = false;
 	let updateLocks = new Set<string>();
 	let expandedPnlNodes = new Set<string>();
-	let assetsList = data.assets ?? [];
-	let accountsList = data.accounts ?? [];
-	let assetAccountsList = data.assetAccounts ?? [];
-	let autoFundingRules = data.autoFundingRules ?? [];
 	let reserveOrderOverridesByTarget: Record<string, string[]> = {};
-	let accountBalanceTargets = data.accountBalanceTargets ?? [];
-	let autoSweepRules = data.autoSweepRules ?? [];
 let fundingReserveDrafts: Record<string, string> = {};
 let fundingCapDrafts: Record<string, string> = {};
 let fundingCashAccountOptions: AccountOption[] = [];
@@ -247,45 +305,52 @@ let fundingTabError = '';
 		}
 	> = {};
 	let personDetailsErrors: Record<string, { name?: string; startDate?: string; dob?: string }> = {};
-	let cashflowFormErrors: Record<string, string> = {};
+	let cashflowFormErrors: Record<string, string>;
 	let lastScenarioId = data.scenario.id;
 	let updateTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 	let activeCashflowForm: {
 		assetId: string;
 		type: 'income' | 'expense';
 		cashflowId?: string;
-	} | null = null;
-	let cashflowDrafts: Record<string, CashflowDraft> = {};
+	} | null;
+	let cashflowDrafts: Record<string, CashflowDraft>;
 	let cashflowsByAssetId: Record<string, CashflowSummary[]> = {};
 	let editingCashflowIds = new Set<string>();
-	let expandedPersonDetailIds = new Set<string>();
-	let expandedPropertyDetailIds = new Set<string>();
-	let expandedMortgageDetailIds = new Set<string>();
-	let expandedShareDetailIds = new Set<string>();
+	let expandedPersonDetailIds: Set<string>;
+	let expandedPropertyDetailIds: Set<string>;
+	let expandedMortgageDetailIds: Set<string>;
+	let expandedShareDetailIds: Set<string>;
 	let deleteConfirmId: string | null = null;
-	let transferFormError = '';
-	let transferInlineError = '';
-	let transferDraft: TransferDraft = {
-		sourceAccountId: '',
-		destinationAccountId: '',
-		amount: '',
-		frequency: 'monthly',
-		startDate: '',
-		endDate: '',
-		description: '',
-		inflationAffected: false
-	};
+	let transferFormError: string;
+	let transferInlineError: string;
+	let transferDraft: TransferDraft;
 	let transferCashflows: CashflowSummary[] = [];
 	let transferAccountOptions: AccountOption[] = [];
-	let transferEditDrafts: Record<string, TransferEditDraft> = {};
-	let accountEditDrafts: Record<string, AccountEditDraft> = {};
-let accountInlineError = '';
+	let transferEditDrafts: Record<string, TransferEditDraft>;
+	let accountEditDrafts: Record<string, AccountEditDraft>;
+let accountInlineError: string;
 let plannerSourceAccountId = '';
 let autoFundingRuleError = '';
 let plannerLiquidityShortcutError = '';
 let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
 let wasStage3Passed = false;
 	let stage3Assessment: Stage3Assessment | null = null;
+	let dashboardSections: DashboardSectionsControllerState;
+	let dashboardMutations: ReturnType<typeof createDashboardMutationController>;
+
+	$: cashflowFormErrors = $dashboardUiState.cashflowFormErrors;
+	$: activeCashflowForm = $dashboardUiState.activeCashflowForm;
+	$: cashflowDrafts = $dashboardUiState.cashflowDrafts;
+	$: expandedPersonDetailIds = $dashboardUiState.expandedPersonDetailIds;
+	$: expandedPropertyDetailIds = $dashboardUiState.expandedPropertyDetailIds;
+	$: expandedMortgageDetailIds = $dashboardUiState.expandedMortgageDetailIds;
+	$: expandedShareDetailIds = $dashboardUiState.expandedShareDetailIds;
+	$: transferFormError = $dashboardUiState.transferFormError;
+	$: transferInlineError = $dashboardUiState.transferInlineError;
+	$: transferDraft = $dashboardUiState.transferDraft;
+	$: transferEditDrafts = $dashboardUiState.transferEditDrafts;
+	$: accountEditDrafts = $dashboardUiState.accountEditDrafts;
+	$: accountInlineError = $dashboardUiState.accountInlineError;
 
 	const getRetirementAge = (asset: { details?: Record<string, unknown> }) => {
 		const details = asset.details ?? {};
@@ -381,58 +446,40 @@ let wasStage3Passed = false;
 		}
 	}
 
-	$: assetsList = data.assets ?? [];
-	$: accountsList = data.accounts ?? [];
-	$: assetAccountsList = data.assetAccounts ?? [];
+	const resetScenarioState = () => {
+		const resetState = createDashboardScenarioResetState() as any;
+		({
+			personRetirementAges,
+			personDetails,
+			cashflowAmounts,
+			propertyDetails,
+			shareDetails,
+			accountInterestRates,
+			propertyErrors,
+			shareErrors,
+			mortgageDetails,
+			mortgageErrors,
+			personDetailsErrors,
+			updateTimers,
+			editingCashflowIds,
+			autoFundingRuleError,
+			plannerLiquidityShortcutError,
+			plannerSourceAccountId,
+			plannerAdvancedOpenStage,
+			fundingReserveDrafts,
+			fundingCapDrafts,
+			fundingTabError
+		} = resetState);
+		dashboardUiState.reset();
+		reserveOrderOverridesByTarget = {};
+		dashboardWhatIfState.resetData();
+		dashboardProjectionState.setProjectionData(EMPTY_PROJECTION);
+	};
 
 	$: if (data.scenario.id !== lastScenarioId) {
-		personRetirementAges = {};
-		personDetails = {};
-		cashflowAmounts = {};
-		propertyDetails = {};
-		shareDetails = {};
-		accountInterestRates = {};
-		propertyErrors = {};
-		shareErrors = {};
-		mortgageDetails = {};
-		mortgageErrors = {};
-		personDetailsErrors = {};
-		cashflowFormErrors = {};
-		activeCashflowForm = null;
-		cashflowDrafts = {};
-		updateTimers = {};
-		editingCashflowIds = new Set();
-		expandedPersonDetailIds = new Set();
-		expandedPropertyDetailIds = new Set();
-		expandedMortgageDetailIds = new Set();
-		expandedShareDetailIds = new Set();
-		transferFormError = '';
-		transferInlineError = '';
-		accountInlineError = '';
-		autoFundingRuleError = '';
-		plannerLiquidityShortcutError = '';
-		reserveOrderOverridesByTarget = {};
-		setAutoFundingRules(data.autoFundingRules ?? []);
-		accountBalanceTargets = data.accountBalanceTargets ?? [];
-		autoSweepRules = data.autoSweepRules ?? [];
-		plannerSourceAccountId = '';
-		plannerAdvancedOpenStage = 'stage3';
-		fundingReserveDrafts = {};
-		fundingCapDrafts = {};
-		fundingTabError = '';
-		transferDraft = {
-			sourceAccountId: '',
-			destinationAccountId: '',
-			amount: '',
-			frequency: 'monthly',
-			startDate: '',
-			endDate: '',
-			description: '',
-			inflationAffected: false
-		};
-		transferEditDrafts = {};
-		accountEditDrafts = {};
+		resetScenarioState();
 		lastScenarioId = data.scenario.id;
+		void loadInitialDashboardSections();
 	}
 
 	$: if (Object.keys(personRetirementAges).length === 0 && (assetsList.length ?? 0) > 0) {
@@ -633,7 +680,7 @@ let wasStage3Passed = false;
 		} else {
 			next.add(id);
 		}
-		expandedPersonDetailIds = next;
+		dashboardUiState.setExpandedPersonDetailIds(next);
 	};
 
 	$: cashflowsByAssetId = (() => {
@@ -741,14 +788,14 @@ let wasStage3Passed = false;
 	})();
 
 	$: if (!transferDraft.startDate) {
-		transferDraft = {
+		dashboardUiState.setTransferDraft({
 			...transferDraft,
 			startDate:
 				toMonthYearInput(projectionData.startDate) ||
 				toMonthYearInput(assetsList[0]?.start_date) ||
 				toMonthYearInput(accountsList[0]?.start_date) ||
 				''
-		};
+		});
 	}
 
 	$: {
@@ -768,7 +815,7 @@ let wasStage3Passed = false;
 			changed = true;
 		}
 		if (changed) {
-			transferEditDrafts = nextDrafts;
+			dashboardUiState.setTransferEditDrafts(nextDrafts);
 		}
 	}
 
@@ -791,7 +838,7 @@ let wasStage3Passed = false;
 			changed = true;
 		}
 		if (changed) {
-			accountEditDrafts = nextDrafts;
+			dashboardUiState.setAccountEditDrafts(nextDrafts);
 		}
 	}
 
@@ -799,14 +846,14 @@ let wasStage3Passed = false;
 		transferDraft.sourceAccountId &&
 		!transferAccountOptions.some((option) => option.id === transferDraft.sourceAccountId)
 	) {
-		transferDraft = { ...transferDraft, sourceAccountId: '' };
+		dashboardUiState.setTransferDraft({ ...transferDraft, sourceAccountId: '' });
 	}
 
 	$: if (
 		transferDraft.destinationAccountId &&
 		!transferAccountOptions.some((option) => option.id === transferDraft.destinationAccountId)
 	) {
-		transferDraft = { ...transferDraft, destinationAccountId: '' };
+		dashboardUiState.setTransferDraft({ ...transferDraft, destinationAccountId: '' });
 	}
 
 	const setCashflowAmount = (id: string, value: number) => {
@@ -893,11 +940,14 @@ let wasStage3Passed = false;
 	};
 
 	const openCashflowForm = (assetId: string, type: 'income' | 'expense') => {
-		activeCashflowForm = { assetId, type };
+		dashboardUiState.setActiveCashflowForm({ assetId, type });
 		const key = getDraftKey(assetId, type);
 		if (!cashflowDrafts[key]) {
 			const assetType = getAssetType(assetId);
-			cashflowDrafts = { ...cashflowDrafts, [key]: getDefaultDraft(assetId, type, assetType) };
+			dashboardUiState.setCashflowDrafts({
+				...cashflowDrafts,
+				[key]: getDefaultDraft(assetId, type, assetType)
+			});
 		} else {
 			const assetType = getAssetType(assetId);
 			const draft = cashflowDrafts[key];
@@ -907,10 +957,10 @@ let wasStage3Passed = false;
 				draft
 			);
 			if (coerced.category !== draft.category) {
-				cashflowDrafts = {
+				dashboardUiState.setCashflowDrafts({
 					...cashflowDrafts,
 					[key]: coerced
-				};
+				});
 			}
 		}
 	};
@@ -918,7 +968,7 @@ let wasStage3Passed = false;
 	const openCashflowFormForEdit = (assetId: string, cashflow: (typeof cashflows)[number]) => {
 		const type = cashflow.cashflow_type as 'income' | 'expense';
 		const key = getDraftKey(assetId, type, cashflow.id);
-		activeCashflowForm = { assetId, type, cashflowId: cashflow.id };
+		dashboardUiState.setActiveCashflowForm({ assetId, type, cashflowId: cashflow.id });
 		const assetType = getAssetType(assetId);
 		const draft = createEditCashflowDraft(cashflow, type, toMonthYearInput);
 		const coercedDraft = coerceDraftForAssetType(
@@ -926,18 +976,18 @@ let wasStage3Passed = false;
 			type,
 			draft
 		);
-		cashflowDrafts = { ...cashflowDrafts, [key]: coercedDraft };
+		dashboardUiState.setCashflowDrafts({ ...cashflowDrafts, [key]: coercedDraft });
 	};
 
 	const closeCashflowForm = () => {
-		activeCashflowForm = null;
+		dashboardUiState.setActiveCashflowForm(null);
 	};
 
 	const setCashflowDraft = (key: string, updates: Partial<CashflowDraft>) => {
-		cashflowDrafts = {
+		dashboardUiState.setCashflowDrafts({
 			...cashflowDrafts,
 			[key]: { ...cashflowDrafts[key], ...updates }
-		};
+		});
 	};
 
 	const setPropertyDetails = (
@@ -979,7 +1029,7 @@ let wasStage3Passed = false;
 		} else {
 			next.add(id);
 		}
-		expandedPropertyDetailIds = next;
+		dashboardUiState.setExpandedPropertyDetailIds(next);
 	};
 
 	const setMortgageDetails = (
@@ -1020,7 +1070,7 @@ let wasStage3Passed = false;
 		} else {
 			next.add(id);
 		}
-		expandedMortgageDetailIds = next;
+		dashboardUiState.setExpandedMortgageDetailIds(next);
 	};
 
 	const toggleShareDetails = (id: string) => {
@@ -1030,7 +1080,7 @@ let wasStage3Passed = false;
 		} else {
 			next.add(id);
 		}
-		expandedShareDetailIds = next;
+		dashboardUiState.setExpandedShareDetailIds(next);
 	};
 
 	const setShareDetails = (
@@ -1160,7 +1210,7 @@ let wasStage3Passed = false;
 	};
 
 	const setAutoFundingRules = (rules: typeof autoFundingRules) => {
-		autoFundingRules = applyReserveOrderOverrides(rules ?? []);
+		dashboardWhatIfState.setAutoFundingRules(applyReserveOrderOverrides(rules ?? []));
 	};
 
 	const togglePnlNode = (id: string) => {
@@ -1181,56 +1231,87 @@ let wasStage3Passed = false;
 		expandedPnlNodes = new Set();
 	};
 
+	const loadWhatIfSection = async () => {
+		const payload = await fetchDashboardWhatIf(data.scenario.id);
+		const nextCashflows = (payload.cashflows as CashflowSummary[]) ?? [];
+		dashboardWhatIfState.applyWhatIfPayload({
+			assetsList: (payload.assets as AssetItem[]) ?? [],
+			accountsList: (payload.accounts as AccountItem[]) ?? [],
+			assetAccountsList: (payload.assetAccounts as AssetAccountItem[]) ?? [],
+			cashflows: nextCashflows,
+			autoFundingRules: payload.autoFundingRules
+				? applyReserveOrderOverrides(payload.autoFundingRules as typeof autoFundingRules)
+				: undefined,
+			accountBalanceTargets: payload.accountBalanceTargets
+				? [...(payload.accountBalanceTargets as typeof accountBalanceTargets)]
+				: undefined,
+			autoSweepRules: payload.autoSweepRules
+				? [...(payload.autoSweepRules as typeof autoSweepRules)]
+				: undefined
+		});
+		syncCashflowAmounts(nextCashflows);
+		setWhatIfLoadError(null);
+	};
+
+	const loadInitialDashboardSections = async () => {
+		await runInitialDashboardLoad({
+			loadWhatIf: loadWhatIfSection,
+			refreshProjection: () => refreshProjection({ force: true }),
+			setState: (updater) => dashboardLoadState.apply(updater)
+		});
+	};
+
 	const refreshProjection = async (options?: { includeCashflows?: boolean; force?: boolean }) => {
 		if (!autoRunProjection && !options?.force) {
 			return;
 		}
 		const requestId = ++refreshProjectionRequestId;
-		const url = new URL('/dashboard/projection', window.location.origin);
-		url.searchParams.set('scenarioId', data.scenario.id);
-		if (options?.includeCashflows) {
-			url.searchParams.set('includeCashflows', 'true');
-		}
-		const response = await fetch(url, { cache: 'no-store' });
-		if (!response.ok) {
-			throw new Error('Unable to refresh the projection. Please try again.');
-		}
-		const payload = await response.json();
+		const payload = await fetchDashboardProjection(data.scenario.id, {
+			includeCashflows: options?.includeCashflows
+		});
 		if (requestId !== refreshProjectionRequestId) {
 			return;
 		}
-		projectionData = payload.projection;
+		const projectionDataPayload = payload.projection as ProjectionData;
 		if (payload.autoFundingRules) {
-			setAutoFundingRules(payload.autoFundingRules);
+			setAutoFundingRules(payload.autoFundingRules as typeof autoFundingRules);
 		}
 		if (payload.accountBalanceTargets) {
-			accountBalanceTargets = [...payload.accountBalanceTargets];
+			dashboardWhatIfState.setAccountBalanceTargets([
+				...(payload.accountBalanceTargets as typeof accountBalanceTargets)
+			]);
 		}
 		if (payload.autoSweepRules) {
-			autoSweepRules = [...payload.autoSweepRules];
+			dashboardWhatIfState.setAutoSweepRules([
+				...(payload.autoSweepRules as typeof autoSweepRules)
+			]);
 		}
 		if (payload.cashflows) {
-			cashflows = [...payload.cashflows];
-			syncCashflowAmounts(payload.cashflows);
+			const nextCashflows = [...(payload.cashflows as CashflowSummary[])];
+			dashboardWhatIfState.setCashflows(nextCashflows);
+			syncCashflowAmounts(nextCashflows);
 		}
-		sessionRates = payload.sessionRates;
-		projectionRange = payload.projectionRange;
-		projectionVersion += 1;
-		projectionError = null;
+		dashboardProjectionState.applyProjectionPayload({
+			projectionData: projectionDataPayload,
+			sessionRates: payload.sessionRates,
+			projectionRange: payload.projectionRange
+		});
+		setProjectionError(null);
 	};
 
 	const updateProjectionRange = async (range: typeof projectionRange) => {
 		await withLock(
 			'projectionRange',
 			async () => {
-				projectionRange = range;
+				dashboardProjectionState.setProjectionRange(range);
 				const formData = new FormData();
 				formData.set('projectionRange', range);
 				await fetch('?/updateRange', { method: 'POST', body: formData });
 			}
 		).catch((error) => {
-			projectionError =
-				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+			setProjectionError(
+				error instanceof Error ? error.message : 'Unable to refresh the projection.'
+			);
 		});
 	};
 
@@ -1242,8 +1323,9 @@ let wasStage3Passed = false;
 			},
 			true
 		).catch((error) => {
-			projectionError =
-				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+			setProjectionError(
+				error instanceof Error ? error.message : 'Unable to refresh the projection.'
+			);
 		});
 	};
 
@@ -1286,9 +1368,11 @@ let wasStage3Passed = false;
 			return;
 		}
 		assetPanelTab = 'transfers';
-		transferFormError = '';
-		transferInlineError = '';
-		transferDraft = buildLiquidityTransferDraft(plannerLiquiditySaleShortcut, monthLabelFromDate);
+		dashboardUiState.setTransferFormError('');
+		dashboardUiState.setTransferInlineError('');
+		dashboardUiState.setTransferDraft(
+			buildLiquidityTransferDraft(plannerLiquiditySaleShortcut, monthLabelFromDate)
+		);
 	};
 
 	const openLiquidityPropertySaleShortcut = () => {
@@ -1299,7 +1383,9 @@ let wasStage3Passed = false;
 			return;
 		}
 		assetPanelTab = 'assets';
-		expandedPropertyDetailIds = new Set([...expandedPropertyDetailIds, property.id]);
+		dashboardUiState.setExpandedPropertyDetailIds(
+			new Set([...expandedPropertyDetailIds, property.id])
+		);
 		setPropertyDetails(
 			property.id,
 			buildLiquidityPropertySaleDetails({
@@ -1339,37 +1425,11 @@ let wasStage3Passed = false;
 	};
 
 	const saveAutoFundingRule = async () => {
-		const result = await saveAutoFundingRuleCommand({
-			stage2AllocationShortfall,
-			plannerSourceAccountId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			postAction,
-			setAutoFundingRules,
-			refreshProjection
-		});
-		autoFundingRuleError = result.autoFundingRuleError;
-		if (result.nextPlannerSourceAccountId !== undefined) {
-			plannerSourceAccountId = result.nextPlannerSourceAccountId;
-		}
-		projectionError = result.projectionError;
+		await dashboardMutations.saveAutoFundingRule();
 	};
-
 	const removeAutoFundingRule = async (ruleId: string) => {
-		const result = await removeAutoFundingRuleCommand({
-			ruleId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			postAction,
-			setAutoFundingRules,
-			refreshProjection
-		});
-		autoFundingRuleError = result.autoFundingRuleError;
-		projectionError = result.projectionError;
+		await dashboardMutations.removeAutoFundingRule(ruleId);
 	};
-
 	const jumpToWhatIfReserves = async () => {
 		const firstCashAccountId = fundingCashAccountOptions[0]?.id ?? '';
 		await jumpToWhatIfFundingInput({
@@ -1398,281 +1458,74 @@ let wasStage3Passed = false;
 		accountBalanceTargets.find((item) => item.account_id === accountId && item.enabled) ?? null;
 
 	const upsertFundingTargetForAccount = async (accountId: string) => {
-		fundingTabError = await upsertFundingTargetForAccountCommand({
-			accountId,
-			minDraft: fundingReserveDrafts[accountId] ?? '0',
-			maxDraft: fundingCapDrafts[accountId] ?? '',
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			postAction,
-			setAccountBalanceTargets: (targets: typeof accountBalanceTargets) => {
-				accountBalanceTargets = [...targets];
-			},
-			refreshProjection
-		});
+		await dashboardMutations.upsertFundingTargetForAccount(accountId);
 	};
-
 	const addReserveRuleForTarget = async (targetAccountId: string, selectedSourceAccountId: string) => {
-		fundingTabError = await addReserveRuleForTargetCommand({
-			targetAccountId,
-			selectedSourceAccountId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			autoFundingRules,
-			withLock,
-			postAction,
-			setAutoFundingRules,
-			refreshProjection
-		});
+		await dashboardMutations.addReserveRuleForTarget(targetAccountId, selectedSourceAccountId);
 	};
-
 	const removeReserveRule = async (ruleId: string) => {
-		fundingTabError = await removeReserveRuleCommand({
-			ruleId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			autoFundingRules,
-			withLock,
-			postAction,
-			setAutoFundingRules,
-			refreshProjection
-		});
+		await dashboardMutations.removeReserveRule(ruleId);
 	};
-
 	const moveReserveRule = async (targetAccountId: string, ruleId: string, direction: -1 | 1) => {
-		fundingTabError = await moveReserveRuleCommand({
-			targetAccountId,
-			ruleId,
-			direction,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			autoFundingRules,
-			withLock,
-			postAction,
-			setAutoFundingRules,
-			refreshProjection,
-			setReserveOrderOverride: (overrideTargetAccountId, orderedRuleIds) => {
-				reserveOrderOverridesByTarget = {
-					...reserveOrderOverridesByTarget,
-					[overrideTargetAccountId]: orderedRuleIds
-				};
-			}
-		});
+		await dashboardMutations.moveReserveRule(targetAccountId, ruleId, direction);
 	};
-
 	const addSweepRuleForSource = async (
 		sourceAccountId: string,
 		selectedDestinationAccountId: string
 	) => {
-		fundingTabError = await addSweepRuleForSourceCommand({
-			sourceAccountId,
-			selectedDestinationAccountId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			autoSweepRules,
-			withLock,
-			postAction,
-			setAutoSweepRules: (rules) => {
-				autoSweepRules = [...rules];
-			},
-			refreshProjection
-		});
+		await dashboardMutations.addSweepRuleForSource(sourceAccountId, selectedDestinationAccountId);
 	};
-
 	const removeSweepRule = async (ruleId: string) => {
-		fundingTabError = await removeSweepRuleCommand({
-			ruleId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			autoSweepRules,
-			withLock,
-			postAction,
-			setAutoSweepRules: (rules) => {
-				autoSweepRules = [...rules];
-			},
-			refreshProjection
-		});
+		await dashboardMutations.removeSweepRule(ruleId);
 	};
-
 	const moveSweepRule = async (sourceAccountId: string, ruleId: string, direction: -1 | 1) => {
-		fundingTabError = await moveSweepRuleCommand({
-			sourceAccountId,
-			ruleId,
-			direction,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			autoSweepRules,
-			withLock,
-			postAction,
-			setAutoSweepRules: (rules) => {
-				autoSweepRules = [...rules];
-			},
-			refreshProjection
-		});
+		await dashboardMutations.moveSweepRule(sourceAccountId, ruleId, direction);
 	};
-
 	const updateRetirementAge = async (assetId: string, retirementAge: number) => {
-		const error = await runScenarioMutationCommand({
-			lockKey: `retirement:${assetId}`,
-			action: 'updateRetirementAge',
-			scenarioId: data.scenario.id,
-			fields: {
-				assetId,
-				retirementAge: String(retirementAge)
-			},
-			errorMessage: 'Unable to update retirement age. Please try again.',
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateRetirementAge(assetId, retirementAge);
 	};
-
 	const updatePersonDetails = async (
 		assetId: string,
 		name: string,
 		startDate: string,
 		dob: string
 	) => {
-		const error = await runScenarioMutationCommand({
-			lockKey: `person-details:${assetId}`,
-			action: 'updatePersonDetails',
-			scenarioId: data.scenario.id,
-			fields: {
-				assetId,
-				name,
-				startDate,
-				dob
-			},
-			errorMessage: 'Unable to update person details. Please try again.',
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updatePersonDetails(assetId, name, startDate, dob);
 	};
-
 	const updateCashflowAmount = async (cashflowId: string, amount: number) => {
-		const error = await updateCashflowAmountCommand({
-			cashflowId,
-			amount,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateCashflowAmount(cashflowId, amount);
 	};
-
 	const createAssetCashflow = async (assetId: string, draft: CashflowDraft) => {
-		const error = await createAssetCashflowCommand({
-			assetId,
-			draft,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection,
-			syncCashflowAmounts,
-			setCashflows: (nextCashflows) => {
-				cashflows = [...nextCashflows];
-			},
-			resetDraft: () => {
-				const draftKey = getDraftKey(assetId, draft.type);
-				const assetType = getAssetType(assetId);
-				cashflowDrafts = {
-					...cashflowDrafts,
-					[draftKey]: getDefaultDraft(assetId, draft.type, assetType)
-				};
-			},
-			clearForm: () => {
-				activeCashflowForm = null;
-			},
-			setFormError: (message) => {
-				cashflowFormErrors = { ...cashflowFormErrors, [assetId]: message };
-			}
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.createAssetCashflow(assetId, draft);
 	};
-
 	const updateAssetCashflow = async (assetId: string, cashflowId: string, draft: CashflowDraft) => {
-		const error = await updateAssetCashflowCommand({
-			assetId,
-			cashflowId,
-			draft,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection,
-			syncCashflowAmounts,
-			setCashflows: (nextCashflows) => {
-				cashflows = [...nextCashflows];
-			},
-			clearForm: () => {
-				activeCashflowForm = null;
-			},
-			setFormError: (message) => {
-				cashflowFormErrors = { ...cashflowFormErrors, [assetId]: message };
-			}
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateAssetCashflow(assetId, cashflowId, draft);
 	};
-
 	const createTransferCashflow = async () => {
-		const error = await createTransferCashflowCommand({
-			draft: transferDraft,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection,
-			isValidMonthYear,
-			setCashflows: (nextCashflows) => {
-				cashflows = [...nextCashflows];
-			},
-			syncCashflowAmounts,
-			setTransferDraft: (nextDraft) => {
-				transferDraft = nextDraft;
-			},
-			setTransferFormError: (message) => {
-				transferFormError = message;
-			}
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.createTransferCashflow();
 	};
-
 	const updateTransferInflationAffected = async (
 		cashflowId: string,
 		inflationAffected: boolean
 	) => {
-		const error = await updateTransferInflationAffectedCommand({
-			cashflowId,
-			inflationAffected,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection,
-			setCashflows: (nextCashflows) => {
-				cashflows = [...nextCashflows];
-			},
-			syncCashflowAmounts
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateTransferInflationAffected(cashflowId, inflationAffected);
 	};
-
 	const setTransferEditDraft = (cashflowId: string, updates: Partial<TransferEditDraft>) => {
-		transferEditDrafts = {
+		dashboardUiState.setTransferEditDrafts({
 			...transferEditDrafts,
 			[cashflowId]: { ...transferEditDrafts[cashflowId], ...updates }
-		};
+		});
 	};
 
 	const setTransferDraft = (updates: Partial<TransferDraft>) => {
-		transferDraft = { ...transferDraft, ...updates };
+		dashboardUiState.setTransferDraft({ ...transferDraft, ...updates });
 	};
 
 	const handleTransferInflationToggle = (transferId: string, checked: boolean) => {
-		cashflows = cashflows.map((item) =>
+		dashboardWhatIfState.setCashflows(
+			cashflows.map((item) =>
 			item.id === transferId ? { ...item, inflation_affected: checked } : item
+			)
 		);
 		updateTransferInflationAffected(transferId, checked);
 	};
@@ -1692,58 +1545,18 @@ let wasStage3Passed = false;
 	};
 
 	const saveTransferEditDraft = async (cashflowId: string) => {
-		const error = await saveTransferEditDraftCommand({
-			cashflowId,
-			draft: transferEditDrafts[cashflowId],
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection,
-			isValidMonthYear,
-			toMonthYearInput,
-			setCashflows: (nextCashflows) => {
-				cashflows = [...nextCashflows];
-			},
-			syncCashflowAmounts,
-			setTransferEditDraft,
-			setTransferInlineError: (message) => {
-				transferInlineError = message;
-			}
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.saveTransferEditDraft(cashflowId);
 	};
-
 	const setAccountEditDraft = (accountId: string, updates: Partial<AccountEditDraft>) => {
-		accountEditDrafts = {
+		dashboardUiState.setAccountEditDrafts({
 			...accountEditDrafts,
 			[accountId]: { ...accountEditDrafts[accountId], ...updates }
-		};
+		});
 	};
 
 	const saveAccountEditDraft = async (accountId: string) => {
-		const result = await saveAccountEditDraftCommand({
-			accountId,
-			draft: accountEditDrafts[accountId],
-			scenarioId: data.scenario.id,
-			accounts: accountsList,
-			autoRunProjection,
-			withLock,
-			isValidMonthYear,
-			normalizeYearMonthValue,
-			roundToTwo,
-			toMonthYearInput,
-			refreshProjection
-		});
-		if (!result.ok) {
-			accountInlineError = result.error;
-			projectionError = result.error;
-			return;
-		}
-		accountsList = result.accounts;
-		setAccountEditDraft(accountId, result.nextDraft);
-		accountInlineError = '';
+		await dashboardMutations.saveAccountEditDraft(accountId);
 	};
-
 	const requestDeleteCashflow = (cashflowId: string) => {
 		deleteConfirmId = cashflowId;
 	};
@@ -1756,20 +1569,8 @@ let wasStage3Passed = false;
 		const cashflowId = deleteConfirmId;
 		if (!cashflowId) return;
 		deleteConfirmId = null;
-		const error = await deleteCashflowCommand({
-			cashflowId,
-			scenarioId: data.scenario.id,
-			autoRunProjection,
-			withLock,
-			refreshProjection,
-			setCashflows: (nextCashflows) => {
-				cashflows = [...nextCashflows];
-			},
-			syncCashflowAmounts
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.confirmDeleteCashflow(cashflowId);
 	};
-
 	const updatePropertyDetails = async (
 		assetId: string,
 		name: string,
@@ -1780,28 +1581,17 @@ let wasStage3Passed = false;
 		fixedSellingCosts: number,
 		variableSellingCosts: number
 	) => {
-		const error = await runScenarioMutationCommand({
-			lockKey: `property:${assetId}`,
-			action: 'updatePropertyDetails',
-			scenarioId: data.scenario.id,
-			fields: {
-				assetId: assetId,
-				name,
-				startDate,
-				marketValue: String(marketValue),
-				marketGrowthRate: String(marketGrowthRate),
-				saleDate,
-				fixedSellingCosts: String(fixedSellingCosts),
-				variableSellingCosts: String(variableSellingCosts)
-			},
-			errorMessage: 'Unable to update property details. Please try again.',
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updatePropertyDetails(
+			assetId,
+			name,
+			startDate,
+			marketValue,
+			marketGrowthRate,
+			saleDate,
+			fixedSellingCosts,
+			variableSellingCosts
+		);
 	};
-
 	const updateShareDetails = async (
 		assetId: string,
 		name: string,
@@ -1810,43 +1600,18 @@ let wasStage3Passed = false;
 		dividendYield: number,
 		dividendsTakenAsIncomeDate: string
 	) => {
-		const error = await runScenarioMutationCommand({
-			lockKey: `shares:${assetId}`,
-			action: 'updateShareDetails',
-			scenarioId: data.scenario.id,
-			fields: {
-				assetId: assetId,
-				name,
-				startDate,
-				capitalGrowthRate: String(capitalGrowthRate),
-				dividendYield: String(dividendYield),
-				dividendsTakenAsIncomeDate
-			},
-			errorMessage: 'Unable to update shares details. Please try again.',
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateShareDetails(
+			assetId,
+			name,
+			startDate,
+			capitalGrowthRate,
+			dividendYield,
+			dividendsTakenAsIncomeDate
+		);
 	};
-
 	const updateAccountInterestRate = async (accountId: string, interestRate: number) => {
-		const error = await runScenarioMutationCommand({
-			lockKey: `account:${accountId}`,
-			action: 'updateAccountInterestRate',
-			scenarioId: data.scenario.id,
-			fields: {
-				accountId,
-				interestRate: String(interestRate)
-			},
-			errorMessage: 'Unable to update account interest rate. Please try again.',
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateAccountInterestRate(accountId, interestRate);
 	};
-
 	const updateMortgageDetails = async (
 		assetId: string,
 		name: string,
@@ -1856,27 +1621,16 @@ let wasStage3Passed = false;
 		mortgageAccountName: string,
 		openingBalance: number
 	) => {
-		const error = await runScenarioMutationCommand({
-			lockKey: `mortgage:${assetId}`,
-			action: 'updateMortgageDetails',
-			scenarioId: data.scenario.id,
-			fields: {
-				assetId: assetId,
-				name,
-				startDate,
-				termYears: String(termYears),
-				termMonths: String(termMonths),
-				mortgageAccountName,
-				openingBalance: String(openingBalance)
-			},
-			errorMessage: 'Unable to update mortgage details. Please try again.',
-			autoRunProjection,
-			withLock,
-			refreshProjection
-		});
-		if (error) projectionError = error;
+		await dashboardMutations.updateMortgageDetails(
+			assetId,
+			name,
+			startDate,
+			termYears,
+			termMonths,
+			mortgageAccountName,
+			openingBalance
+		);
 	};
-
 	const persistSessionRates = async () => {
 		await withLock(
 			'updateInflationRate',
@@ -1889,323 +1643,41 @@ let wasStage3Passed = false;
 			},
 			true
 		).catch((error) => {
-			projectionError =
-				error instanceof Error ? error.message : 'Unable to refresh the projection.';
+			setProjectionError(
+				error instanceof Error ? error.message : 'Unable to refresh the projection.'
+			);
 		});
 	};
 
 	const queueInflationRateChange = (delta: number) => {
 		const current = Number.isFinite(sessionRates.inflationRate) ? sessionRates.inflationRate : 2;
 		const next = Math.round((current + delta) * 10) / 10;
-		sessionRates = { ...sessionRates, inflationRate: next };
+		dashboardProjectionState.setSessionRates({ ...sessionRates, inflationRate: next });
 		scheduleUpdate('updateInflationRate', () => {
 			persistSessionRates();
 		});
 	};
 
-	const parseYearMonth = (value: unknown) => {
-		const normalized = normalizeYearMonthValue(value);
-		return normalized === null ? null : fromYearMonthInt(normalized);
-	};
-
-	const getRangeMonths = (range: ProjectionRange) => {
-		switch (range) {
-			case '1y':
-				return 12;
-			case '5y':
-				return 60;
-			case '10y':
-				return 120;
-			default:
-				return null;
-		}
-	};
-
-	const getRangeEndDate = (startDate: number, range: ProjectionRange) => {
-		const months = getRangeMonths(range);
-		if (!months) return null;
-		const start = fromYearMonthInt(startDate);
-		if (!start) return null;
-		return toYearMonthInt(addMonthsToYearMonth(start, months - 1));
-	};
-
-	$: projectionRangeEndDate = getRangeEndDate(projectionData.startDate, projectionRange);
-
-	const clipSeriesPointsByRange = <
-		T extends {
-			date: number;
-		}
-	>(
-		points: T[]
-	) => {
-		if (projectionRangeEndDate === null) return points;
-		return points.filter((point) => point.date <= projectionRangeEndDate);
-	};
-
-	const clipTransactionsByRange = (transactions: typeof projectionData.transactions) => {
-		if (projectionRangeEndDate === null) return transactions;
-		return transactions.filter((transaction) => transaction.date <= projectionRangeEndDate);
-	};
-
-	const getBalanceExtent = (seriesList: ChartSeries[]) => {
-		const values = seriesList.flatMap((series) => series.points.map((point) => point.balance));
-		if (!values.length) {
-			return { min: 0, max: 1 };
-		}
-		const min = Math.min(...values, 0);
-		const max = Math.max(...values, 0);
-		return { min, max: max === min ? min + 1 : max };
-	};
-
-	const normalizeAccountSeries = (series: {
-		accountId: string;
-		accountName: string;
-		points: any[];
-	}) => ({
-		id: series.accountId,
-		name: series.accountName,
-		points: (series.points ?? []).map((point) => ({
-			date: point.date,
-			monthLabel: point.monthLabel,
-			balance: point.balance
-		}))
+	$: projectionDerived = buildDashboardProjectionDerived({
+		projectionData,
+		accountsList,
+		projectionBalanceSource,
+		projectionRange,
+		transactionSortKey,
+		transactionSortDirection,
+		expandedPnlNodes,
+		formatLabel
 	});
-
-	const normalizeAssetSeries = (series: { assetId: string; assetName: string; points: any[] }) => ({
-		id: series.assetId,
-		name: series.assetName,
-		points: (series.points ?? []).map((point) => ({
-			date: point.date,
-			monthLabel: point.monthLabel,
-			balance: point.value
-		}))
-	});
-
-	$: chartProjection = (() => {
-		const accountSeries = (projectionData.accounts ?? [])
-			.filter((series) => {
-				const account = accountsList.find((item) => item.id === series.accountId);
-				return account?.account_type !== 'brokerage' && account?.account_type !== 'super_account';
-			})
-			.map(normalizeAccountSeries);
-		const assetSeries = (projectionData.assets ?? []).map(normalizeAssetSeries);
-		const activeSeries =
-			projectionBalanceSource === 'assets'
-				? assetSeries
-				: projectionBalanceSource === 'liquidity'
-					? (() => {
-							const liquiditySeries = (projectionData.liquidity?.series ?? []).map((series) => ({
-								id: series.id,
-								name: series.name,
-								points: (series.points ?? []).map((point) => ({
-									date: point.date,
-									monthLabel: point.monthLabel,
-									balance: point.balance
-								}))
-							}));
-							if (liquiditySeries.length > 0) {
-								return liquiditySeries as ChartSeries[];
-							}
-							return [
-								{
-									id: 'liquidity',
-									name: 'Liquidity',
-									points: (projectionData.liquidity?.points ?? []).map((point) => ({
-										date: point.date,
-										monthLabel: point.monthLabel,
-										balance: point.balance
-									}))
-								}
-							] as ChartSeries[];
-						})()
-					: projectionBalanceSource === 'net_worth'
-						? ([...accountSeries, ...assetSeries] as ChartSeries[])
-						: accountSeries;
-
-		if (projectionRange === '10y' || projectionRange === 'all') {
-			return {
-				series: activeSeries.map((series) => ({
-					...series,
-					points: getAnnualPoints(clipSeriesPointsByRange(series.points))
-				})),
-				transactions: clipTransactionsByRange(projectionData.transactions ?? [])
-			};
-		}
-		return {
-			series: activeSeries.map((series) => ({
-				...series,
-				points: clipSeriesPointsByRange(series.points)
-			})),
-			transactions: clipTransactionsByRange(projectionData.transactions ?? [])
-		};
-	})();
-	$: totalSeries = (() => {
-		const seriesList = chartProjection.series ?? [];
-		if (!seriesList.length) return null;
-		const maxPoints = Math.max(...seriesList.map((series) => series.points.length));
-		if (maxPoints === 0) return null;
-		const points = Array.from({ length: maxPoints }).map((_, index) => {
-			const sample = seriesList[0]?.points[index];
-			const balance = seriesList.reduce(
-				(sum, series) => sum + (series.points[index]?.balance ?? 0),
-				0
-			);
-			return {
-				date: sample?.date ?? '',
-				monthLabel: sample?.monthLabel ?? '',
-				balance
-			};
-		});
-		return {
-			accountId: 'total',
-			accountName: 'Total',
-			points
-		};
-	})();
-	$: balanceExtent = getBalanceExtent(
-		totalSeries
-			? [...chartProjection.series, normalizeAccountSeries(totalSeries)]
-			: chartProjection.series
-	);
-	$: chartAxisPoints = (() => {
-		const basePoints = chartProjection.series[0]?.points ?? [];
-		return basePoints.map((point) => ({
-			date: point.date,
-			monthLabel:
-				projectionRange === '10y' || projectionRange === 'all'
-					? String(fromYearMonthInt(point.date)?.year ?? '')
-					: point.monthLabel
-		}));
-	})();
-
-	$: balanceSheetHeaders = chartAxisPoints.map((point) => point.monthLabel);
-	$: balanceSheetRows = (() => {
-		const seriesList = chartProjection.series ?? [];
-		if (seriesList.length === 0) return [];
-		const rows = [];
-		if (totalSeries) {
-			rows.push({
-				name: 'Total',
-				values: totalSeries.points.map((point) => point.balance)
-			});
-		}
-		for (const series of seriesList) {
-			rows.push({
-				name: series.name,
-				values: series.points.map((point) => point.balance)
-			});
-		}
-		return rows;
-	})();
-
-	$: transactionPivot = (() => {
-		const transactions = chartProjection.transactions ?? [];
-		const isAnnualRange = projectionRange === '10y' || projectionRange === 'all';
-		if (transactions.length === 0) {
-			return {
-				headers: [] as string[],
-				totalValues: [] as number[],
-				rows: [] as {
-					assetName: string;
-					accountName: string;
-					type: string;
-					category: string;
-					description: string;
-					values: number[];
-				}[]
-			};
-		}
-
-		const headerLabels = (() => {
-			if (isAnnualRange) {
-				const years = new Set<number>();
-				for (const transaction of transactions) {
-					const parsed = fromYearMonthInt(transaction.date);
-					if (!parsed) continue;
-					years.add(parsed.year);
-				}
-				return Array.from(years)
-					.sort((a, b) => a - b)
-					.map((year) => String(year));
-			}
-			const labelsByDate = new Map<number, string>();
-			for (const transaction of transactions) {
-				if (!labelsByDate.has(transaction.date)) {
-					labelsByDate.set(transaction.date, transaction.monthLabel);
-				}
-			}
-			return Array.from(labelsByDate.entries())
-				.sort((a, b) => a[0] - b[0])
-				.map((entry) => entry[1]);
-		})();
-
-		const headerIndexByLabel = new Map<string, number>();
-		headerLabels.forEach((label, index) => headerIndexByLabel.set(label, index));
-		const rowMap = new Map<
-			string,
-			{
-				assetName: string;
-				accountName: string;
-				type: string;
-				category: string;
-				description: string;
-				values: number[];
-			}
-		>();
-
-		for (const transaction of transactions) {
-			const label = isAnnualRange
-				? String(fromYearMonthInt(transaction.date)?.year ?? '')
-				: transaction.monthLabel;
-			const headerIndex = headerIndexByLabel.get(label);
-			if (headerIndex === undefined) continue;
-
-			const assetName = transaction.assetName ?? '';
-			const accountName = transaction.accountName ?? '';
-			const type = formatLabel(transaction.cashflowType);
-			const category = formatLabel(transaction.category);
-			const description = (transaction.description ?? '').trim();
-			const rowKey = [assetName, accountName, type, category, description].join('|');
-			const row =
-				rowMap.get(rowKey) ??
-				{
-					assetName,
-					accountName,
-					type,
-					category,
-					description,
-					values: Array(headerLabels.length).fill(0)
-				};
-			row.values[headerIndex] += transaction.amount;
-			rowMap.set(rowKey, row);
-		}
-
-		const rows = Array.from(rowMap.values()).sort((a, b) => {
-			const primaryDiff = (a[transactionSortKey] ?? '').localeCompare(b[transactionSortKey] ?? '');
-			if (primaryDiff !== 0) return transactionSortDirection === 'asc' ? primaryDiff : -primaryDiff;
-			const assetDiff = a.assetName.localeCompare(b.assetName);
-			if (assetDiff !== 0) return assetDiff;
-			const accountDiff = a.accountName.localeCompare(b.accountName);
-			if (accountDiff !== 0) return accountDiff;
-			const typeDiff = a.type.localeCompare(b.type);
-			if (typeDiff !== 0) return typeDiff;
-			const categoryDiff = a.category.localeCompare(b.category);
-			if (categoryDiff !== 0) return categoryDiff;
-			return a.description.localeCompare(b.description);
-		});
-		const totalValues = Array(headerLabels.length).fill(0);
-		for (const row of rows) {
-			row.values.forEach((value, idx) => {
-				totalValues[idx] += value;
-			});
-		}
-
-		return {
-			headers: headerLabels,
-			totalValues,
-			rows
-		};
-	})();
+	$: chartProjection = projectionDerived.chartProjection;
+	$: totalSeries = projectionDerived.totalSeries;
+	$: balanceExtent = projectionDerived.balanceExtent;
+	$: chartAxisPoints = projectionDerived.chartAxisPoints;
+	$: balanceSheetHeaders = projectionDerived.balanceSheetHeaders;
+	$: balanceSheetRows = projectionDerived.balanceSheetRows;
+	$: transactionPivot = projectionDerived.transactionPivot;
+	$: profitLossRows = projectionDerived.profitLossRows;
+	$: pnlExpandableNodeIds = projectionDerived.pnlExpandableNodeIds;
+	$: isAllPnlExpanded = projectionDerived.isAllPnlExpanded;
 
 	const toggleTransactionSort = (key: TransactionSortKey) => {
 		if (transactionSortKey === key) {
@@ -2216,175 +1688,6 @@ let wasStage3Passed = false;
 		transactionSortDirection = 'asc';
 	};
 
-	const sumArrays = (arrays: number[][], length: number) => {
-		const totals = Array(length).fill(0);
-		for (const arr of arrays) {
-			arr.forEach((value, idx) => {
-				const safeValue = Number.isFinite(value) ? value : 0;
-				totals[idx] += safeValue;
-			});
-		}
-		return totals;
-	};
-
-	$: profitLossTree = (() => {
-		if (chartProjection.transactions.length === 0) return [];
-		const headers = chartAxisPoints.map((point) => point.monthLabel);
-		const indexByLabel = new Map<string, number>();
-		headers.forEach((label, index) => indexByLabel.set(label, index));
-
-		const buildMaps = () => new Map<string, Map<string, Map<string, number[]>>>();
-		const incomeMap = buildMaps();
-		const expenseMap = buildMaps();
-
-		for (const transaction of chartProjection.transactions) {
-			if (transaction.cashflowType === 'transfer') continue;
-			const label =
-				projectionRange === '10y' || projectionRange === 'all'
-					? String(fromYearMonthInt(transaction.date)?.year ?? '')
-					: transaction.monthLabel;
-			const idx = indexByLabel.get(label);
-			if (idx === undefined) continue;
-
-			const targetMap = transaction.cashflowType === 'income' ? incomeMap : expenseMap;
-			const accountName = transaction.accountName;
-			const category = formatLabel(transaction.category);
-			const description = (transaction.description ?? '').trim();
-
-			const categoryMap = targetMap.get(accountName) ?? new Map<string, Map<string, number[]>>();
-			const descMap = categoryMap.get(category) ?? new Map<string, number[]>();
-			const values = descMap.get(description) ?? Array(headers.length).fill(0);
-
-			values[idx] += transaction.amount;
-			descMap.set(description, values);
-			categoryMap.set(category, descMap);
-			targetMap.set(accountName, categoryMap);
-		}
-
-		const buildAccountNodes = (map: Map<string, Map<string, Map<string, number[]>>>) => {
-			const nodes: PnlNode[] = [];
-			const sortedAccounts = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
-			for (const accountName of sortedAccounts) {
-				const categoryMap = map.get(accountName)!;
-				const categoryNodes: PnlNode[] = [];
-				const categoryTotals: number[][] = [];
-
-				for (const category of Array.from(categoryMap.keys()).sort((a, b) => a.localeCompare(b))) {
-					const descMap = categoryMap.get(category)!;
-					const descNodes: PnlNode[] = [];
-					const descTotals: number[][] = [];
-					const noDescriptionTotals: number[] = Array(headers.length).fill(0);
-
-					for (const description of Array.from(descMap.keys()).sort((a, b) => a.localeCompare(b))) {
-						const values = descMap.get(description)!;
-						if (!description) {
-							values.forEach((value, idx) => {
-								noDescriptionTotals[idx] += value;
-							});
-							continue;
-						}
-						descTotals.push(values);
-						descNodes.push({
-							id: `${accountName}|${category}|${description}`,
-							label: description,
-							level: 3,
-							values
-						});
-					}
-
-					const categoryValues = sumArrays(
-						noDescriptionTotals.some((value) => value !== 0)
-							? [...descTotals, noDescriptionTotals]
-							: descTotals,
-						headers.length
-					);
-					categoryTotals.push(categoryValues);
-					categoryNodes.push({
-						id: `${accountName}|${category}`,
-						label: category,
-						level: 2,
-						values: categoryValues,
-						children: descNodes.length > 0 ? descNodes : undefined
-					});
-				}
-
-				const accountValues = sumArrays(categoryTotals, headers.length);
-				nodes.push({
-					id: accountName,
-					label: accountName,
-					level: 1,
-					values: accountValues,
-					children: categoryNodes
-				});
-			}
-			return nodes;
-		};
-
-		const incomeAccounts = buildAccountNodes(incomeMap);
-		const expenseAccounts = buildAccountNodes(expenseMap);
-
-		const incomeTotals = sumArrays(
-			incomeAccounts.map((node) => node.values),
-			headers.length
-		);
-		const expenseTotals = sumArrays(
-			expenseAccounts.map((node) => node.values),
-			headers.length
-		);
-		const netTotals = incomeTotals.map((value, idx) => value + expenseTotals[idx]);
-
-		return [
-			{
-				id: 'net',
-				label: 'Net',
-				level: 0,
-				values: netTotals
-			},
-			{
-				id: 'income',
-				label: 'Income',
-				level: 0,
-				values: incomeTotals,
-				children: incomeAccounts
-			},
-			{
-				id: 'expenses',
-				label: 'Expenses',
-				level: 0,
-				values: expenseTotals,
-				children: expenseAccounts
-			}
-		] as PnlNode[];
-	})();
-
-	const flattenPnl = (nodes: PnlNode[], expanded: Set<string>) => {
-		const rows: PnlNode[] = [];
-		for (const node of nodes) {
-			rows.push(node);
-			if (node.children && expanded.has(node.id)) {
-				rows.push(...flattenPnl(node.children, expanded));
-			}
-		}
-		return rows;
-	};
-
-	$: profitLossRows = flattenPnl(profitLossTree, expandedPnlNodes);
-	$: pnlExpandableNodeIds = (() => {
-		const ids: string[] = [];
-		const walk = (nodes: PnlNode[]) => {
-			for (const node of nodes) {
-				if (!node.children?.length) continue;
-				ids.push(node.id);
-				walk(node.children);
-			}
-		};
-		walk(profitLossTree);
-		return ids;
-	})();
-	$: isAllPnlExpanded =
-		pnlExpandableNodeIds.length > 0 &&
-		pnlExpandableNodeIds.every((id) => expandedPnlNodes.has(id));
-
 	const formatAxisCurrency = (value: number) =>
 		new Intl.NumberFormat('en-AU', {
 			style: 'currency',
@@ -2392,23 +1695,10 @@ let wasStage3Passed = false;
 			maximumFractionDigits: 0
 		}).format(value);
 
-	const getAnnualPoints = (points: { date: number; monthLabel: string; balance: number }[]) => {
-		const byYear = new Map<number, { date: number; monthLabel: string; balance: number }>();
-		for (const point of points) {
-			const parsed = parseYearMonth(point.date);
-			if (!parsed) continue;
-			const existing = byYear.get(parsed.year);
-			if (!existing || parsed.month > parseYearMonth(existing.date)!.month) {
-				byYear.set(parsed.year, point);
-			}
-		}
-		return Array.from(byYear.values()).sort((a, b) => a.date - b.date);
-	};
-
 	let chart: Chart | null = null;
 	let chartCanvas: HTMLCanvasElement | null = null;
 	const buildChartData = () => {
-		const labels = chartAxisPoints.map((point) => point.monthLabel);
+		const labels = chartAxisPoints.map((point: any) => point.monthLabel);
 		const datasets = [];
 
 		if (totalSeries) {
@@ -2426,7 +1716,7 @@ let wasStage3Passed = false;
 		for (const [index, series] of chartProjection.series.entries()) {
 			datasets.push({
 				label: series.name,
-				data: series.points.map((point) => point.balance),
+				data: series.points.map((point: any) => point.balance),
 				borderColor: chartColors[index % chartColors.length],
 				backgroundColor: 'transparent',
 				borderWidth: 2,
@@ -2520,6 +1810,301 @@ let wasStage3Passed = false;
 		}
 	};
 
+	$: dashboardMutations = createDashboardMutationController({
+		scenarioId: data.scenario.id,
+		getAutoRunProjection: () => autoRunProjection,
+		withLock,
+		refreshProjection,
+		setProjectionError,
+		getStage2AllocationShortfall: () => stage2AllocationShortfall,
+		getPlannerSourceAccountId: () => plannerSourceAccountId,
+		setPlannerSourceAccountId: (value) => {
+			plannerSourceAccountId = value;
+		},
+		setAutoFundingRuleError: (value) => {
+			autoFundingRuleError = value;
+		},
+		setFundingTabError: (value) => {
+			fundingTabError = value;
+		},
+		getAutoFundingRules: () => (autoFundingRules ?? []) as Array<Record<string, unknown>>,
+		setAutoFundingRules: (rules) => {
+			setAutoFundingRules(rules as typeof autoFundingRules);
+		},
+		getAutoSweepRules: () => (autoSweepRules ?? []) as Array<Record<string, unknown>>,
+		setAutoSweepRules: (rules) => {
+			dashboardWhatIfState.setAutoSweepRules(rules as typeof autoSweepRules);
+		},
+		setAccountBalanceTargets: (targets) => {
+			dashboardWhatIfState.setAccountBalanceTargets(targets as typeof accountBalanceTargets);
+		},
+		getFundingReserveDraft: (accountId) => fundingReserveDrafts[accountId] ?? '0',
+		getFundingCapDraft: (accountId) => fundingCapDrafts[accountId] ?? '',
+		setReserveOrderOverride: (targetAccountId, orderedRuleIds) => {
+			reserveOrderOverridesByTarget = {
+				...reserveOrderOverridesByTarget,
+				[targetAccountId]: orderedRuleIds
+			};
+		},
+		syncCashflowAmounts,
+		setCashflows: (cashflows) => {
+			dashboardWhatIfState.setCashflows([...cashflows]);
+		},
+		getTransferDraft: () => transferDraft,
+		setTransferDraft: (draft) => {
+			dashboardUiState.setTransferDraft(draft);
+		},
+		setTransferFormError: (message) => {
+			dashboardUiState.setTransferFormError(message);
+		},
+		setTransferInlineError: (message) => {
+			dashboardUiState.setTransferInlineError(message);
+		},
+		getTransferEditDraft: (cashflowId) => transferEditDrafts[cashflowId],
+		setTransferEditDraft: (cashflowId, updates) => {
+			setTransferEditDraft(cashflowId, updates);
+		},
+		getCashflowDrafts: () => cashflowDrafts,
+		setCashflowDrafts: (drafts) => {
+			dashboardUiState.setCashflowDrafts(drafts);
+		},
+		getCashflowFormErrors: () => cashflowFormErrors,
+		setCashflowFormErrors: (errors) => {
+			dashboardUiState.setCashflowFormErrors(errors);
+		},
+		setActiveCashflowForm: (form) => {
+			dashboardUiState.setActiveCashflowForm(form);
+		},
+		getAssetType: (assetId) => getAssetType(assetId),
+		getDefaultDraft: (assetId, type, assetType) => getDefaultDraft(assetId, type, assetType),
+		getDraftKey: (assetId, type) => getDraftKey(assetId, type),
+		isValidMonthYear: (value) =>
+			typeof value === 'string' ? isValidMonthYear(value) : isValidMonthYear(String(value ?? '')),
+		toMonthYearInput,
+		getAccountEditDraft: (accountId) => accountEditDrafts[accountId],
+		setAccountEditDraft: (accountId, updates) => {
+			setAccountEditDraft(accountId, updates);
+		},
+		getAccountsList: () => accountsList as Array<Record<string, unknown>>,
+		setAccountsList: (accounts) => {
+			dashboardWhatIfState.setAccountsList(accounts as typeof accountsList);
+		},
+		setAccountInlineError: (message) => {
+			dashboardUiState.setAccountInlineError(message);
+		},
+		normalizeYearMonthValue,
+		roundToTwo
+	});
+
+	$: dashboardSections = createDashboardSectionsController({
+		projectionPanelProps: {
+			scenarioName: data.scenario.name,
+			projectionStartDate: projectionData.startDate,
+			formatYearMonthInput,
+			projectionRange,
+			isUpdating,
+			runProjectionNow,
+			updateProjectionRange,
+			sessionInflationRate: sessionRates.inflationRate,
+			formatRate,
+			queueInflationRateChange,
+			projectionError: $dashboardLoadState.projectionError,
+			chartProjection,
+			balanceSheetHeaders,
+			balanceSheetRows,
+			profitLossRows,
+			isAllPnlExpanded,
+			expandAllPnlNodes,
+			collapseAllPnlNodes,
+			expandedPnlNodes,
+			togglePnlNode,
+			formatWholeCurrency,
+			transactionSortKey,
+			transactionSortDirection,
+			toggleTransactionSort,
+			transactionPivot,
+			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
+		},
+		whatIfPanelProps: {
+			isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
+			whatIfLoadError: $dashboardLoadState.whatIfLoadError,
+			assetsTabProps: {
+				data: { assetsList, assetAccountsList, accountsList },
+				person: {
+					personDetails,
+					personRetirementAges,
+					setPersonRetirementAge,
+					updateRetirementAge,
+					expandedPersonDetailIds,
+					togglePersonDetails,
+					personDetailsErrors,
+					isValidMonthYear,
+					setPersonDetails,
+					setPersonDetailsError,
+					updatePersonDetails
+				},
+				cashflow: {
+					cashflowsByAssetId,
+					cashflowAmounts,
+					editingCashflowIds,
+					setCashflowAmount,
+					updateCashflowAmount,
+					openCashflowFormForEdit,
+					requestDeleteCashflow,
+					openCashflowForm,
+					activeCashflowForm,
+					getDraftKey,
+					cashflowDrafts,
+					getCategoryOptionsFor,
+					cashflowFrequencyOptions,
+					getAssetAccountOptions,
+					cashflowFormErrors,
+					setCashflowDraft,
+					closeCashflowForm,
+					updateAssetCashflow,
+					createAssetCashflow
+				},
+				share: {
+					shareDetails,
+					shareErrors,
+					expandedShareDetailIds,
+					toggleShareDetails,
+					setShareDetails,
+					setShareError,
+					updateShareDetails
+				},
+				property: {
+					propertyDetails,
+					propertyErrors,
+					expandedPropertyDetailIds,
+					togglePropertyDetails,
+					setPropertyDetails,
+					setPropertyError,
+					updatePropertyDetails
+				},
+				mortgage: {
+					mortgageDetails,
+					mortgageErrors,
+					expandedMortgageDetailIds,
+					toggleMortgageDetails,
+					setMortgageDetails,
+					setMortgageError,
+					updateMortgageDetails,
+					validateMortgageDetails
+				},
+				ui: {
+					stepForValue,
+					scheduleUpdate,
+					formatLabel,
+					toMonthYearInput,
+					roundToTwo,
+					formatRate,
+					formatYearMonthInput
+				}
+			},
+			accountsTabProps: {
+				data: { accountsList, accountEditDrafts, accountInterestRates, accountInlineError },
+				actions: {
+					setAccountEditDraft,
+					saveAccountEditDraft,
+					setAccountInterestRate,
+					adjustAccountInterestRate,
+					updateAccountInterestRate
+				},
+				ui: { toMonthYearInput, scheduleUpdate, formatRate, roundToTwo, formatLabel }
+			},
+			transfersTabProps: {
+				data: {
+					transferCashflows,
+					transferEditDrafts,
+					transferAccountOptions,
+					transferInlineError,
+					transferFormError,
+					transferDraft
+				},
+				handlers: {
+					onTransferDraftChange: setTransferDraft,
+					setTransferEditDraft,
+					saveTransferEditDraft,
+					onTransferInflationToggle: handleTransferInflationToggle,
+					requestDeleteCashflow,
+					createTransferCashflow
+				},
+				ui: { formatLabel, cashflowFrequencyOptions, toMonthYearInput, scheduleUpdate }
+			},
+			reservesTabProps: {
+				data: {
+					fundingCashAccountOptions,
+					fundingReserveDrafts,
+					fundingReservePriorityRowCount,
+					fundingReserveRulesByAccount,
+					fundingReserveSourceOptionsByAccount,
+					transferAccountOptions,
+					fundingTabError
+				},
+				actions: {
+					setFundingReserveDraft,
+					upsertFundingTargetForAccount,
+					moveReserveRule,
+					removeReserveRule,
+					addReserveRuleForTarget
+				},
+				ui: { scheduleUpdate }
+			},
+			capsTabProps: {
+				data: {
+					fundingCashAccountOptions,
+					fundingCapDrafts,
+					fundingCapPriorityRowCount,
+					fundingSweepRulesByAccount,
+					fundingSweepDestinationOptionsByAccount,
+					transferAccountOptions,
+					fundingTabError
+				},
+				actions: {
+					setFundingCapDraft,
+					upsertFundingTargetForAccount,
+					moveSweepRule,
+					removeSweepRule,
+					addSweepRuleForSource
+				},
+				ui: { scheduleUpdate }
+			}
+		},
+		plannerPanelProps: {
+			stage1Passed,
+			plannerStage,
+			stage1PlannerMessage,
+			assetsList,
+			jumpToWhatIfAssetsExpense,
+			stage2Reached,
+			stage2Passed,
+			stage2PlannerMessage,
+			stage2AllocationShortfall,
+			plannerExistingRules,
+			accountsList,
+			removeAutoFundingRule,
+			plannerSourceOptions,
+			plannerSourceAvailabilityWarning,
+			saveAutoFundingRule,
+			autoFundingRuleError,
+			stage3Reached,
+			stage3Passed,
+			stage3Assessment,
+			stage4Reached,
+			stage4Passed,
+			jumpToWhatIfReserves,
+			jumpToWhatIfCaps,
+			monthLabelFromDate,
+			projectionEvents: projectionData.events ?? [],
+			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
+		}
+	});
+
+	onMount(() => {
+		void loadInitialDashboardSections();
+	});
+
 	onDestroy(() => {
 		chart?.destroy();
 		chart = null;
@@ -2565,1214 +2150,33 @@ let wasStage3Passed = false;
 <section class="not-prose -mt-8">
 	<div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
 		<div class="space-y-4">
-			<div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<h2 class="text-lg font-semibold text-slate-900">
-						Projections for {data.scenario.name} ({formatYearMonthInput(projectionData.startDate)})
-					</h2>
-					<div class="flex flex-wrap items-center gap-2 text-xs font-semibold">
-						<div
-							class={`inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 ${
-								projectionView === 'balances' || projectionView === 'balance_sheet'
-									? ''
-									: 'pointer-events-none invisible'
-							}`}
-							aria-hidden={projectionView === 'balances' || projectionView === 'balance_sheet'
-								? undefined
-								: 'true'}
-						>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionBalanceSource === 'assets'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionBalanceSource = 'assets')}
-							>
-								Assets
-							</button>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionBalanceSource === 'accounts'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionBalanceSource = 'accounts')}
-							>
-								Accounts
-							</button>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionBalanceSource === 'net_worth'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionBalanceSource = 'net_worth')}
-							>
-								Net worth
-							</button>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionBalanceSource === 'liquidity'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionBalanceSource = 'liquidity')}
-							>
-								Liquidity
-							</button>
-						</div>
-						<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionView === 'balances'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionView = 'balances')}
-							>
-								Balances chart
-							</button>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionView === 'balance_sheet'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionView = 'balance_sheet')}
-							>
-								Balance sheet
-							</button>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionView === 'profit_loss'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionView = 'profit_loss')}
-							>
-								P&amp;L
-							</button>
-							<button
-								type="button"
-								class={`rounded-full px-3 py-1 transition ${
-									projectionView === 'transactions'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => (projectionView = 'transactions')}
-							>
-								Transactions
-							</button>
-						</div>
-						<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-							<button
-								type="button"
-								disabled={isUpdating}
-								class={`rounded-full px-3 py-1 transition ${
-									projectionRange === '1y'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => updateProjectionRange('1y')}
-							>
-								1Y
-							</button>
-							<button
-								type="button"
-								disabled={isUpdating}
-								class={`rounded-full px-3 py-1 transition ${
-									projectionRange === '5y'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => updateProjectionRange('5y')}
-							>
-								5Y
-							</button>
-							<button
-								type="button"
-								disabled={isUpdating}
-								class={`rounded-full px-3 py-1 transition ${
-									projectionRange === '10y'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => updateProjectionRange('10y')}
-							>
-								10Y
-							</button>
-							<button
-								type="button"
-								disabled={isUpdating}
-								class={`rounded-full px-3 py-1 transition ${
-									projectionRange === 'all'
-										? 'bg-slate-900 text-white'
-										: 'text-slate-600 hover:text-slate-900'
-								}`}
-								on:click={() => updateProjectionRange('all')}
-							>
-								All
-							</button>
-						</div>
-						<div
-							class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-slate-700"
-						>
-							<span>Auto-run</span>
-							<button
-								type="button"
-								class={`rounded-full px-2 py-0.5 transition ${
-									autoRunProjection ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'
-								}`}
-								aria-pressed={autoRunProjection}
-								on:click={() => (autoRunProjection = !autoRunProjection)}
-							>
-								{autoRunProjection ? 'On' : 'Off'}
-							</button>
-							{#if !autoRunProjection}
-								<button
-									type="button"
-									class="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-									disabled={isUpdating}
-									on:click={runProjectionNow}
-								>
-									Run now
-								</button>
-							{/if}
-						</div>
-					</div>
-				</div>
-				<div class="mt-4 flex flex-wrap items-center gap-6 text-sm text-slate-700">
-					<div class="flex items-center gap-3">
-						<span class="text-xs font-semibold tracking-wide text-slate-500 uppercase">
-							Inflation rate
-						</span>
-						<span class="text-sm font-semibold text-slate-900">
-							{formatRate(sessionRates.inflationRate, 1)}%
-						</span>
-						<div class="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-							<button
-								type="button"
-								class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
-								disabled={isUpdating}
-								on:click={() => queueInflationRateChange(-0.5)}
-							>
-								-
-							</button>
-							<button
-								type="button"
-								class="rounded-full px-3 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
-								disabled={isUpdating}
-								on:click={() => queueInflationRateChange(0.5)}
-							>
-								+
-							</button>
-						</div>
-					</div>
-				</div>
-				{#if projectionError}
-					<div
-						class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-sm text-rose-700"
-					>
-						{projectionError}
-					</div>
-				{/if}
-
-				{#if projectionView === 'balances'}
-					{#if chartProjection.series.length === 0}
-						<p class="mt-3 text-sm text-slate-600">No series available for projection.</p>
-					{:else}
-						<div class="relative mt-4 h-72">
-							<canvas bind:this={chartCanvas} class="h-full w-full"></canvas>
-							{#if isUpdating}
-								<div class="absolute inset-0 grid place-items-center rounded-xl bg-white/70">
-									<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
-										<span
-											class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
-										></span>
-										<span>Updating projection…</span>
-									</div>
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{:else if projectionView === 'balance_sheet'}
-					{#if chartProjection.series.length === 0}
-						<p class="mt-3 text-sm text-slate-600">No series available for projection.</p>
-					{:else}
-						<div class="relative mt-4">
-							<div class="max-h-96 overflow-x-auto overflow-y-auto">
-								<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
-									<thead
-										class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-									>
-										<tr>
-											<th class="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3">Line item</th>
-											{#each balanceSheetHeaders as header}
-												<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
-											{/each}
-										</tr>
-									</thead>
-									<tbody class="divide-y divide-slate-100 text-slate-700">
-										{#each balanceSheetRows as row, rowIndex}
-											<tr
-												class={`whitespace-nowrap ${
-													rowIndex === 0 ? 'font-semibold text-slate-900' : ''
-												}`}
-											>
-												<td
-													class={`sticky left-0 z-10 px-4 py-3 ${
-														rowIndex === 0 ? 'bg-white text-slate-900' : 'bg-white'
-													}`}
-												>
-													{row.name}
-												</td>
-												{#each row.values as value}
-													<td
-														class={`px-4 py-3 text-right ${
-															value >= 0 ? 'text-emerald-600' : 'text-rose-600'
-														}`}
-													>
-														{formatWholeCurrency(value)}
-													</td>
-												{/each}
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-							{#if isUpdating}
-								<div class="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/70">
-									<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
-										<span
-											class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
-										></span>
-										<span>Updating projection…</span>
-									</div>
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{:else if projectionView === 'profit_loss'}
-					{#if profitLossRows.length === 0}
-						<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
-					{:else}
-						<div class="mt-3 flex justify-end">
-							<button
-								type="button"
-								class="rounded border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-								on:click={isAllPnlExpanded ? collapseAllPnlNodes : expandAllPnlNodes}
-							>
-								{isAllPnlExpanded ? 'Collapse all levels' : 'Expand all levels'}
-							</button>
-						</div>
-						<div class="relative mt-4">
-							<div class="max-h-96 overflow-x-auto overflow-y-auto">
-								<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
-									<thead
-										class="bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-									>
-										<tr>
-											<th class="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3">Item</th>
-											{#each balanceSheetHeaders as header}
-												<th class="sticky top-0 z-10 bg-slate-50 px-4 py-3 text-right">{header}</th>
-											{/each}
-										</tr>
-									</thead>
-									<tbody class="divide-y divide-slate-100 text-slate-700">
-										{#each profitLossRows as row, rowIndex}
-											{@const isNetRow = row.id === 'net' && row.level === 0}
-											<tr
-												class={`whitespace-nowrap ${
-													row.level === 0 ? 'font-semibold text-slate-900' : ''
-												}`}
-											>
-												<td
-													class={`sticky left-0 px-4 py-3 ${
-														isNetRow
-															? 'top-10 z-30 bg-slate-100 text-slate-900'
-															: row.level === 0
-																? 'z-10 bg-white text-slate-900'
-																: 'z-10 bg-white'
-													}`}
-												>
-													<div
-														class="flex items-center gap-2"
-														style={`padding-left: ${row.level * 14}px`}
-													>
-														{#if row.children?.length}
-															<button
-																type="button"
-																class="text-slate-500 hover:text-slate-900"
-																on:click={() => togglePnlNode(row.id)}
-																aria-label="Toggle P&L row"
-															>
-																{expandedPnlNodes.has(row.id) ? '▾' : '▸'}
-															</button>
-														{:else}
-															<span class="w-3 text-slate-400">•</span>
-														{/if}
-														<span>{row.label}</span>
-													</div>
-												</td>
-												{#each row.values as value}
-													<td
-														class={`px-4 py-3 text-right ${
-															isNetRow ? 'sticky top-10 z-20 bg-slate-100' : ''
-														} ${
-															value === 0
-																? 'text-slate-400'
-																: value > 0
-																	? 'text-emerald-600'
-																	: 'text-rose-600'
-														}
-														}`}
-													>
-														{value === 0 ? '-' : formatWholeCurrency(value)}
-													</td>
-												{/each}
-											</tr>
-										{/each}
-									</tbody>
-								</table>
-							</div>
-							{#if isUpdating}
-								<div class="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/70">
-									<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
-										<span
-											class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
-										></span>
-										<span>Updating projection…</span>
-									</div>
-								</div>
-							{/if}
-						</div>
-					{/if}
-				{:else if chartProjection.transactions.length === 0}
-					<p class="mt-3 text-sm text-slate-600">No projected transactions for this scenario.</p>
-				{:else}
-					<div class="relative mt-4">
-						<div class="max-h-96 overflow-x-auto overflow-y-auto">
-							<table class="min-w-full divide-y divide-slate-200 text-xs whitespace-nowrap">
-								<thead
-									class="sticky top-0 z-40 bg-slate-50 text-left text-xs font-semibold tracking-wide text-slate-500 uppercase"
-								>
-									<tr>
-										<th class="sticky top-0 left-0 z-50 min-w-[160px] bg-slate-50 px-4 py-3">
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 text-left"
-												on:click={() => toggleTransactionSort('assetName')}
-											>
-												<span>Asset</span>
-												<span class="text-[10px] text-slate-400">
-													{transactionSortKey === 'assetName'
-														? transactionSortDirection === 'asc'
-															? '▲'
-															: '▼'
-														: '↕'}
-												</span>
-											</button>
-										</th>
-										<th
-											class="sticky top-0 z-50 min-w-[160px] bg-slate-50 px-4 py-3"
-											style="left: 160px;"
-										>
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 text-left"
-												on:click={() => toggleTransactionSort('accountName')}
-											>
-												<span>Account</span>
-												<span class="text-[10px] text-slate-400">
-													{transactionSortKey === 'accountName'
-														? transactionSortDirection === 'asc'
-															? '▲'
-															: '▼'
-														: '↕'}
-												</span>
-											</button>
-										</th>
-										<th
-											class="sticky top-0 z-50 min-w-[110px] bg-slate-50 px-4 py-3"
-											style="left: 320px;"
-										>
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 text-left"
-												on:click={() => toggleTransactionSort('type')}
-											>
-												<span>Type</span>
-												<span class="text-[10px] text-slate-400">
-													{transactionSortKey === 'type'
-														? transactionSortDirection === 'asc'
-															? '▲'
-															: '▼'
-														: '↕'}
-												</span>
-											</button>
-										</th>
-										<th
-											class="sticky top-0 z-50 min-w-[140px] bg-slate-50 px-4 py-3"
-											style="left: 430px;"
-										>
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 text-left"
-												on:click={() => toggleTransactionSort('category')}
-											>
-												<span>Category</span>
-												<span class="text-[10px] text-slate-400">
-													{transactionSortKey === 'category'
-														? transactionSortDirection === 'asc'
-															? '▲'
-															: '▼'
-														: '↕'}
-												</span>
-											</button>
-										</th>
-										<th
-											class="sticky top-0 z-50 min-w-[220px] bg-slate-50 px-4 py-3"
-											style="left: 570px;"
-										>
-											<button
-												type="button"
-												class="inline-flex items-center gap-1 text-left"
-												on:click={() => toggleTransactionSort('description')}
-											>
-												<span>Description</span>
-												<span class="text-[10px] text-slate-400">
-													{transactionSortKey === 'description'
-														? transactionSortDirection === 'asc'
-															? '▲'
-															: '▼'
-														: '↕'}
-												</span>
-											</button>
-										</th>
-										{#each transactionPivot.headers as header}
-											<th class="sticky top-0 z-20 bg-slate-50 px-4 py-3 text-right">{header}</th>
-										{/each}
-									</tr>
-								</thead>
-								<tbody class="divide-y divide-slate-100 text-slate-700">
-									<tr class="font-semibold text-slate-900">
-										<td class="sticky top-10 left-0 z-40 bg-slate-100 px-4 py-3">Total</td>
-										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 160px;">
-											All accounts
-										</td>
-										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 320px;">
-											All types
-										</td>
-										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 430px;">
-											All categories
-										</td>
-										<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 570px;">
-											All descriptions
-										</td>
-										{#each transactionPivot.totalValues as value}
-											<td
-												class={`sticky top-10 z-30 bg-slate-100 px-4 py-3 text-right ${
-													value === 0
-														? 'text-slate-500'
-														: value > 0
-															? 'text-emerald-700'
-															: 'text-rose-700'
-												}`}
-											>
-												{value === 0 ? '-' : formatWholeCurrency(value)}
-											</td>
-										{/each}
-									</tr>
-									{#each transactionPivot.rows as row}
-										<tr
-											class="whitespace-nowrap"
-										>
-											<td class="sticky left-0 z-10 bg-white px-4 py-3">{row.assetName}</td>
-											<td class="sticky z-10 bg-white px-4 py-3" style="left: 160px;">
-												{row.accountName}
-											</td>
-											<td class="sticky z-10 bg-white px-4 py-3" style="left: 320px;">
-												{row.type}
-											</td>
-											<td class="sticky z-10 bg-white px-4 py-3" style="left: 430px;">
-												{row.category}
-											</td>
-											<td class="sticky z-10 bg-white px-4 py-3" style="left: 570px;">
-												{row.description}
-											</td>
-											{#each row.values as value}
-												<td
-													class={`px-4 py-3 text-right ${
-														value === 0
-															? 'text-slate-400'
-															: row.type === 'Transfer'
-																? 'text-amber-600'
-																: value > 0
-																? 'text-emerald-600'
-																: 'text-rose-600'
-													}`}
-												>
-													{value === 0 ? '-' : formatWholeCurrency(value)}
-												</td>
-											{/each}
-										</tr>
-									{/each}
-								</tbody>
-							</table>
-						</div>
-						{#if isUpdating}
-							<div class="pointer-events-none absolute inset-0 grid place-items-center rounded-xl bg-white/70">
-								<div class="flex items-center gap-3 text-xs font-semibold text-slate-600">
-									<span
-										class="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-slate-600"
-									></span>
-									<span>Updating projection…</span>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
-			<div
-				id="what-if-panel"
-				bind:this={whatIfPanelElement}
-				class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
-			>
-				<div class="flex items-center gap-2">
-					<h3 class="text-lg font-semibold text-slate-900">What if?...</h3>
-					<span class="group relative inline-flex">
-						<button
-							type="button"
-							class="grid h-4 w-4 place-items-center rounded-full border border-slate-900/30 bg-white text-[10px] leading-none font-bold text-slate-900"
-							aria-label="What is the What if section for?"
-						>
-							i
-						</button>
-						<span
-							role="tooltip"
-							class="pointer-events-none absolute top-full left-0 z-20 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-md border border-amber-200 bg-gradient-to-br from-amber-50 via-orange-50 to-rose-50 px-2 py-1.5 text-[11px] leading-relaxed text-amber-900 opacity-0 shadow-md transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
-						>
-							Use this area to play out your 'what if?' scenarios. What if?...
-							<ul class="mt-1 list-disc pl-4">
-								<li>You retire early?</li>
-								<li>Interest rates go up?</li>
-								<li>Etc...</li>
-							</ul>
-						</span>
-					</span>
-				</div>
-				<div
-					class="mt-3 inline-flex rounded-full border border-slate-200 bg-slate-50 p-1 text-xs font-semibold"
-				>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							assetPanelTab === 'assets'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (assetPanelTab = 'assets')}
-					>
-						Assets
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							assetPanelTab === 'accounts'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (assetPanelTab = 'accounts')}
-					>
-						Accounts
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							assetPanelTab === 'transfers'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (assetPanelTab = 'transfers')}
-					>
-						Transfers
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							assetPanelTab === 'reserves'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (assetPanelTab = 'reserves')}
-					>
-						Reserves
-					</button>
-					<button
-						type="button"
-						class={`rounded-full px-3 py-1 transition ${
-							assetPanelTab === 'caps'
-								? 'bg-slate-900 text-white'
-								: 'text-slate-600 hover:text-slate-900'
-						}`}
-						on:click={() => (assetPanelTab = 'caps')}
-					>
-						Caps
-					</button>
-				</div>
-				{#if assetPanelTab === 'assets'}
-					<AssetsTab
-						data={{ assetsList, assetAccountsList, accountsList }}
-						person={{
-							personDetails,
-							personRetirementAges,
-							setPersonRetirementAge,
-							updateRetirementAge,
-							expandedPersonDetailIds,
-							togglePersonDetails,
-							personDetailsErrors,
-							isValidMonthYear,
-							setPersonDetails,
-							setPersonDetailsError,
-							updatePersonDetails
-						}}
-						cashflow={{
-							cashflowsByAssetId,
-							cashflowAmounts,
-							editingCashflowIds,
-							setCashflowAmount,
-							updateCashflowAmount,
-							openCashflowFormForEdit,
-							requestDeleteCashflow,
-							openCashflowForm,
-							activeCashflowForm,
-							getDraftKey,
-							cashflowDrafts,
-							getCategoryOptionsFor,
-							cashflowFrequencyOptions,
-							getAssetAccountOptions,
-							cashflowFormErrors,
-							setCashflowDraft,
-							closeCashflowForm,
-							updateAssetCashflow,
-							createAssetCashflow
-						}}
-						share={{
-							shareDetails,
-							shareErrors,
-							expandedShareDetailIds,
-							toggleShareDetails,
-							setShareDetails,
-							setShareError,
-							updateShareDetails
-						}}
-						property={{
-							propertyDetails,
-							propertyErrors,
-							expandedPropertyDetailIds,
-							togglePropertyDetails,
-							setPropertyDetails,
-							setPropertyError,
-							updatePropertyDetails
-						}}
-						mortgage={{
-							mortgageDetails,
-							mortgageErrors,
-							expandedMortgageDetailIds,
-							toggleMortgageDetails,
-							setMortgageDetails,
-							setMortgageError,
-							updateMortgageDetails,
-							validateMortgageDetails
-						}}
-						ui={{
-							stepForValue,
-							scheduleUpdate,
-							formatLabel,
-							toMonthYearInput,
-							roundToTwo,
-							formatRate,
-							formatYearMonthInput
-						}}
-					/>
-				{:else if assetPanelTab === 'accounts'}
-					<AccountsTab
-						data={{ accountsList, accountEditDrafts, accountInterestRates, accountInlineError }}
-						actions={{
-							setAccountEditDraft,
-							saveAccountEditDraft,
-							setAccountInterestRate,
-							adjustAccountInterestRate,
-							updateAccountInterestRate
-						}}
-						ui={{ toMonthYearInput, scheduleUpdate, formatRate, roundToTwo, formatLabel }}
-					/>
-				{:else if assetPanelTab === 'transfers'}
-					<TransfersTab
-						data={{
-							transferCashflows,
-							transferEditDrafts,
-							transferAccountOptions,
-							transferInlineError,
-							transferFormError,
-							transferDraft
-						}}
-						handlers={{
-							onTransferDraftChange: setTransferDraft,
-							setTransferEditDraft,
-							saveTransferEditDraft,
-							onTransferInflationToggle: handleTransferInflationToggle,
-							requestDeleteCashflow,
-							createTransferCashflow
-						}}
-						ui={{ formatLabel, cashflowFrequencyOptions, toMonthYearInput, scheduleUpdate }}
-					/>
-				{:else if assetPanelTab === 'reserves'}
-					<ReservesTab
-						data={{
-							fundingCashAccountOptions,
-							fundingReserveDrafts,
-							fundingReservePriorityRowCount,
-							fundingReserveRulesByAccount,
-							fundingReserveSourceOptionsByAccount,
-							transferAccountOptions,
-							fundingTabError
-						}}
-						actions={{
-							setFundingReserveDraft,
-							upsertFundingTargetForAccount,
-							moveReserveRule,
-							removeReserveRule,
-							addReserveRuleForTarget
-						}}
-						ui={{ scheduleUpdate }}
-					/>
-				{:else if assetPanelTab === 'caps'}
-					<CapsTab
-						data={{
-							fundingCashAccountOptions,
-							fundingCapDrafts,
-							fundingCapPriorityRowCount,
-							fundingSweepRulesByAccount,
-							fundingSweepDestinationOptionsByAccount,
-							transferAccountOptions,
-							fundingTabError
-						}}
-						actions={{
-							setFundingCapDraft,
-							upsertFundingTargetForAccount,
-							moveSweepRule,
-							removeSweepRule,
-							addSweepRuleForSource
-						}}
-						ui={{ scheduleUpdate }}
-					/>
-				{/if}
-			</div>
+			<ProjectionPanel
+				{...dashboardSections.projectionPanelProps}
+				bind:projectionView
+				bind:projectionBalanceSource
+				bind:autoRunProjection
+				bind:chartCanvas
+			/>
+			<WhatIfPanel
+				{...dashboardSections.whatIfPanelProps}
+				bind:whatIfPanelElement
+				bind:assetPanelTab
+			/>
 		</div>
-		<div class="space-y-4">
-			<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-				<h3 class="text-sm font-semibold text-slate-900">Funding Planner</h3>
-				<div
-					class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${stage1Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}
-				>
-					<div class="flex items-center gap-2">
-						<span class="font-semibold">Stage 1: Liquidity</span>
-						<InfoTooltip label="What is Stage 1 liquidity?">
-								Stage 1 checks whether you are living within your means by seeing if you run out of
-								accessible money in any month. Accessible money is in either cash accounts, shares
-								or pension/superannuation funds (if available).
-						</InfoTooltip>
-					</div>
-					<span
-						class={`rounded-full px-2 py-0.5 font-semibold ${stage1Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}
-					>
-						{stage1Passed ? '✓' : '✕'}
-					</span>
-				</div>
-				{#if stage1Passed}
-					<div class="mt-2 text-xs text-emerald-700">You are living within your means.</div>
-				{/if}
-				{#if plannerStage === 'liquidity'}
-					<div
-						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-					>
-						{stage1PlannerMessage}
-					</div>
-					<div
-						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
-					>
-						<div class="font-semibold">Fix Liquidity First</div>
-						<div class="mt-1 text-xs">
-							You need to reduce your expenses or increase your income to ensure your liquidity.
-						</div>
-						<div class="mt-3 text-xs font-semibold">Ways you can fix your liquidity:</div>
-						<ul class="mt-2 list-disc pl-5 text-xs">
-							<li>Reduce or remove expenses.</li>
-							<li>Increase income or add an income stream.</li>
-							<li>Add an income generating asset.</li>
-							<li>
-								Sell an asset to bring in income{assetsList.some(
-									(asset) => asset.asset_type === 'property'
-								)
-									? ' (e.g. property).'
-									: '.'}
-							</li>
-						</ul>
-						<div class="mt-2 text-xs">
-							Head down to the
-							<a
-								href="#what-if-panel"
-								class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-								on:click|preventDefault={jumpToWhatIfAssetsExpense}
-							>
-								What if?...
-							</a>
-							section below to make your changes.
-						</div>
-					</div>
-				{/if}
-
-				<div
-					class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage2Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage2Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-rose-200 bg-rose-50 text-rose-800'}`}
-				>
-					<div class="flex items-center gap-2">
-						<span class="font-semibold">Stage 2: Allocation</span>
-						<InfoTooltip label="What is Stage 2 allocation?">
-								Now that we've established you have enough to live on we need to ensure all of your
-								accounts remain in the black. Stage 2 is about allocating funds to the right
-								accounts at the right time.
-						</InfoTooltip>
-					</div>
-					<span
-						class={`rounded-full px-2 py-0.5 font-semibold ${!stage2Reached ? 'bg-slate-100 text-slate-500' : stage2Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}
-					>
-						{!stage2Reached ? '?' : stage2Passed ? '✓' : '✕'}
-					</span>
-				</div>
-				{#if stage2Passed}
-					<div class="mt-2 text-xs text-emerald-700">None of your accounts run out of money.</div>
-				{/if}
-				{#if stage2Reached && !stage2Passed}
-					<div
-						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"
-					>
-						{stage2PlannerMessage}
-					</div>
-					{#if stage2AllocationShortfall}
-						<div
-							class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700"
-						>
-							<div class="font-semibold">
-								Stage 2: Allocation for {stage2AllocationShortfall.targetAccountName} from {stage2AllocationShortfall.monthLabel}
-								from which account...
-							</div>
-							{#if (plannerExistingRules?.length ?? 0) > 0}
-								<div class="mt-2 space-y-1 text-xs">
-									{#each plannerExistingRules ?? [] as rule}
-										{@const sourceAccountName =
-											accountsList.find((account) => account.id === rule.source_account_id)?.name ??
-											'Source account'}
-										<div
-											class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1"
-										>
-											<span>Priority {rule.priority_order}: {sourceAccountName}</span>
-											<button
-												type="button"
-												class="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 hover:bg-slate-100"
-												on:click={() => removeAutoFundingRule(rule.id)}
-											>
-												Remove
-											</button>
-										</div>
-									{/each}
-								</div>
-							{/if}
-							<div class="mt-2 block text-xs text-slate-600">
-								<select
-									class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
-									value={plannerSourceAccountId}
-									on:change={(event) =>
-										(plannerSourceAccountId = (event.currentTarget as HTMLSelectElement).value)}
-								>
-									{#if plannerSourceOptions.length === 0}
-										<option value="">No valid funding accounts</option>
-									{:else}
-										<option value="">Add next funding account...</option>
-										{#each plannerSourceOptions as option}
-											<option value={option.id}>{option.name}</option>
-										{/each}
-									{/if}
-								</select>
-							</div>
-							{#if plannerSourceAvailabilityWarning}
-								<div
-									class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800"
-								>
-									{plannerSourceAvailabilityWarning}
-								</div>
-							{/if}
-							<div class="mt-2">
-								<button
-									type="button"
-									class="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-									disabled={!plannerSourceAccountId || plannerSourceOptions.length === 0}
-									on:click={saveAutoFundingRule}
-								>
-									Add Funding Account
-								</button>
-							</div>
-							{#if autoFundingRuleError}
-								<div class="mt-2 text-xs text-rose-600">{autoFundingRuleError}</div>
-							{/if}
-						</div>
-					{:else}
-						<div
-							class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700"
-						>
-							Stage 2 is active. Review auto-funding priorities until account runout is resolved.
-						</div>
-					{/if}
-				{/if}
-
-				<div
-					role="button"
-					tabindex="0"
-					on:click={() => (plannerAdvancedOpenStage = 'stage3')}
-					on:keydown={(event) => {
-						if (event.key === 'Enter' || event.key === ' ') {
-							event.preventDefault();
-							plannerAdvancedOpenStage = 'stage3';
-						}
-					}}
-					class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage3Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage3Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
-				>
-					<div class="flex items-center gap-2">
-						<span class="font-semibold">Stage 3: Safety</span>
-						<InfoTooltip label="What is Stage 3 safety?">
-								Stage 3 sets reserve minimums so essential spending is protected. This stage focuses
-								on safety buffer and resilience.
-						</InfoTooltip>
-					</div>
-					<span
-						class={`rounded-full px-2 py-0.5 font-semibold ${!stage3Reached ? 'bg-slate-100 text-slate-500' : stage3Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
-					>
-						{!stage3Reached ? '?' : stage3Passed ? '✓' : '!'}
-					</span>
-				</div>
-				{#if stage3Passed}
-					<div class="mt-2 text-xs text-emerald-700">
-						Your reserves and resilience are in a healthy range.
-					</div>
-				{/if}
-				{#if stage3Reached && stage3Assessment}
-					<div class="mt-3 space-y-2 text-xs text-sky-900">
-						<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
-								<div class="flex items-center gap-1">
-									<span class="font-semibold">Safety Buffer Score</span>
-									<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
-											Measures how many months you could survive on your liquid buffer given living
-											expenses, asset ownership expenses and mortgage repayments. Current coverage is
-											{Math.floor(stage3Assessment.safetyMonths)} months.
-									</InfoTooltip>
-								</div>
-								<span class="font-semibold">{stage3Assessment.safetyScore}/100</span>
-						</div>
-						<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
-								<div class="flex items-center gap-1">
-									<span class="font-semibold">Resilience Score</span>
-									<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
-											Measures the largest drop in liquidity over any rolling 12-month window in
-											your projection. Worst window:
-											{stage3Assessment.worstDrawdownStartDate
-												? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
-												: 'N/A'}{' '}
-											to{' '}
-											{stage3Assessment.worstDrawdownEndDate
-												? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
-												: 'N/A'}
-											, drawdown: {stage3Assessment.worstDrawdownPct}%.
-									</InfoTooltip>
-								</div>
-								<span class="font-semibold">{stage3Assessment.resilienceScore}/100</span>
-						</div>
-					</div>
-				{/if}
-				{#if stage3Reached && plannerAdvancedOpenStage === 'stage3' && !stage3Passed}
-					<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-						<div class="font-semibold">Set Reserve Settings In What If</div>
-						<div class="mt-1 text-xs">
-							Use the Reserves tab in the What if?... section to set reserve amounts and funding
-							source priorities.
-						</div>
-						<div class="mt-2 text-xs">
-							Head down to the
-							<a
-								href="#what-if-panel"
-								class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-								on:click|preventDefault={jumpToWhatIfReserves}
-							>
-								What if?...
-							</a>
-							section below to make your changes.
-						</div>
-					</div>
-				{/if}
-
-				<div
-					role="button"
-					tabindex="0"
-					on:click={() => (plannerAdvancedOpenStage = 'stage4')}
-					on:keydown={(event) => {
-						if (event.key === 'Enter' || event.key === ' ') {
-							event.preventDefault();
-							plannerAdvancedOpenStage = 'stage4';
-						}
-					}}
-					class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage4Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage4Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
-				>
-					<div class="flex items-center gap-2">
-						<span class="font-semibold">Stage 4: Growth Efficiency</span>
-						<InfoTooltip label="What is Stage 4 growth efficiency?">
-								Stage 4 sets cap and sweep settings so excess cash can move to growth assets while
-								still respecting reserves. This stage focuses on growth allocation and goal match.
-						</InfoTooltip>
-					</div>
-					<span
-						class={`rounded-full px-2 py-0.5 font-semibold ${!stage4Reached ? 'bg-slate-100 text-slate-500' : stage4Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
-					>
-						{!stage4Reached ? '?' : stage4Passed ? '✓' : '!'}
-					</span>
-				</div>
-				{#if stage4Passed}
-					<div class="mt-2 text-xs text-emerald-700">
-						Your cap settings support growth and match your horizon.
-					</div>
-				{/if}
-				{#if stage3Reached && plannerAdvancedOpenStage === 'stage4'}
-					{#if !stage4Reached}
-						<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-							Complete Stage 3 safety targets first to unlock Stage 4.
-						</div>
-					{:else}
-						{#if stage3Assessment}
-							<div class="mt-3 space-y-2 text-xs text-sky-900">
-									<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
-										<div class="flex items-center gap-1">
-											<span class="font-semibold">Growth Allocation Score</span>
-											<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
-													Shows how much of current value is in growth assets (shares, super, property)
-													versus defensive cash. Current growth allocation is
-													{stage3Assessment.growthAllocationPct}%.
-											</InfoTooltip>
-										</div>
-										<span class="font-semibold">{stage3Assessment.growthScore}/100</span>
-									</div>
-									<div class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1">
-										<div class="flex items-center gap-1">
-											<span class="font-semibold">Goal Match Score</span>
-											<InfoTooltip label="What is the Stage 4 goal match score?" theme="sky">
-													Checks whether growth allocation fits your projection horizon. Current horizon
-													is {stage3Assessment.horizonMonths} months.
-											</InfoTooltip>
-										</div>
-										<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
-									</div>
-								<div class="text-[11px] text-sky-800">
-									Current profile: {stage3Assessment.profile} ({stage3Assessment.totalScore}/100).
-								</div>
-							</div>
-						{/if}
-						{#if !stage4Passed}
-							<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-								<div class="font-semibold">Set Cap Settings In What If</div>
-								<div class="mt-1 text-xs">
-									Use the Caps tab in the What if?... section to set cap amounts and funding destination
-									priorities.
-								</div>
-								<div class="mt-2 text-xs">
-									Head down to the
-									<a
-										href="#what-if-panel"
-										class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-										on:click|preventDefault={jumpToWhatIfCaps}
-									>
-										What if?...
-									</a>
-									section below to make your changes.
-								</div>
-							</div>
-						{/if}
-					{/if}
-				{/if}
-			</div>
-			{#if (projectionData.events?.length ?? 0) > 0}
-				<div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-					<h3 class="text-sm font-semibold text-slate-900">Events</h3>
-					<div class="mt-3 space-y-2">
-						{#each projectionData.events as event}
-							<div
-								class={`rounded-lg border px-3 py-2 text-xs ${
-									event.tone === 'negative'
-										? 'border-rose-200 bg-rose-50 text-rose-700'
-										: 'border-emerald-200 bg-emerald-50 text-emerald-700'
-								}`}
-							>
-								{event.monthLabel ? `${event.monthLabel}: ${event.message}` : event.message}
-							</div>
-						{/each}
-					</div>
-				</div>
-			{/if}
-		</div>
+		<PlannerPanel
+			{...dashboardSections.plannerPanelProps}
+			bind:plannerSourceAccountId
+			bind:plannerAdvancedOpenStage
+		/>
 	</div>
 </section>
 
-{#if deleteConfirmId}
-	<div class="fixed inset-0 z-50 grid place-items-center bg-slate-900/40 px-4">
-		<div class="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-lg">
-			<h3 class="text-sm font-semibold text-slate-900">Delete cashflow?</h3>
-			<p class="mt-2 text-xs text-slate-600">
-				This cashflow will be permanently removed from the scenario.
-			</p>
-			<div class="mt-4 flex items-center justify-end gap-2">
-				<button
-					type="button"
-					class="rounded-lg border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600"
-					on:click={cancelDeleteCashflow}
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					class="rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white"
-					on:click={confirmDeleteCashflow}
-				>
-					Delete
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
-
-<style>
-	.no-spin::-webkit-outer-spin-button,
-	.no-spin::-webkit-inner-spin-button {
-		-webkit-appearance: none;
-		margin: 0;
-	}
-
-	.no-spin {
-		appearance: textfield;
-		-moz-appearance: textfield;
-	}
-</style>
-
+<ConfirmDialog
+	open={Boolean(deleteConfirmId)}
+	title="Delete cashflow?"
+	message="This cashflow will be permanently removed from the scenario."
+	confirmLabel="Delete"
+	cancelLabel="Cancel"
+	onCancel={cancelDeleteCashflow}
+	onConfirm={confirmDeleteCashflow}
+/>

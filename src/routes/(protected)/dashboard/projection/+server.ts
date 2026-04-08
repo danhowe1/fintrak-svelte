@@ -1,5 +1,6 @@
-import { json, redirect } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
+import type { DashboardProjectionResponse } from '$lib/dashboard/contracts';
 import {
 	getAccountsForScenario,
 	getAccountBalanceTargetsForScenario,
@@ -7,43 +8,24 @@ import {
 	getAutoSweepRulesForScenario,
 	getAssetAccountsForScenario,
 	getAssetsForScenario,
-	getCashflowsForScenario,
-	getScenarioForUserById,
-	getSingleScenarioForUser
+	getCashflowsForScenario
 } from '$lib/server/database';
+import {
+	parseProjectionRange,
+	parseRateCookie,
+	resolveDashboardScenario
+} from '$lib/server/dashboard-context';
 import { buildProjection } from '$lib/server/projection';
 
-const parseRate = (value: string | undefined, fallback: number) => {
-	const parsed = Number(value);
-	return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const parseProjectionRange = (value: string | undefined) => {
-	if (value === '1y' || value === '5y' || value === '10y' || value === 'all') {
-		return value;
-	}
-	return 'all';
-};
-
 export const GET: RequestHandler = async (event) => {
-	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
-
-	const scenarioId =
-		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
-	const scenario = scenarioId
-		? await getScenarioForUserById(userId, scenarioId)
-		: await getSingleScenarioForUser(userId);
+	const { scenario } = await resolveDashboardScenario(event);
 
 	if (!scenario) {
 		return json({ error: 'Scenario not found' }, { status: 404 });
 	}
 
 	const projectionRange = parseProjectionRange(event.cookies.get('projectionRange'));
-	const inflationRate = parseRate(event.cookies.get('inflationRate'), 2.0);
+	const inflationRate = parseRateCookie(event.cookies.get('inflationRate'), 2.0);
 
 	const [cashflows, accounts, assets, assetAccounts, autoFundingRules, accountBalanceTargets, autoSweepRules] =
 		await Promise.all([
@@ -70,7 +52,7 @@ export const GET: RequestHandler = async (event) => {
 		autoSweepRules
 	});
 
-	return json({
+	const response: DashboardProjectionResponse = {
 		projection,
 		autoFundingRules,
 		accountBalanceTargets,
@@ -80,5 +62,7 @@ export const GET: RequestHandler = async (event) => {
 		sessionRates: {
 			inflationRate
 		}
-	});
+	};
+
+	return json(response);
 };

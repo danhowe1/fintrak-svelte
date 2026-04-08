@@ -1,6 +1,13 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import {
+	type AccountBalanceTarget,
+	type AccountListItem,
+	type AssetAccountLink,
+	type AssetListItem,
+	type AutoFundingRule,
+	type AutoSweepRule,
+	type CashflowSummary,
 	getCashflowsForScenario,
 	getAccountsForScenario,
 	getAssetsForScenario,
@@ -9,7 +16,6 @@ import {
 	deleteCashflow,
 	updateCashflow,
 	getScenarioForUserById,
-	getSingleScenarioForUser,
 	updateCashflowAmount,
 	updateCashflowInflationAffected,
 	updatePersonRetirementAge,
@@ -32,7 +38,12 @@ import {
 	reorderAutoFundingRules,
 	reorderAutoSweepRules
 } from '$lib/server/database';
-import { buildProjection } from '$lib/server/projection';
+import {
+	parseProjectionRange,
+	resolveDashboardScenario,
+	syncCurrentScenarioCookie
+} from '$lib/server/dashboard-context';
+import type { ProjectionResult } from '$lib/server/projection';
 import { parseYearMonthInput } from '$lib/yearMonth';
 
 const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
@@ -42,55 +53,40 @@ const parseSelectedAccountId = (value: string) =>
 		? value.slice(CASH_ACCOUNT_SELECTION_PREFIX.length)
 		: null;
 
+const EMPTY_PROJECTION: ProjectionResult = {
+	startDate: 0,
+	endDate: 0,
+	transactions: [],
+	accounts: [],
+	assets: [],
+	liquidity: {
+		series: [],
+		points: []
+	},
+	planner: {
+		stage: 'reserves_caps',
+		status: 'on_track',
+		headline: '',
+		firstLiquidityDeficit: null,
+		hasCapBreach: false,
+		firstShortfall: null
+	},
+	events: []
+};
+
 export const load: PageServerLoad = async (event) => {
 	const parentData = await event.parent();
-	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
-	const scenarioId =
-		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
-	const scenario = scenarioId
-		? await getScenarioForUserById(userId, scenarioId)
-		: await getSingleScenarioForUser(userId);
+	const { scenario, scenarioId } = await resolveDashboardScenario(event);
 
 	if (!scenario) {
 		throw redirect(303, '/scenarios');
 	}
 
-	const currentScenarioId = event.cookies.get('currentScenarioId');
-	const scenarioToStore = scenarioId ?? scenario.id;
-
-	if (scenarioToStore && scenarioToStore !== currentScenarioId) {
-		event.cookies.set('currentScenarioId', scenarioToStore, {
-			path: '/',
-			httpOnly: true,
-			sameSite: 'lax'
-		});
-	}
-
-	const cashflows = await getCashflowsForScenario(scenario.id);
-	const [accounts, assets, assetAccounts, autoFundingRules, accountBalanceTargets, autoSweepRules] =
-		await Promise.all([
-		getAccountsForScenario(scenario.id),
-		getAssetsForScenario(scenario.id),
-		getAssetAccountsForScenario(scenario.id),
-		getAutoFundingRulesForScenario(scenario.id),
-		getAccountBalanceTargetsForScenario(scenario.id),
-		getAutoSweepRulesForScenario(scenario.id)
-	]);
+	syncCurrentScenarioCookie(event, scenarioId ?? scenario.id);
 
 	const projectionRangeParam = event.url.searchParams.get('projectionRange');
 	const projectionRangeCookie = event.cookies.get('projectionRange');
-	const projectionRangeRaw = projectionRangeParam ?? projectionRangeCookie ?? 'all';
-	const projectionRange =
-		projectionRangeRaw === '1y' ||
-		projectionRangeRaw === '5y' ||
-		projectionRangeRaw === '10y' ||
-		projectionRangeRaw === 'all'
-			? projectionRangeRaw
-			: 'all';
+	const projectionRange = parseProjectionRange(projectionRangeParam ?? projectionRangeCookie);
 
 	if (projectionRangeParam && projectionRangeParam !== projectionRangeCookie) {
 		event.cookies.set('projectionRange', projectionRange, {
@@ -107,29 +103,16 @@ export const load: PageServerLoad = async (event) => {
 			sameSite: 'lax'
 		});
 	}
-	const projection = buildProjection({
-		inflationRate: parentData.sessionRates.inflationRate,
-		projectionRange: 'all',
-		maxMonths: null,
-		cashflows,
-		accounts,
-		assets,
-		assetAccounts,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules
-	});
-
 	return {
 		scenario,
-		cashflows,
-		assets,
-		accounts,
-		assetAccounts,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules,
-		projection,
+		cashflows: [] as CashflowSummary[],
+		assets: [] as AssetListItem[],
+		accounts: [] as AccountListItem[],
+		assetAccounts: [] as AssetAccountLink[],
+		autoFundingRules: [] as AutoFundingRule[],
+		accountBalanceTargets: [] as AccountBalanceTarget[],
+		autoSweepRules: [] as AutoSweepRule[],
+		projection: EMPTY_PROJECTION,
 		projectionRange,
 		sessionRates: parentData.sessionRates
 	};
