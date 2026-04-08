@@ -44,6 +44,22 @@
 		}>;
 	};
 	export let isInitialProjectionLoading: boolean;
+
+	let transactionSearchText = '';
+
+	$: normalizedTransactionSearch = transactionSearchText.trim().toLowerCase();
+	$: filteredTransactionRows =
+		normalizedTransactionSearch.length === 0
+			? transactionPivot.rows
+			: transactionPivot.rows.filter((row) =>
+					[
+						row.assetName,
+						row.accountName,
+						row.type,
+						row.category,
+						row.description
+					].some((value) => value.toLowerCase().includes(normalizedTransactionSearch))
+				);
 </script>
 
 <div class="relative rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -514,16 +530,13 @@
 					</thead>
 					<tbody class="divide-y divide-slate-100 text-slate-700">
 						<tr class="font-semibold text-slate-900">
-							<td class="sticky top-10 left-0 z-40 bg-slate-100 px-4 py-3">Total</td>
-							<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 160px;">
-								All accounts
-							</td>
-							<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 320px;">All types</td>
-							<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 430px;">
-								All categories
-							</td>
-							<td class="sticky top-10 z-40 bg-slate-100 px-4 py-3" style="left: 570px;">
-								All descriptions
+							<td class="sticky top-10 left-0 z-40 bg-slate-100 px-4 py-2" colspan="5">
+								<input
+									type="text"
+									class="w-full rounded border border-slate-300 bg-white px-3 py-1.5 text-sm font-normal text-slate-800 focus:border-slate-500 focus:ring-0 focus:outline-none"
+									placeholder="Search asset, account, type, category, or description"
+									bind:value={transactionSearchText}
+								/>
 							</td>
 							{#each transactionPivot.totalValues as value}
 								<td
@@ -539,7 +552,7 @@
 								</td>
 							{/each}
 						</tr>
-						{#each transactionPivot.rows as row}
+						{#each filteredTransactionRows as row}
 							<tr class="whitespace-nowrap">
 								<td class="sticky left-0 z-10 bg-white px-4 py-3">{row.assetName}</td>
 								<td class="sticky z-10 bg-white px-4 py-3" style="left: 160px;">{row.accountName}</td>
