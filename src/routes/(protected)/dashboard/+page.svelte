@@ -1841,6 +1841,7 @@
 				max: balanceExtent.max,
 				ticks: {
 					color: '#94a3b8',
+					font: { size: 9 },
 					callback: (value: number | string) =>
 						formatAxisCurrency(typeof value === 'string' ? Number(value) : value)
 				},
