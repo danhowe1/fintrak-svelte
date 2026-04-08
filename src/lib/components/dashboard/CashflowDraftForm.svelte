@@ -53,7 +53,7 @@
 	</div>
 	<FormRow label="Category">
 		<select
-			class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.category}
 			disabled={categoryOptions.length === 1}
 			onchange={(event) =>
@@ -69,7 +69,7 @@
 	<FormRow label="Description">
 		<input
 			type="text"
-			class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.description}
 			oninput={(event) => onUpdate({ description: (event.currentTarget as HTMLInputElement).value })}
 		/>
@@ -77,7 +77,7 @@
 	<FormRow label="Amount">
 		<input
 			type="number"
-			class="w-24 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.amount}
 			step={amountStep}
 			oninput={(event) => onUpdate({ amount: (event.currentTarget as HTMLInputElement).value })}
@@ -88,7 +88,7 @@
 			type="text"
 			inputmode="numeric"
 			pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-			class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.startDate}
 			oninput={(event) => onUpdate({ startDate: (event.currentTarget as HTMLInputElement).value })}
 		/>
@@ -98,14 +98,14 @@
 			type="text"
 			inputmode="numeric"
 			pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
-			class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.endDate}
 			oninput={(event) => onUpdate({ endDate: (event.currentTarget as HTMLInputElement).value })}
 		/>
 	</FormRow>
 	<FormRow label="Frequency">
 		<select
-			class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.frequency}
 			onchange={(event) =>
 				onUpdate({ frequency: (event.currentTarget as HTMLSelectElement).value as CashflowDraftModel['frequency'] })}
@@ -117,7 +117,7 @@
 	</FormRow>
 	<FormRow label="Account">
 		<select
-			class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
+			class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-900"
 			value={draft.assetAccountId}
 			onchange={(event) =>
 				onUpdate({ assetAccountId: (event.currentTarget as HTMLSelectElement).value })}
