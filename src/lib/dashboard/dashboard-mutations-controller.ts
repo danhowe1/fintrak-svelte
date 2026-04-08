@@ -375,6 +375,25 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		);
 	};
 
+	const updateSuperannuationDetails = async (
+		assetId: string,
+		preservationAge: number,
+		capitalGrowthRate: number,
+		managementFeeRate: number
+	) => {
+		await runScenarioMutation(
+			`super:${assetId}`,
+			'updateSuperannuationDetails',
+			{
+				assetId,
+				preservationAge: String(preservationAge),
+				capitalGrowthRate: String(capitalGrowthRate),
+				managementFeeRate: String(managementFeeRate)
+			},
+			'Unable to update superannuation details. Please try again.'
+		);
+	};
+
 	const updateCashflowAmount = async (cashflowId: string, amount: number) => {
 		const error = await updateCashflowAmountCommand({
 			cashflowId,
@@ -540,6 +559,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		updateShareDetails,
 		updateAccountInterestRate,
 		updateMortgageDetails,
+		updateSuperannuationDetails,
 		updateCashflowAmount,
 		createAssetCashflow,
 		updateAssetCashflow,

@@ -579,6 +579,48 @@ export async function updateMortgageDetails(
 	);
 }
 
+export async function updateSuperannuationDetails(
+	scenarioId: string,
+	assetId: string,
+	input: {
+		preservationAge: number;
+		capitalGrowthRate: number;
+		managementFeeRate: number;
+	}
+) {
+	await getPool().query(
+		`
+			update assets
+			set details = jsonb_set(
+				jsonb_set(
+					jsonb_set(
+						coalesce(details, '{}'::jsonb),
+						'{preservationAge}',
+						to_jsonb($3::numeric),
+						true
+					),
+					'{capitalGrowthRate}',
+					to_jsonb($4::numeric),
+					true
+				),
+				'{managementFeeRate}',
+				to_jsonb($5::numeric),
+				true
+			)
+			where id = $2::uuid
+			  and scenario_id = $1::uuid
+			  and asset_type = 'superannuation'
+		`,
+		[
+			scenarioId,
+			assetId,
+			input.preservationAge,
+			input.capitalGrowthRate,
+			input.managementFeeRate
+		]
+	);
+}
+
 export type AssetAccountLink = {
 	id: string;
 	asset_id: string;

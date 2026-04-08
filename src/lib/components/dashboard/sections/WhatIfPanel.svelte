@@ -107,6 +107,7 @@
 				person={assetsTabProps.person}
 				cashflow={assetsTabProps.cashflow}
 				share={assetsTabProps.share}
+				super={assetsTabProps.super}
 				property={assetsTabProps.property}
 				mortgage={assetsTabProps.mortgage}
 				ui={assetsTabProps.ui}

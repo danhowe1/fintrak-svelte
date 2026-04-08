@@ -25,6 +25,7 @@ import {
 	updateAccountInterestRate,
 	updateAccountDetails,
 	updateMortgageDetails,
+	updateSuperannuationDetails,
 	getOrCreateHeldInAssetAccount,
 	getAutoFundingRulesForScenario,
 	createAutoFundingRule,
@@ -728,6 +729,46 @@ export const actions: Actions = {
 			termMonths,
 			mortgageAccountName,
 			openingBalance
+		});
+		return { success: true };
+	},
+	updateSuperannuationDetails: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		const preservationAgeRaw = Number(formData.get('preservationAge'));
+		const capitalGrowthRateRaw = Number(formData.get('capitalGrowthRate'));
+		const managementFeeRateRaw = Number(formData.get('managementFeeRate'));
+		const preservationAge = Number.isFinite(preservationAgeRaw)
+			? Math.max(0, Math.round(preservationAgeRaw))
+			: Number.NaN;
+		const capitalGrowthRate = Number.isFinite(capitalGrowthRateRaw)
+			? Math.round(capitalGrowthRateRaw * 100) / 100
+			: Number.NaN;
+		const managementFeeRate = Number.isFinite(managementFeeRateRaw)
+			? Math.round(managementFeeRateRaw * 100) / 100
+			: Number.NaN;
+		if (
+			!scenarioId ||
+			!assetId ||
+			!Number.isFinite(preservationAge) ||
+			!Number.isFinite(capitalGrowthRate) ||
+			!Number.isFinite(managementFeeRate)
+		) {
+			return fail(400, { error: 'Invalid input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		await updateSuperannuationDetails(scenarioId, assetId, {
+			preservationAge,
+			capitalGrowthRate,
+			managementFeeRate
 		});
 		return { success: true };
 	},

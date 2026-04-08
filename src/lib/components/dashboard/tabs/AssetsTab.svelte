@@ -8,6 +8,7 @@
 		person,
 		cashflow,
 		share,
+		super: superannuation,
 		property,
 		mortgage,
 		ui
@@ -20,73 +21,69 @@
 		assetsList = data.assetsList;
 		accountsList = data.accountsList;
 	});
-	// svelte-ignore state_referenced_locally
-	let {
-		personDetails,
-		personRetirementAges,
-		setPersonRetirementAge,
-		updateRetirementAge,
-		expandedPersonDetailIds,
-		togglePersonDetails,
-		personDetailsErrors,
-		isValidMonthYear,
-		setPersonDetails,
-		setPersonDetailsError,
-		updatePersonDetails
-	} = person;
-	// svelte-ignore state_referenced_locally
-	let {
-		cashflowsByAssetId,
-		cashflowAmounts,
-		editingCashflowIds,
-		setCashflowAmount,
-		updateCashflowAmount,
-		openCashflowFormForEdit,
-		requestDeleteCashflow,
-		openCashflowForm,
-		activeCashflowForm,
-		getDraftKey,
-		cashflowDrafts,
-		getCategoryOptionsFor,
-		cashflowFrequencyOptions,
-		getAssetAccountOptions,
-		cashflowFormErrors,
-		setCashflowDraft,
-		closeCashflowForm,
-		updateAssetCashflow,
-		createAssetCashflow
-	} = cashflow;
-	// svelte-ignore state_referenced_locally
-	let {
-		shareDetails,
-		shareErrors,
-		expandedShareDetailIds,
-		toggleShareDetails,
-		setShareDetails,
-		setShareError,
-		updateShareDetails
-	} = share;
-	// svelte-ignore state_referenced_locally
-	let {
-		propertyDetails,
-		propertyErrors,
-		expandedPropertyDetailIds,
-		togglePropertyDetails,
-		setPropertyDetails,
-		setPropertyError,
-		updatePropertyDetails
-	} = property;
-	// svelte-ignore state_referenced_locally
-	let {
-		mortgageDetails,
-		mortgageErrors,
-		expandedMortgageDetailIds,
-		toggleMortgageDetails,
-		setMortgageDetails,
-		setMortgageError,
-		updateMortgageDetails,
-		validateMortgageDetails
-	} = mortgage;
+	const personDetails = $derived(person.personDetails);
+	const personRetirementAges = $derived(person.personRetirementAges);
+	const setPersonRetirementAge = $derived(person.setPersonRetirementAge);
+	const updateRetirementAge = $derived(person.updateRetirementAge);
+	const expandedPersonDetailIds = $derived(person.expandedPersonDetailIds);
+	const togglePersonDetails = $derived(person.togglePersonDetails);
+	const personDetailsErrors = $derived(person.personDetailsErrors);
+	const isValidMonthYear = $derived(person.isValidMonthYear);
+	const setPersonDetails = $derived(person.setPersonDetails);
+	const setPersonDetailsError = $derived(person.setPersonDetailsError);
+	const updatePersonDetails = $derived(person.updatePersonDetails);
+
+	const cashflowsByAssetId = $derived(cashflow.cashflowsByAssetId);
+	const cashflowAmounts = $derived(cashflow.cashflowAmounts);
+	const setCashflowAmount = $derived(cashflow.setCashflowAmount);
+	const updateCashflowAmount = $derived(cashflow.updateCashflowAmount);
+	const openCashflowFormForEdit = $derived(cashflow.openCashflowFormForEdit);
+	const requestDeleteCashflow = $derived(cashflow.requestDeleteCashflow);
+	const openCashflowForm = $derived(cashflow.openCashflowForm);
+	const activeCashflowForm = $derived(cashflow.activeCashflowForm);
+	const getDraftKey = $derived(cashflow.getDraftKey);
+	const cashflowDrafts = $derived(cashflow.cashflowDrafts);
+	const getCategoryOptionsFor = $derived(cashflow.getCategoryOptionsFor);
+	const cashflowFrequencyOptions = $derived(cashflow.cashflowFrequencyOptions);
+	const getAssetAccountOptions = $derived(cashflow.getAssetAccountOptions);
+	const cashflowFormErrors = $derived(cashflow.cashflowFormErrors);
+	const setCashflowDraft = $derived(cashflow.setCashflowDraft);
+	const closeCashflowForm = $derived(cashflow.closeCashflowForm);
+	const updateAssetCashflow = $derived(cashflow.updateAssetCashflow);
+	const createAssetCashflow = $derived(cashflow.createAssetCashflow);
+	let editingCashflowIds = $state<Set<string>>(new Set());
+	$effect(() => {
+		editingCashflowIds = cashflow.editingCashflowIds;
+	});
+
+	const shareDetails = $derived(share.shareDetails);
+	const shareErrors = $derived(share.shareErrors);
+	const expandedShareDetailIds = $derived(share.expandedShareDetailIds);
+	const toggleShareDetails = $derived(share.toggleShareDetails);
+	const setShareDetails = $derived(share.setShareDetails);
+	const setShareError = $derived(share.setShareError);
+	const updateShareDetails = $derived(share.updateShareDetails);
+
+	const superDetails = $derived(superannuation.superDetails);
+	const setSuperDetails = $derived(superannuation.setSuperDetails);
+	const updateSuperannuationDetails = $derived(superannuation.updateSuperannuationDetails);
+
+	const propertyDetails = $derived(property.propertyDetails);
+	const propertyErrors = $derived(property.propertyErrors);
+	const expandedPropertyDetailIds = $derived(property.expandedPropertyDetailIds);
+	const togglePropertyDetails = $derived(property.togglePropertyDetails);
+	const setPropertyDetails = $derived(property.setPropertyDetails);
+	const setPropertyError = $derived(property.setPropertyError);
+	const updatePropertyDetails = $derived(property.updatePropertyDetails);
+
+	const mortgageDetails = $derived(mortgage.mortgageDetails);
+	const mortgageErrors = $derived(mortgage.mortgageErrors);
+	const expandedMortgageDetailIds = $derived(mortgage.expandedMortgageDetailIds);
+	const toggleMortgageDetails = $derived(mortgage.toggleMortgageDetails);
+	const setMortgageDetails = $derived(mortgage.setMortgageDetails);
+	const setMortgageError = $derived(mortgage.setMortgageError);
+	const updateMortgageDetails = $derived(mortgage.updateMortgageDetails);
+	const validateMortgageDetails = $derived(mortgage.validateMortgageDetails);
 	// svelte-ignore state_referenced_locally
 	let { stepForValue, scheduleUpdate, formatLabel, toMonthYearInput, roundToTwo, formatRate, formatYearMonthInput } = ui;
 </script>
@@ -127,6 +124,7 @@
 					</div>
 					<div class="assets-cards mt-5 grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
 						{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
+							<div class="flex w-full flex-col gap-3">
 							<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<h3 class="text-sm font-semibold text-slate-900">
 									{personDetails[person.id]?.name ?? person.name}
@@ -459,6 +457,149 @@
 										/>
 									{/if}
 								{/if}
+								</div>
+								{#each assetsList.filter((asset) => asset.asset_type === 'superannuation' && asset.person_id === person.id) as superannuation}
+									<div class="w-full rounded-xl border border-slate-200 bg-slate-50 p-3">
+										<h3 class="truncate text-sm font-semibold text-slate-900">
+											{superannuation.name}
+										</h3>
+										<div
+											class="mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600"
+										>
+											<span class="truncate text-slate-500">Preservation age</span>
+											<input
+												type="number"
+												min="0"
+												step="1"
+												class="w-24 justify-self-end rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+												value={superDetails[superannuation.id]?.preservationAge ?? 0}
+												oninput={(event) => {
+													const next = Number((event.currentTarget as HTMLInputElement).value);
+													setSuperDetails(superannuation.id, {
+														...(superDetails[superannuation.id] ?? {
+															preservationAge: 0,
+															capitalGrowthRate: 0,
+															managementFeeRate: 0
+														}),
+														preservationAge: Number.isFinite(next) ? Math.max(0, Math.round(next)) : 0
+													});
+												}}
+												onchange={(event) => {
+													const next = Number((event.currentTarget as HTMLInputElement).value);
+													const current = superDetails[superannuation.id] ?? {
+														preservationAge: 0,
+														capitalGrowthRate: 0,
+														managementFeeRate: 0
+													};
+													const updated = {
+														...current,
+														preservationAge: Number.isFinite(next)
+															? Math.max(0, Math.round(next))
+															: 0
+													};
+													setSuperDetails(superannuation.id, updated);
+													scheduleUpdate(`super:${superannuation.id}`, () =>
+														updateSuperannuationDetails(
+															superannuation.id,
+															updated.preservationAge,
+															updated.capitalGrowthRate,
+															updated.managementFeeRate
+														)
+													);
+												}}
+											/>
+											<span></span>
+										</div>
+										<div
+											class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600"
+										>
+											<span class="truncate text-slate-500">Capital growth rate (%)</span>
+											<input
+												type="number"
+												step="0.01"
+												class="w-24 justify-self-end rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+												value={formatRate(superDetails[superannuation.id]?.capitalGrowthRate ?? 0, 2)}
+												oninput={(event) => {
+													const next = Number((event.currentTarget as HTMLInputElement).value);
+													setSuperDetails(superannuation.id, {
+														...(superDetails[superannuation.id] ?? {
+															preservationAge: 0,
+															capitalGrowthRate: 0,
+															managementFeeRate: 0
+														}),
+														capitalGrowthRate: Number.isFinite(next) ? roundToTwo(next) : 0
+													});
+												}}
+												onchange={(event) => {
+													const next = Number((event.currentTarget as HTMLInputElement).value);
+													const current = superDetails[superannuation.id] ?? {
+														preservationAge: 0,
+														capitalGrowthRate: 0,
+														managementFeeRate: 0
+													};
+													const updated = {
+														...current,
+														capitalGrowthRate: Number.isFinite(next) ? roundToTwo(next) : 0
+													};
+													setSuperDetails(superannuation.id, updated);
+													scheduleUpdate(`super:${superannuation.id}`, () =>
+														updateSuperannuationDetails(
+															superannuation.id,
+															updated.preservationAge,
+															updated.capitalGrowthRate,
+															updated.managementFeeRate
+														)
+													);
+												}}
+											/>
+											<span></span>
+										</div>
+										<div
+											class="mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1 text-xs text-slate-600"
+										>
+											<span class="truncate text-slate-500">Management fee rate (%)</span>
+											<input
+												type="number"
+												step="0.01"
+												class="w-24 justify-self-end rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm text-slate-900"
+												value={formatRate(superDetails[superannuation.id]?.managementFeeRate ?? 0, 2)}
+												oninput={(event) => {
+													const next = Number((event.currentTarget as HTMLInputElement).value);
+													setSuperDetails(superannuation.id, {
+														...(superDetails[superannuation.id] ?? {
+															preservationAge: 0,
+															capitalGrowthRate: 0,
+															managementFeeRate: 0
+														}),
+														managementFeeRate: Number.isFinite(next) ? roundToTwo(next) : 0
+													});
+												}}
+												onchange={(event) => {
+													const next = Number((event.currentTarget as HTMLInputElement).value);
+													const current = superDetails[superannuation.id] ?? {
+														preservationAge: 0,
+														capitalGrowthRate: 0,
+														managementFeeRate: 0
+													};
+													const updated = {
+														...current,
+														managementFeeRate: Number.isFinite(next) ? roundToTwo(next) : 0
+													};
+													setSuperDetails(superannuation.id, updated);
+													scheduleUpdate(`super:${superannuation.id}`, () =>
+														updateSuperannuationDetails(
+															superannuation.id,
+															updated.preservationAge,
+															updated.capitalGrowthRate,
+															updated.managementFeeRate
+														)
+													);
+												}}
+											/>
+											<span></span>
+										</div>
+									</div>
+								{/each}
 							</div>
 						{/each}
 						{#each assetsList.filter((asset) => asset.asset_type === 'shares') as share}

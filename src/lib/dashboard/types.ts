@@ -126,6 +126,12 @@ export type ShareErrors = {
 	dividendsTakenAsIncomeDate?: string;
 };
 
+export type SuperDetail = {
+	preservationAge: number;
+	capitalGrowthRate: number;
+	managementFeeRate: number;
+};
+
 export type MortgageDetail = {
 	name: string;
 	startDate: string;

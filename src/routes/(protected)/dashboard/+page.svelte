@@ -260,6 +260,14 @@ let fundingTabError = '';
 			dividendsTakenAsIncomeDate: string;
 		}
 	> = {};
+	let superDetails: Record<
+		string,
+		{
+			preservationAge: number;
+			capitalGrowthRate: number;
+			managementFeeRate: number;
+		}
+	> = {};
 	let accountInterestRates: Record<string, number> = {};
 	let propertyErrors: Record<
 		string,
@@ -454,6 +462,7 @@ let wasStage3Passed = false;
 			cashflowAmounts,
 			propertyDetails,
 			shareDetails,
+			superDetails,
 			accountInterestRates,
 			propertyErrors,
 			shareErrors,
@@ -604,6 +613,40 @@ let wasStage3Passed = false;
 			};
 		}
 		shareDetails = next;
+	}
+
+	$: if (Object.keys(superDetails).length === 0 && (assetsList.length ?? 0) > 0) {
+		const next: Record<
+			string,
+			{ preservationAge: number; capitalGrowthRate: number; managementFeeRate: number }
+		> = {};
+		for (const asset of assetsList) {
+			if (asset.asset_type !== 'superannuation') continue;
+			const details = asset.details ?? {};
+			const rawPreservationAge = details.preservationAge;
+			const rawCapitalGrowthRate = details.capitalGrowthRate;
+			const rawManagementFeeRate = details.managementFeeRate;
+			const preservationAge =
+				typeof rawPreservationAge === 'number'
+					? rawPreservationAge
+					: Number(rawPreservationAge ?? 0);
+			const capitalGrowthRate =
+				typeof rawCapitalGrowthRate === 'number'
+					? rawCapitalGrowthRate
+					: Number(rawCapitalGrowthRate ?? 0);
+			const managementFeeRate =
+				typeof rawManagementFeeRate === 'number'
+					? rawManagementFeeRate
+					: Number(rawManagementFeeRate ?? 0);
+			next[asset.id] = {
+				preservationAge: Number.isFinite(preservationAge)
+					? Math.max(0, Math.round(preservationAge))
+					: 0,
+				capitalGrowthRate: Number.isFinite(capitalGrowthRate) ? roundToTwo(capitalGrowthRate) : 0,
+				managementFeeRate: Number.isFinite(managementFeeRate) ? roundToTwo(managementFeeRate) : 0
+			};
+		}
+		superDetails = next;
 	}
 
 	$: if (Object.keys(mortgageDetails).length === 0 && (assetsList.length ?? 0) > 0) {
@@ -1003,6 +1046,17 @@ let wasStage3Passed = false;
 		}
 	) => {
 		propertyDetails = { ...propertyDetails, [id]: value };
+	};
+
+	const setSuperDetails = (
+		id: string,
+		value: {
+			preservationAge: number;
+			capitalGrowthRate: number;
+			managementFeeRate: number;
+		}
+	) => {
+		superDetails = { ...superDetails, [id]: value };
 	};
 
 	const setPropertyError = (
@@ -1631,6 +1685,19 @@ let wasStage3Passed = false;
 			openingBalance
 		);
 	};
+	const updateSuperannuationDetails = async (
+		assetId: string,
+		preservationAge: number,
+		capitalGrowthRate: number,
+		managementFeeRate: number
+	) => {
+		await dashboardMutations.updateSuperannuationDetails(
+			assetId,
+			preservationAge,
+			capitalGrowthRate,
+			managementFeeRate
+		);
+	};
 	const persistSessionRates = async () => {
 		await withLock(
 			'updateInflationRate',
@@ -1972,6 +2039,11 @@ let wasStage3Passed = false;
 					setShareDetails,
 					setShareError,
 					updateShareDetails
+				},
+				super: {
+					superDetails,
+					setSuperDetails,
+					updateSuperannuationDetails
 				},
 				property: {
 					propertyDetails,

@@ -261,6 +261,7 @@ export type DashboardScenarioResetState = {
 	cashflowAmounts: Record<string, number>;
 	propertyDetails: Record<string, unknown>;
 	shareDetails: Record<string, unknown>;
+	superDetails: Record<string, unknown>;
 	accountInterestRates: Record<string, number>;
 	propertyErrors: Record<string, unknown>;
 	shareErrors: Record<string, unknown>;
@@ -297,6 +298,7 @@ export const createDashboardScenarioResetState = (): DashboardScenarioResetState
 	cashflowAmounts: {},
 	propertyDetails: {},
 	shareDetails: {},
+	superDetails: {},
 	accountInterestRates: {},
 	propertyErrors: {},
 	shareErrors: {},

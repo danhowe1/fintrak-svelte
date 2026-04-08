@@ -19,6 +19,7 @@ import type {
 	PropertyErrors,
 	ShareDetail,
 	ShareErrors,
+	SuperDetail,
 	TransferDraft,
 	TransferEditDraft
 } from '$lib/dashboard/types';
@@ -44,6 +45,7 @@ export type {
 	PropertyErrors,
 	ShareDetail,
 	ShareErrors,
+	SuperDetail,
 	TransferDraft,
 	TransferEditDraft
 };
@@ -116,6 +118,17 @@ export type AssetsTabShareProps = {
 	) => Promise<void>;
 };
 
+export type AssetsTabSuperProps = {
+	superDetails: Record<string, SuperDetail>;
+	setSuperDetails: (assetId: string, details: SuperDetail) => void;
+	updateSuperannuationDetails: (
+		assetId: string,
+		preservationAge: number,
+		capitalGrowthRate: number,
+		managementFeeRate: number
+	) => Promise<void>;
+};
+
 export type AssetsTabPropertyProps = {
 	propertyDetails: Record<string, PropertyDetail>;
 	propertyErrors: Record<string, PropertyErrors>;
@@ -169,6 +182,7 @@ export type AssetsTabProps = {
 	person: AssetsTabPersonProps;
 	cashflow: AssetsTabCashflowProps;
 	share: AssetsTabShareProps;
+	super: AssetsTabSuperProps;
 	property: AssetsTabPropertyProps;
 	mortgage: AssetsTabMortgageProps;
 	ui: AssetsTabUiProps;
