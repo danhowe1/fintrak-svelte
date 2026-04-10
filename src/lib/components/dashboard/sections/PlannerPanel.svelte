@@ -234,32 +234,49 @@
 				<div
 					class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
 				>
-					<div class="flex items-center gap-1">
-						<span class="font-semibold">Safety Buffer Score</span>
-						<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
-							Measures how many months you could survive on your liquid buffer given living
-							expenses, asset ownership expenses and mortgage repayments. Current coverage is
-							{Math.floor(stage3Assessment.safetyMonths)} months.
-						</InfoTooltip>
-					</div>
+						<div class="flex items-center gap-1">
+							<span class="font-semibold">Safety Buffer Score</span>
+							<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
+								Measures how many months you could cover essential costs from your liquid buffer,
+								after allowing for reserve settings. Current coverage is
+								{Math.floor(stage3Assessment.safetyMonths)} months.
+								<br /><br />
+								This is measured so you can see whether you have enough accessible cash to absorb
+								expenses and short-term shocks without needing to sell growth assets too soon.
+								<br /><br />
+								It is worked out by taking accessible cash above reserves and dividing it by your
+								average monthly essential costs. For example, if you have $60,000 available and
+								essential costs are $10,000 a month, that gives 6 months of cover. The score then
+								rises as coverage improves, with stronger scores from 6 months and highest scores
+								at 12 months or more.
+							</InfoTooltip>
+						</div>
 					<span class="font-semibold">{stage3Assessment.safetyScore}/100</span>
 				</div>
 				<div
 					class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
 				>
-					<div class="flex items-center gap-1">
-						<span class="font-semibold">Resilience Score</span>
-						<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
-							Measures the largest drop in liquidity over any rolling 12-month window in your
-							projection. Worst window:
-							{stage3Assessment.worstDrawdownStartDate
-								? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
-								: 'N/A'} to {stage3Assessment.worstDrawdownEndDate
-								? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
-								: 'N/A'}
-							, drawdown: {stage3Assessment.worstDrawdownPct}%.
-						</InfoTooltip>
-					</div>
+						<div class="flex items-center gap-1">
+							<span class="font-semibold">Resilience Score</span>
+							<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
+								Measures the largest drop in liquidity over any rolling 12-month window in your
+								projection. Worst window:
+								{stage3Assessment.worstDrawdownStartDate
+									? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
+									: 'N/A'} to {stage3Assessment.worstDrawdownEndDate
+									? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
+									: 'N/A'}
+								, drawdown: {stage3Assessment.worstDrawdownPct}%.
+								<br /><br />
+								This is measured so you can see how sharply cash availability may fall during
+								stress periods, even if you do not fully run out of money.
+								<br /><br />
+								It is worked out by scanning each 12-month period, finding the biggest percentage
+								fall in liquidity, and scoring that drop. A smaller drop gives a higher score. For
+								example, a 10% drop scores much better than a 40% drop, because the plan is staying
+								more stable through tough periods.
+							</InfoTooltip>
+						</div>
 					<span class="font-semibold">{stage3Assessment.resilienceScore}/100</span>
 				</div>
 			</div>
@@ -301,7 +318,7 @@
 				<span class="font-semibold">Stage 4: Growth Efficiency</span>
 				<InfoTooltip label="What is Stage 4 growth efficiency?">
 					Stage 4 sets cap and sweep settings so excess cash can move to growth assets while still
-					respecting reserves. This stage focuses on growth allocation and goal match.
+					respecting reserves. This stage focuses on growth allocation and horizon fit.
 				</InfoTooltip>
 			</div>
 			<span
@@ -312,7 +329,7 @@
 		</div>
 		{#if stage4Passed}
 			<StatusMessage tone="success" class="mt-2 border-0 bg-transparent px-0 py-0 text-emerald-700">
-				Your cap settings support growth and match your horizon.
+				Your cap settings support growth and fit your scenario horizon.
 			</StatusMessage>
 		{/if}
 		{#if stage3Reached && plannerAdvancedOpenStage === 'stage4'}
@@ -326,33 +343,76 @@
 						<div
 							class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
 						>
-							<div class="flex items-center gap-1">
-								<span class="font-semibold">Growth Allocation Score</span>
-								<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
-									Shows how much of current value is in growth assets (shares, super,
-									investment properties) versus defensive cash. Current growth allocation is
-									{Math.round(stage3Assessment.growthAllocationPct)}%.
-								</InfoTooltip>
-							</div>
+								<div class="flex items-center gap-1">
+									<span class="font-semibold">Growth Allocation Score</span>
+									<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
+										Measures how much of your current value is held in growth assets
+										(shares, super, investment properties) versus defensive cash. Current growth
+										allocation is {Math.round(stage3Assessment.growthAllocationPct)}%.
+										<br /><br />
+										This is measured so you can see whether excess cash is being put to work for
+										longer-term growth instead of sitting too heavily in defensive holdings.
+										<br /><br />
+										It is worked out by dividing growth assets by total growth plus defensive cash.
+										For example, if you have $300,000 in growth assets and $200,000 in cash, your
+										growth allocation is 60%. The score rises as more of the portfolio is allocated
+										to growth, with the strongest scores around 70% or higher.
+									</InfoTooltip>
+								</div>
 							<span class="font-semibold">{stage3Assessment.growthScore}/100</span>
 						</div>
-						<div
-							class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
-						>
-							<div class="flex items-center gap-1">
-								<span class="font-semibold">Goal Match Score</span>
-								<InfoTooltip label="What is the Stage 4 goal match score?" theme="sky">
-									Checks whether growth allocation fits your projection horizon. Current horizon is
-									{stage3Assessment.horizonMonths} months.
-								</InfoTooltip>
+							<div
+								class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
+							>
+									<div class="flex items-center gap-1">
+										<span class="font-semibold">Horizon Fit Score</span>
+									<InfoTooltip label="What is the Stage 4 horizon fit score?" theme="sky">
+										Measures whether your current growth allocation suits your full scenario
+										projection horizon. Current full-scenario horizon is
+										{stage3Assessment.horizonMonths} months.
+										<br /><br />
+										This is measured so you can see whether your portfolio is positioned
+										appropriately for when the money is likely to be needed. Too much cash over a
+										long horizon can limit growth, while too much in growth assets when funds are
+										needed sooner can add risk.
+										<br /><br />
+										It is worked out by comparing your current growth allocation with a target for
+										the scenario horizon. Shorter horizons target less growth, longer horizons
+										target more. In this planner the target is 40% up to 5 years, 60% up to 10
+										years, and 75% beyond that. The closer your allocation is to the target, the
+										higher the score.
+									</InfoTooltip>
+									</div>
+								<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
 							</div>
-							<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
+							<div
+								class="rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900"
+							>
+								<div class="flex items-center justify-between gap-2">
+									<div class="flex items-center gap-1">
+										<span class="font-semibold">Total Financial Health Score</span>
+										<InfoTooltip label="What is the total financial health score?" theme="sky">
+											Measures your overall planner position by combining the safety buffer,
+											resilience, growth allocation and horizon fit scores. Current profile is
+											{stage3Assessment.profile}.
+											<br /><br />
+											This is measured so you can quickly see the overall shape of the plan rather
+											than needing to interpret each score separately.
+											<br /><br />
+											It is worked out as a weighted blend of the other planner scores: safety
+											buffer 35%, growth allocation 35%, resilience 20%, and horizon fit 10%.
+											The combined result is then grouped into a profile: Conservative for lower
+											scores, Balanced for mid-range scores, and Growth for higher scores.
+										</InfoTooltip>
+									</div>
+									<span class="font-semibold">{stage3Assessment.totalScore}/100</span>
+								</div>
+								<div class="mt-1 text-[11px] text-sky-800">
+									Current profile: {stage3Assessment.profile}.
+								</div>
+							</div>
 						</div>
-						<div class="text-[11px] text-sky-800">
-							Current profile: {stage3Assessment.profile} ({stage3Assessment.totalScore}/100).
-						</div>
-					</div>
-				{/if}
+					{/if}
 				{#if !stage4Passed}
 					<div
 						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
