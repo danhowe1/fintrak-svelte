@@ -336,6 +336,7 @@
 	let plannerSourceAccountId = '';
 	let autoFundingRuleError = '';
 	let plannerLiquidityShortcutError = '';
+	let plannerHeadline = '';
 	let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
 	let wasStage3Passed = false;
 	let stage3Assessment: Stage3Assessment | null = null;
@@ -365,6 +366,7 @@
 
 	$: plannerFirstShortfall = projectionData.planner?.firstShortfall ?? null;
 	$: plannerFirstLiquidityDeficit = projectionData.planner?.firstLiquidityDeficit ?? null;
+	$: plannerHeadline = projectionData.planner?.headline ?? '';
 	$: plannerStage = projectionData.planner?.stage ?? 'reserves_caps';
 	$: stage2FirstRunOutEvent = findStage2RunOutEvent(projectionData.events ?? []);
 	$: if (!stage2Passed) {
@@ -405,9 +407,7 @@
 		assetAccounts: assetAccountsList,
 		accountBalanceTargets
 	});
-	$: stage1PlannerMessage = plannerFirstLiquidityDeficit
-		? `${plannerFirstLiquidityDeficit.monthLabel}: Liquidity falls below $0 by ${formatWholeCurrency(plannerFirstLiquidityDeficit.deficitAmount)}.`
-		: '';
+	$: stage1PlannerMessage = plannerStage === 'liquidity' ? plannerHeadline : '';
 	$: stage2PlannerMessage = stage2FirstRunOutEvent
 		? stage2FirstRunOutEvent.monthLabel
 			? `${stage2FirstRunOutEvent.monthLabel}: ${stage2FirstRunOutEvent.message}`

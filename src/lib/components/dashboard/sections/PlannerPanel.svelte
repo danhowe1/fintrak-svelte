@@ -391,7 +391,11 @@
 								<div class="flex items-center justify-between gap-2">
 									<div class="flex items-center gap-1">
 										<span class="font-semibold">Total Financial Health Score</span>
-										<InfoTooltip label="What is the total financial health score?" theme="sky">
+										<InfoTooltip
+											label="What is the total financial health score?"
+											theme="sky"
+											align="right"
+										>
 											Measures your overall planner position by combining the safety buffer,
 											resilience, growth allocation and horizon fit scores. Current profile is
 											{stage3Assessment.profile}.
