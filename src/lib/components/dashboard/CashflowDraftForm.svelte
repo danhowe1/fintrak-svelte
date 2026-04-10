@@ -136,16 +136,17 @@
 			{/each}
 		</select>
 	</FormRow>
-	<label class="app-hint mt-2 flex items-center gap-2">
-		<input
-			type="checkbox"
-			checked={draft.inflationAffected}
-			onchange={(event) =>
-				onUpdate({ inflationAffected: (event.currentTarget as HTMLInputElement).checked })}
-			class="h-4 w-4 accent-slate-600"
-		/>
-		<span class="text-slate-500">Inflation affected</span>
-	</label>
+	<FormRow label="Inflation affected">
+		<div class="flex w-full justify-start">
+			<input
+				type="checkbox"
+				checked={draft.inflationAffected}
+				onchange={(event) =>
+					onUpdate({ inflationAffected: (event.currentTarget as HTMLInputElement).checked })}
+				class="h-4 w-4 accent-slate-600"
+			/>
+		</div>
+	</FormRow>
 	{#if error}
 		<InlineError message={error} />
 	{/if}

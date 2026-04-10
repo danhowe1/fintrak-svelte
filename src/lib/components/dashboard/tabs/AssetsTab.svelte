@@ -162,6 +162,21 @@
 			updateAssetCashflow(assetId, cashflowId, nextDraft, { closeFormOnSuccess: false })
 		);
 	};
+
+	const toggleCashflowEditForm = (
+		assetId: string,
+		cashflow: (typeof cashflowsByAssetId)[string][number]
+	) => {
+		if (
+			activeCashflowForm?.assetId === assetId &&
+			activeCashflowForm.cashflowId === cashflow.id
+		) {
+			closeCashflowForm();
+			return;
+		}
+
+		openCashflowFormForEdit(assetId, cashflow);
+	};
 </script>
 
 <div class="mt-3 flex flex-wrap gap-2">
@@ -417,7 +432,7 @@
 									class="text-amber-500 hover:text-amber-600"
 									aria-label="Edit cashflow"
 									title="Edit cashflow"
-									onclick={() => openCashflowFormForEdit(person.id, cashflow)}
+									onclick={() => toggleCashflowEditForm(person.id, cashflow)}
 								>
 									<svg
 										viewBox="0 0 24 24"
@@ -1386,7 +1401,7 @@
 									class="text-amber-500 hover:text-amber-600"
 									aria-label="Edit cashflow"
 									title="Edit cashflow"
-									onclick={() => openCashflowFormForEdit(property.id, cashflow)}
+									onclick={() => toggleCashflowEditForm(property.id, cashflow)}
 								>
 									<svg
 										viewBox="0 0 24 24"
