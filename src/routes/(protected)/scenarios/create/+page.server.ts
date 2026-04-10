@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions } from './$types';
+import type { Actions, PageServerLoad } from './$types';
 import { z } from 'zod';
 import { createScenarioWithPerson } from '$lib/server/database';
 import { parseYearMonthInput } from '$lib/yearMonth';
@@ -52,6 +52,14 @@ const createScenarioSchema = z.object({
 	accountInterestRate: decimalUpToTwoPlacesSchema,
 	openingBalance: currencySchema
 });
+
+export const load: PageServerLoad = async (event) => {
+	const parentData = await event.parent();
+
+	return {
+		showFirstScenarioMessage: parentData.scenarioCount === 0
+	};
+};
 
 export const actions: Actions = {
 	default: async (event) => {

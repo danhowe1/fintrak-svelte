@@ -1,9 +1,10 @@
 <script lang="ts">
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 	import Button from '$lib/components/ui/Button.svelte';
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import FormSection from '$lib/components/forms/FormSection.svelte';
 
+	export let data: PageData;
 	export let form: ActionData;
 
 	const now = new Date();
@@ -16,8 +17,9 @@
 </script>
 
 <h1>Create Scenario</h1>
-<p>No scenarios were found for your account.</p>
-<p>Create your first scenario here to start modelling accounts, assets, and ownership.</p>
+{#if data.showFirstScenarioMessage}
+	<p>Create your first scenario here to start modelling accounts, assets, and ownership.</p>
+{/if}
 
 <section class="not-prose app-panel mt-8">
 	<style>
@@ -31,10 +33,6 @@
 		}
 	</style>
 	<h2 class="app-title-lg">Scenario setup</h2>
-	<p class="app-text-muted mt-2">
-		Enter the scenario details and the first person asset. Inflation defaults to 2.0% and interest
-		rate change defaults to 0.00%.
-	</p>
 
 	<form method="POST" class="mt-6 grid gap-6">
 		<FormSection title="Scenario details">
@@ -134,7 +132,7 @@
 					label="Interest rate (%)"
 					name="accountInterestRate"
 					step="0.01"
-					value={form?.values?.accountInterestRate ?? ''}
+					value={form?.values?.accountInterestRate ?? '0.00'}
 					error={form?.errors?.accountInterestRate?.[0]}
 					required
 					class="no-spin"

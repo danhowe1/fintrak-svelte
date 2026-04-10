@@ -181,6 +181,7 @@
 	$: autoSweepRules = $dashboardWhatIfState.autoSweepRules;
 	let autoRunProjection = true;
 	let whatIfPanelElement: HTMLElement | null = null;
+	let isWhatIfAddAssetMenuOpen = false;
 	const dashboardLoadState = createDashboardLoadStateStore();
 	const setProjectionError = (message: string | null) =>
 		dashboardLoadState.setProjectionError(message);
@@ -1471,6 +1472,7 @@
 
 	const jumpToWhatIfAssetsExpense = async () => {
 		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
 		const firstPerson = assetsList.find((asset) => asset.asset_type === 'person');
 		const firstExpense = firstPerson
 			? (cashflowsByAssetId[firstPerson.id] ?? []).find(
@@ -1493,6 +1495,43 @@
 				// Some input types may not support text selection.
 			}
 		}
+	};
+
+	const jumpToWhatIfLivingExpenses = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstPerson = assetsList.find((asset) => asset.asset_type === 'person');
+		const firstLivingExpense = firstPerson
+			? (cashflowsByAssetId[firstPerson.id] ?? []).find(
+					(cashflow) =>
+						cashflow.cashflow_type === 'expense' && cashflow.category === 'living_expenses'
+				)
+			: null;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		if (firstLivingExpense) {
+			const targetInput = document.getElementById(
+				`cashflow-input-${firstLivingExpense.id}`
+			) as HTMLInputElement | null;
+			targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+			targetInput?.focus({ preventScroll: true });
+			try {
+				targetInput?.select();
+			} catch {
+				// Some input types may not support text selection.
+			}
+		}
+	};
+
+	const jumpToWhatIfAddAsset = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = true;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	};
 
 	const saveAutoFundingRule = async () => {
@@ -2022,6 +2061,7 @@
 			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
 		},
 		whatIfPanelProps: {
+			isAddAssetMenuOpen: isWhatIfAddAssetMenuOpen,
 			isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
 			whatIfLoadError: $dashboardLoadState.whatIfLoadError,
 			assetsTabProps: {
@@ -2178,6 +2218,8 @@
 			stage1PlannerMessage,
 			assetsList,
 			jumpToWhatIfAssetsExpense,
+			jumpToWhatIfAddAsset,
+			jumpToWhatIfLivingExpenses,
 			stage2Reached,
 			stage2Passed,
 			stage2PlannerMessage,
@@ -2266,6 +2308,7 @@
 				{...dashboardSections.whatIfPanelProps}
 				bind:whatIfPanelElement
 				bind:assetPanelTab
+				bind:isAddAssetMenuOpen={isWhatIfAddAssetMenuOpen}
 			/>
 		</div>
 		<PlannerPanel

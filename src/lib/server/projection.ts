@@ -1995,7 +1995,7 @@ export const buildProjection = (input: {
 			stage,
 			status: stage === 'reserves_caps' ? 'on_track' : 'needs_attention',
 			headline: firstLiquidityDeficit
-				? 'Liquidity falls below $0.'
+				? `${firstLiquidityDeficit.monthLabel}: Liquidity falls below $0.`
 				: firstShortfall
 					? firstShortfall.minBalance > 0
 						? `${firstShortfall.targetAccountName} is projected to drop below its reserve target (${formatEventCurrency(firstShortfall.minBalance)}) in ${firstShortfall.monthLabel}.`

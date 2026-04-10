@@ -8,6 +8,8 @@
 	export let stage1PlannerMessage: string;
 	export let assetsList: Array<{ asset_type?: string }>;
 	export let jumpToWhatIfAssetsExpense: () => void;
+	export let jumpToWhatIfAddAsset: () => void;
+	export let jumpToWhatIfLivingExpenses: () => void;
 
 	export let stage2Reached: boolean;
 	export let stage2Passed: boolean;
@@ -76,11 +78,30 @@
 				</div>
 				<div class="mt-3 text-xs font-semibold">Ways you can fix your liquidity:</div>
 				<ul class="mt-2 list-disc pl-5 text-xs">
-					<li>Reduce or remove expenses.</li>
-					<li>Increase income or add an income stream.</li>
-					<li>Add an income generating asset.</li>
 					<li>
-						Sell an asset to bring in income{assetsList.some(
+						<button
+							type="button"
+							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+							onclick={jumpToWhatIfAddAsset}
+						>
+							Add an income generating asset.
+						</button>
+					</li>
+					<li>
+						<button
+							type="button"
+							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+							onclick={jumpToWhatIfLivingExpenses}
+						>
+							Reduce or remove expenses.
+						</button>
+					</li>
+					<li>Increase income or add an income stream.</li>
+					<li>Keep working for longer.</li>
+					<li>
+						Sell an item or asset to bring in income{assetsList.some(
 							(asset) => asset.asset_type === 'property'
 						)
 							? ' (e.g. property).'
@@ -92,7 +113,10 @@
 					<a
 						href="#what-if-panel"
 						class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-						on:click|preventDefault={jumpToWhatIfAssetsExpense}
+						onclick={(event) => {
+							event.preventDefault();
+							void jumpToWhatIfAssetsExpense();
+						}}
 					>
 						What if?...
 					</a>
@@ -202,8 +226,8 @@
 		<div
 			role="button"
 			tabindex="0"
-			on:click={() => (plannerAdvancedOpenStage = 'stage3')}
-			on:keydown={(event) => {
+			onclick={() => (plannerAdvancedOpenStage = 'stage3')}
+			onkeydown={(event) => {
 				if (event.key === 'Enter' || event.key === ' ') {
 					event.preventDefault();
 					plannerAdvancedOpenStage = 'stage3';
@@ -297,7 +321,10 @@
 					<a
 						href="#what-if-panel"
 						class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-						on:click|preventDefault={jumpToWhatIfReserves}
+						onclick={(event) => {
+							event.preventDefault();
+							void jumpToWhatIfReserves();
+						}}
 					>
 						What if?...
 					</a>
@@ -309,8 +336,8 @@
 		<div
 			role="button"
 			tabindex="0"
-			on:click={() => (plannerAdvancedOpenStage = 'stage4')}
-			on:keydown={(event) => {
+			onclick={() => (plannerAdvancedOpenStage = 'stage4')}
+			onkeydown={(event) => {
 				if (event.key === 'Enter' || event.key === ' ') {
 					event.preventDefault();
 					plannerAdvancedOpenStage = 'stage4';
@@ -431,7 +458,10 @@
 							<a
 								href="#what-if-panel"
 								class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
-								on:click|preventDefault={jumpToWhatIfCaps}
+								onclick={(event) => {
+									event.preventDefault();
+									void jumpToWhatIfCaps();
+								}}
 							>
 								What if?...
 							</a>

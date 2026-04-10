@@ -12,6 +12,7 @@
 
 	export let whatIfPanelElement: HTMLElement | null = null;
 	export let assetPanelTab: AssetPanelTab;
+	export let isAddAssetMenuOpen = false;
 	export let isInitialWhatIfLoading: boolean;
 	export let whatIfLoadError: string | null;
 
@@ -66,7 +67,7 @@
 				(assetPanelTab = next as 'assets' | 'accounts' | 'transfers' | 'reserves' | 'caps')}
 		/>
 		{#if assetPanelTab === 'assets'}
-			<details class="relative">
+			<details class="relative" bind:open={isAddAssetMenuOpen}>
 				<summary class="app-btn-primary-xs flex cursor-pointer items-center gap-2 list-none">
 					<span>Add asset...</span>
 					<span aria-hidden="true" class="text-[10px]">▼</span>
