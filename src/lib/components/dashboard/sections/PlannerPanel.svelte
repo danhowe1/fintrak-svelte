@@ -237,15 +237,15 @@
 						<div class="flex items-center gap-1">
 							<span class="font-semibold">Safety Buffer Score</span>
 							<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
-								Measures how many months you could cover essential costs from your liquid buffer,
-								after allowing for reserve settings. Current coverage is
+								Measures how many months you could cover essential costs from your total liquid
+								cash buffer. Current coverage is
 								{Math.floor(stage3Assessment.safetyMonths)} months.
 								<br /><br />
 								This is measured so you can see whether you have enough accessible cash to absorb
 								expenses and short-term shocks without needing to sell growth assets too soon.
 								<br /><br />
-								It is worked out by taking accessible cash above reserves and dividing it by your
-								average monthly essential costs. For example, if you have $60,000 available and
+								It is worked out by taking your total accessible cash and dividing it by your
+								average monthly essential costs. For example, if you have $60,000 in liquid cash and
 								essential costs are $10,000 a month, that gives 6 months of cover. The score then
 								rises as coverage improves, with stronger scores from 6 months and highest scores
 								at 12 months or more.
@@ -260,13 +260,17 @@
 							<span class="font-semibold">Resilience Score</span>
 							<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
 								Measures the largest drop in liquidity over any rolling 12-month window in your
-								projection. Worst window:
-								{stage3Assessment.worstDrawdownStartDate
-									? monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)
-									: 'N/A'} to {stage3Assessment.worstDrawdownEndDate
-									? monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)
-									: 'N/A'}
-								, drawdown: {stage3Assessment.worstDrawdownPct}%.
+								projection.
+								{#if stage3Assessment.worstDrawdownPct > 0 &&
+									stage3Assessment.worstDrawdownStartDate &&
+									stage3Assessment.worstDrawdownEndDate}
+									Worst window:
+									{monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)} to
+									{monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)}, drawdown:
+									{stage3Assessment.worstDrawdownPct}%.
+								{:else}
+									No liquidity drawdown was detected in the projection.
+								{/if}
 								<br /><br />
 								This is measured so you can see how sharply cash availability may fall during
 								stress periods, even if you do not fully run out of money.
@@ -281,11 +285,11 @@
 				</div>
 			</div>
 		{/if}
-		{#if stage3Reached && plannerAdvancedOpenStage === 'stage3' && !stage3Passed}
+		{#if stage3Reached && !stage3Passed}
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 				<div class="font-semibold">Set Reserve Settings In What If</div>
 				<div class="mt-1 text-xs">
-					Use the Reserves tab in the What if?... section to set reserve amounts and funding source
+					You don't have a safe level of cash reserves. If possible, increase reserve amounts and set funding source
 					priorities.
 				</div>
 				<div class="mt-2 text-xs">
@@ -333,11 +337,7 @@
 			</StatusMessage>
 		{/if}
 		{#if stage3Reached && plannerAdvancedOpenStage === 'stage4'}
-			{#if !stage4Reached}
-				<div class="app-hint mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-					Complete Stage 3 safety targets first to unlock Stage 4.
-				</div>
-			{:else}
+			{#if stage4Reached}
 				{#if stage3Assessment}
 					<div class="mt-3 space-y-2 text-xs text-sky-900">
 						<div
@@ -412,7 +412,7 @@
 								</div>
 							</div>
 						</div>
-					{/if}
+				{/if}
 				{#if !stage4Passed}
 					<div
 						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"

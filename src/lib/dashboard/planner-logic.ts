@@ -161,22 +161,15 @@ export const calculateStage3Assessment = (input: {
 			series.points?.[0]?.balance ?? 0
 		])
 	);
-	const reserveByAccountId = new Map(
-		(accountBalanceTargets ?? [])
-			.filter((target) => target.enabled)
-			.map((target) => [target.account_id, Math.max(0, Number(target.min_balance) || 0)])
+	const liquidCashBuffer = Array.from(liquidBufferAccountIds).reduce(
+		(sum, accountId) => sum + Math.max(0, openingBalanceByAccountId.get(accountId) ?? 0),
+		0
 	);
-
-	const availableCashBuffer = Array.from(liquidBufferAccountIds).reduce((sum, accountId) => {
-		const openingBalance = openingBalanceByAccountId.get(accountId) ?? 0;
-		const reserveAmount = reserveByAccountId.get(accountId) ?? 0;
-		return sum + Math.max(0, openingBalance - reserveAmount);
-	}, 0);
 
 	const safetyMonths =
 		monthlyEssentialOutgoings > 0
-			? availableCashBuffer / monthlyEssentialOutgoings
-			: availableCashBuffer > 0
+			? liquidCashBuffer / monthlyEssentialOutgoings
+			: liquidCashBuffer > 0
 				? 24
 				: 0;
 	const safetyScore =
