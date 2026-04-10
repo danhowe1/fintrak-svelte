@@ -6,9 +6,6 @@
 	let { data, actions, ui }: AccountsTabProps = $props();
 </script>
 
-<div class="mt-3 flex flex-wrap gap-2">
-	<a href="/accounts/create" class="app-btn-primary-xs"> Add account </a>
-</div>
 <div class="app-card mt-5">
 	{#if data.accountsList.length > 0}
 		<div class="overflow-x-auto">

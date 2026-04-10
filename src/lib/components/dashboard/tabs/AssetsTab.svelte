@@ -179,15 +179,6 @@
 	};
 </script>
 
-<div class="mt-3 flex flex-wrap gap-2">
-	<a href="/assets/person/create" class="app-btn-primary-xs"> Add person </a>
-	<a href="/assets/property/create" class="app-btn-primary-xs"> Add property </a>
-	{#if assetsList.some((asset) => asset.asset_type === 'property')}
-		<a href="/assets/mortgage/create" class="app-btn-primary-xs"> Add mortgage </a>
-	{/if}
-	<a href="/assets/superannuation/create" class="app-btn-primary-xs"> Add superannuation </a>
-	<a href="/assets/shares/create" class="app-btn-primary-xs"> Add shares </a>
-</div>
 <div
 	bind:this={assetsCardsElement}
 	class="assets-cards mt-5 grid gap-3 p-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"

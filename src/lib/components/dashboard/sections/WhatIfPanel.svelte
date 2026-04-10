@@ -27,6 +27,9 @@
 		{ value: 'reserves', label: 'Reserves' },
 		{ value: 'caps', label: 'Caps' }
 	];
+
+	const hasPropertyAsset = () =>
+		assetsTabProps.data.assetsList.some((asset) => asset.asset_type === 'property');
 </script>
 
 <div id="what-if-panel" bind:this={whatIfPanelElement} class="app-panel relative">
@@ -53,13 +56,48 @@
 			</span>
 		</span>
 	</div>
-	<SegmentedControl
-		class="mt-3 text-xs font-semibold"
-		options={assetTabOptions}
-		value={assetPanelTab}
-		onChange={(next) =>
-			(assetPanelTab = next as 'assets' | 'accounts' | 'transfers' | 'reserves' | 'caps')}
-	/>
+	<div class="mt-3 flex flex-wrap items-start justify-between gap-2">
+		<SegmentedControl
+			class="text-xs font-semibold"
+			options={assetTabOptions}
+			value={assetPanelTab}
+			onChange={(next) =>
+				(assetPanelTab = next as 'assets' | 'accounts' | 'transfers' | 'reserves' | 'caps')}
+		/>
+		{#if assetPanelTab === 'assets'}
+			<details class="relative">
+				<summary class="app-btn-primary-xs flex cursor-pointer items-center gap-2 list-none">
+					<span>Add asset...</span>
+					<span aria-hidden="true" class="text-[10px]">▼</span>
+				</summary>
+				<div
+					class="absolute top-full right-0 z-10 mt-2 min-w-[13rem] rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
+				>
+					<div class="flex flex-col gap-2">
+						<a href="/assets/person/create" class="app-btn-primary-xs justify-center">
+							Add person
+						</a>
+						<a href="/assets/property/create" class="app-btn-primary-xs justify-center">
+							Add property
+						</a>
+						{#if hasPropertyAsset()}
+							<a href="/assets/mortgage/create" class="app-btn-primary-xs justify-center">
+								Add mortgage
+							</a>
+						{/if}
+						<a href="/assets/superannuation/create" class="app-btn-primary-xs justify-center">
+							Add superannuation
+						</a>
+						<a href="/assets/shares/create" class="app-btn-primary-xs justify-center">
+							Add shares
+						</a>
+					</div>
+				</div>
+			</details>
+		{:else if assetPanelTab === 'accounts'}
+			<a href="/accounts/create" class="app-btn-primary-xs">Add account</a>
+		{/if}
+	</div>
 	{#if !isInitialWhatIfLoading}
 		{#if assetPanelTab === 'assets'}
 			<AssetsTab
@@ -109,3 +147,13 @@
 		</div>
 	{/if}
 </div>
+
+<style>
+	details > summary::-webkit-details-marker {
+		display: none;
+	}
+
+	details > summary {
+		list-style: none;
+	}
+</style>
