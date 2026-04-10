@@ -1,7 +1,28 @@
 <script lang="ts">
-	import type { PageData } from './$types';
+	import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte';
+	import Button from '$lib/components/ui/Button.svelte';
+	import type { ActionData, PageData } from './$types';
 
 	export let data: PageData;
+	export let form: ActionData;
+
+	let deleteForm: HTMLFormElement | null = null;
+	let pendingDeleteScenarioId = '';
+	let pendingDeleteScenarioName = '';
+
+	const openDeleteConfirm = (scenarioId: string, scenarioName: string) => {
+		pendingDeleteScenarioId = scenarioId;
+		pendingDeleteScenarioName = scenarioName;
+	};
+
+	const cancelDeleteScenario = () => {
+		pendingDeleteScenarioId = '';
+		pendingDeleteScenarioName = '';
+	};
+
+	const confirmDeleteScenario = () => {
+		deleteForm?.requestSubmit();
+	};
 </script>
 
 <h1>Scenarios</h1>
@@ -15,6 +36,12 @@
 </section>
 
 <section class="mt-2 grid gap-4">
+	{#if form?.error}
+		<div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+			{form.error}
+		</div>
+	{/if}
+
 	{#if data.scenarios.length === 0}
 		<div class="app-panel">
 			<p class="app-text-muted">No scenarios found.</p>
@@ -28,11 +55,38 @@
 						<div class="app-text-muted mt-2"></div>
 					</div>
 
-					<a href={`/dashboard?scenarioId=${scenario.id}`} class="app-btn-primary-sm">
-						View dashboard
-					</a>
+					<div class="flex items-center gap-2">
+						{#if scenario.is_owner}
+							<Button
+								type="button"
+								variant="danger"
+								size="xs"
+								onclick={() => openDeleteConfirm(scenario.id, scenario.name)}
+							>
+								Delete scenario
+							</Button>
+						{/if}
+
+						<a href={`/dashboard?scenarioId=${scenario.id}`} class="app-btn-primary-sm">
+							View dashboard
+						</a>
+					</div>
 				</div>
 			</div>
 		{/each}
 	{/if}
 </section>
+
+<form method="POST" action="?/delete" bind:this={deleteForm} class="hidden">
+	<input type="hidden" name="scenarioId" value={pendingDeleteScenarioId} />
+</form>
+
+<ConfirmDialog
+	open={Boolean(pendingDeleteScenarioId)}
+	title="Delete scenario?"
+	message={`"${pendingDeleteScenarioName}" and everything in it will be permanently removed.`}
+	confirmLabel="Delete"
+	cancelLabel="Cancel"
+	onCancel={cancelDeleteScenario}
+	onConfirm={confirmDeleteScenario}
+/>

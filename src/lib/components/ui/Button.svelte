@@ -15,7 +15,8 @@
 		secondary:
 			'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60',
 		'secondary-subtle': 'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
-		danger: 'bg-rose-600 text-white hover:bg-rose-700',
+		danger:
+			'bg-rose-600 text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60',
 		ghost: 'bg-transparent text-slate-700 hover:bg-slate-100',
 		'pill-secondary':
 			'border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60'

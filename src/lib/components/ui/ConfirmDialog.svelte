@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 
 	export let open = false;
@@ -8,6 +9,21 @@
 	export let cancelLabel = 'Cancel';
 	export let onConfirm: () => void | Promise<void>;
 	export let onCancel: () => void;
+
+	let isConfirming = false;
+
+	$: if (!open) {
+		isConfirming = false;
+	}
+
+	const handleConfirm = async () => {
+		if (isConfirming) return;
+		isConfirming = true;
+		await tick();
+		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+		await new Promise<void>((resolve) => setTimeout(resolve, 120));
+		await onConfirm();
+	};
 </script>
 
 {#if open}
@@ -21,12 +37,19 @@
 					variant="secondary"
 					size="xs"
 					class="border-slate-200 text-slate-600"
+					disabled={isConfirming}
 					onclick={onCancel}
 				>
 					{cancelLabel}
 				</Button>
-				<Button type="button" variant="danger" size="xs" onclick={onConfirm}>
-					{confirmLabel}
+				<Button
+					type="button"
+					variant="danger"
+					size="xs"
+					disabled={isConfirming}
+					onclick={handleConfirm}
+				>
+					{isConfirming ? 'Deleting...' : confirmLabel}
 				</Button>
 			</div>
 		</div>

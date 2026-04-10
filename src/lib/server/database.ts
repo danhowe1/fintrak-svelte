@@ -134,10 +134,14 @@ export type ScenarioSummary = {
 	name: string;
 };
 
-export type ScenarioListItem = {
+export type ScenarioRecord = {
 	id: string;
 	name: string;
 	created_at: string;
+};
+
+export type ScenarioListItem = ScenarioRecord & {
+	is_owner: boolean;
 };
 
 export async function getSingleScenarioForUser(userId: string) {
@@ -160,7 +164,7 @@ export async function getSingleScenarioForUser(userId: string) {
 }
 
 export async function getScenarioForUserById(userId: string, scenarioId: string) {
-	const result = await getPool().query<ScenarioListItem>(
+	const result = await getPool().query<ScenarioRecord>(
 		`
 			select s.id, s.name, s.created_at
 			from scenarios s
@@ -180,7 +184,7 @@ export async function getScenarioForUserById(userId: string, scenarioId: string)
 export async function getScenariosForUser(userId: string) {
 	const result = await getPool().query<ScenarioListItem>(
 		`
-			select distinct s.id, s.name, s.created_at
+			select distinct s.id, s.name, s.created_at, (s.created_by = $1::text) as is_owner
 			from scenarios s
 			left join scenario_members sm
 				on sm.scenario_id = s.id
@@ -193,6 +197,20 @@ export async function getScenariosForUser(userId: string) {
 	);
 
 	return result.rows;
+}
+
+export async function deleteScenarioForOwner(userId: string, scenarioId: string) {
+	const result = await getPool().query<{ id: string }>(
+		`
+			delete from scenarios
+			where id = $1::uuid
+			  and created_by = $2::text
+			returning id
+		`,
+		[scenarioId, userId]
+	);
+
+	return result.rows[0] ?? null;
 }
 
 export type AssetListItem = {
