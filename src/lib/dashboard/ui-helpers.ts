@@ -11,7 +11,7 @@ export const isValidMonthYearInput = (value: string) =>
 export const stepForValue = (value: number) => {
 	const absValue = Math.abs(value);
 	if (absValue <= 1) return 0.25;
-	if (absValue <= 100) return 1;
+	if (absValue <= 100) return 10;
 	if (absValue <= 1000) return 100;
 	if (absValue <= 10000) return 500;
 	if (absValue <= 100000) return 5000;
