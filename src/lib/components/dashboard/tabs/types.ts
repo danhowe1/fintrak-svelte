@@ -97,7 +97,12 @@ export type AssetsTabCashflowProps = {
 	cashflowFormErrors: Record<string, string>;
 	setCashflowDraft: (key: string, updates: Partial<CashflowDraft>) => void;
 	closeCashflowForm: () => void;
-	updateAssetCashflow: (assetId: string, cashflowId: string, draft: CashflowDraft) => Promise<void>;
+	updateAssetCashflow: (
+		assetId: string,
+		cashflowId: string,
+		draft: CashflowDraft,
+		options?: { closeFormOnSuccess?: boolean }
+	) => Promise<void>;
 	createAssetCashflow: (assetId: string, draft: CashflowDraft) => Promise<void>;
 };
 

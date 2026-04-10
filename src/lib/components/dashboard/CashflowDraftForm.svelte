@@ -32,7 +32,7 @@
 		error = '',
 		amountStep,
 		onUpdate,
-		onCancel,
+		onDismiss,
 		onSubmit
 	} = $props<{
 		draft: CashflowDraftModel;
@@ -43,8 +43,8 @@
 		error?: string;
 		amountStep: number;
 		onUpdate: (updates: Partial<CashflowDraftModel>) => void;
-		onCancel: () => void;
-		onSubmit: () => void;
+		onDismiss: () => void;
+		onSubmit?: () => void;
 	}>();
 </script>
 
@@ -78,15 +78,17 @@
 				onUpdate({ description: (event.currentTarget as HTMLInputElement).value })}
 		/>
 	</FormRow>
-	<FormRow label="Amount">
-		<input
-			type="number"
-			class="app-input-block-compact"
-			value={draft.amount}
-			step={amountStep}
-			oninput={(event) => onUpdate({ amount: (event.currentTarget as HTMLInputElement).value })}
-		/>
-	</FormRow>
+	{#if !isEdit}
+		<FormRow label="Amount">
+			<input
+				type="number"
+				class="app-input-block-compact"
+				value={draft.amount}
+				step={amountStep}
+				oninput={(event) => onUpdate({ amount: (event.currentTarget as HTMLInputElement).value })}
+			/>
+		</FormRow>
+	{/if}
 	<FormRow label="Start (MM YYYY)">
 		<input
 			type="text"
@@ -153,18 +155,20 @@
 			variant="secondary"
 			size="xs"
 			class="border-slate-200 text-slate-600"
-			onclick={onCancel}
+			onclick={onDismiss}
 		>
-			Cancel
+			{isEdit ? 'Close' : 'Cancel'}
 		</Button>
-		<Button
-			type="button"
-			variant="primary"
-			size="xs"
-			disabled={!draft.assetAccountId}
-			onclick={onSubmit}
-		>
-			{isEdit ? 'Save' : 'Add'}
-		</Button>
+		{#if !isEdit}
+			<Button
+				type="button"
+				variant="primary"
+				size="xs"
+				disabled={!draft.assetAccountId}
+				onclick={onSubmit}
+			>
+				Add
+			</Button>
+		{/if}
 	</div>
 </div>

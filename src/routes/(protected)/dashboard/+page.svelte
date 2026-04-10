@@ -1565,8 +1565,13 @@
 	const createAssetCashflow = async (assetId: string, draft: CashflowDraft) => {
 		await dashboardMutations.createAssetCashflow(assetId, draft);
 	};
-	const updateAssetCashflow = async (assetId: string, cashflowId: string, draft: CashflowDraft) => {
-		await dashboardMutations.updateAssetCashflow(assetId, cashflowId, draft);
+	const updateAssetCashflow = async (
+		assetId: string,
+		cashflowId: string,
+		draft: CashflowDraft,
+		options?: { closeFormOnSuccess?: boolean }
+	) => {
+		await dashboardMutations.updateAssetCashflow(assetId, cashflowId, draft, options);
 	};
 	const createTransferCashflow = async () => {
 		await dashboardMutations.createTransferCashflow();

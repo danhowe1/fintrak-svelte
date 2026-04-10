@@ -147,6 +147,21 @@
 			fixedSellingCosts: Number(propertyAsset.details?.fixedSellingCosts) || 0,
 			variableSellingCosts: Number(propertyAsset.details?.variableSellingCosts) || 0
 		};
+
+	const updateCashflowDraftAndPersist = (
+		assetId: string,
+		draftKey: string,
+		draft: typeof cashflowDrafts[string],
+		cashflowId: string | undefined,
+		updates: Partial<typeof cashflowDrafts[string]>
+	) => {
+		setCashflowDraft(draftKey, updates);
+		if (!cashflowId) return;
+		const nextDraft = { ...draft, ...updates };
+		scheduleUpdate(`cashflow-edit:${cashflowId}`, () =>
+			updateAssetCashflow(assetId, cashflowId, nextDraft, { closeFormOnSuccess: false })
+		);
+	};
 </script>
 
 <div class="mt-3 flex flex-wrap gap-2">
@@ -476,8 +491,15 @@
 							assetAccountOptions={getAssetAccountOptions(person.id)}
 							error={cashflowFormErrors[person.id]}
 							amountStep={stepForValue(Number(draft.amount) || 0)}
-							onUpdate={(updates) => setCashflowDraft(draftKey, updates)}
-							onCancel={closeCashflowForm}
+							onUpdate={(updates) =>
+								updateCashflowDraftAndPersist(
+									person.id,
+									draftKey,
+									draft,
+									activeCashflowForm.cashflowId,
+									updates
+								)}
+							onDismiss={closeCashflowForm}
 							onSubmit={() =>
 								activeCashflowForm?.cashflowId
 									? updateAssetCashflow(person.id, activeCashflowForm.cashflowId, draft)
@@ -1438,8 +1460,15 @@
 							assetAccountOptions={getAssetAccountOptions(property.id)}
 							error={cashflowFormErrors[property.id]}
 							amountStep={stepForValue(Number(draft.amount) || 0)}
-							onUpdate={(updates) => setCashflowDraft(draftKey, updates)}
-							onCancel={closeCashflowForm}
+							onUpdate={(updates) =>
+								updateCashflowDraftAndPersist(
+									property.id,
+									draftKey,
+									draft,
+									activeCashflowForm.cashflowId,
+									updates
+								)}
+							onDismiss={closeCashflowForm}
 							onSubmit={() =>
 								activeCashflowForm?.cashflowId
 									? updateAssetCashflow(property.id, activeCashflowForm.cashflowId, draft)

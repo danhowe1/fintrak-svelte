@@ -146,6 +146,7 @@ export const updateAssetCashflowCommand = async (params: {
 	setCashflows: (cashflows: CashflowSummary[]) => void;
 	clearForm: () => void;
 	setFormError: (message: string) => void;
+	closeFormOnSuccess?: boolean;
 }): Promise<string | null> => {
 	try {
 		await params.withLock(
@@ -179,7 +180,9 @@ export const updateAssetCashflowCommand = async (params: {
 					await params.refreshProjection({ includeCashflows: true });
 				}
 				params.setFormError('');
-				params.clearForm();
+				if (params.closeFormOnSuccess ?? true) {
+					params.clearForm();
+				}
 			},
 			params.autoRunProjection
 		);

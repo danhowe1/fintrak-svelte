@@ -451,7 +451,12 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		if (error) deps.setProjectionError(error);
 	};
 
-	const updateAssetCashflow = async (assetId: string, cashflowId: string, draft: CashflowDraft) => {
+	const updateAssetCashflow = async (
+		assetId: string,
+		cashflowId: string,
+		draft: CashflowDraft,
+		options?: { closeFormOnSuccess?: boolean }
+	) => {
 		const error = await updateAssetCashflowCommand({
 			assetId,
 			cashflowId,
@@ -467,7 +472,8 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 			},
 			setFormError: (message) => {
 				deps.setCashflowFormErrors({ ...deps.getCashflowFormErrors(), [assetId]: message });
-			}
+			},
+			closeFormOnSuccess: options?.closeFormOnSuccess
 		});
 		if (error) deps.setProjectionError(error);
 	};
