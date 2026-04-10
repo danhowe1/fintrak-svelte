@@ -26,7 +26,7 @@ export const load: LayoutServerLoad = async (event) => {
 		});
 	}
 
-	const path = event.url.pathname;
+	const path = event.untrack(() => event.url.pathname);
 
 	if (scenarioCount === 0 && path !== '/scenarios/create') {
 		throw redirect(303, '/scenarios/create');

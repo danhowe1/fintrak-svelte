@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
+import type { Actions } from './$types';
 import { z } from 'zod';
 import {
 	createAsset,
@@ -648,55 +648,6 @@ const normalizeMonth = (value: string) => {
 		throw new Error('Invalid month format');
 	}
 	return parsedValue;
-};
-
-export const load: PageServerLoad = async (event) => {
-	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
-
-	const scenarioId = event.cookies.get('currentScenarioId');
-	if (!scenarioId) {
-		throw redirect(303, '/scenarios');
-	}
-
-	const scenario = await getScenarioForUserById(userId, scenarioId);
-	if (!scenario) {
-		throw redirect(303, '/scenarios');
-	}
-
-	const assetType = assetTypeSchema.safeParse(event.params.assetType);
-	if (!assetType.success) {
-		throw redirect(303, '/dashboard');
-	}
-
-	const accounts = await getAccountsForScenario(scenario.id);
-	const properties = (await getAssetsForScenario(scenario.id)).filter(
-		(asset) => asset.asset_type === 'property'
-	);
-	const people = (await getAssetsForScenario(scenario.id)).filter(
-		(asset) => asset.asset_type === 'person'
-	);
-	const cashAccounts = accounts.filter((account) => account.account_type === 'cash_account');
-
-	const hasPrimaryResidence = properties.some(
-		(asset) => asset.details?.propertyUse === 'primary_residence'
-	);
-	const defaultPropertyUse =
-		properties.length === 0 ? 'primary_residence' : 'investment_property';
-
-	return {
-		scenario,
-		assetType: assetType.data,
-		accounts,
-		properties,
-		people,
-		cashAccounts,
-		hasPrimaryResidence,
-		defaultPropertyUse
-	};
 };
 
 export const actions: Actions = {

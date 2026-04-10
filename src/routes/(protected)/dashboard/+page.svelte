@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
 	import { afterUpdate, onDestroy, onMount, tick } from 'svelte';
+	import { page } from '$app/stores';
 	import Chart from 'chart.js/auto';
 	import { formatYearMonthInput, normalizeYearMonthValue } from '$lib/yearMonth';
 	import { postAction } from '$lib/dashboard/action-client';
@@ -212,6 +213,12 @@
 	let projectionView: ProjectionView = 'balances';
 	let projectionBalanceSource: ProjectionBalanceSource = 'liquidity';
 	let assetPanelTab: AssetPanelTab = 'assets';
+	const isAssetPanelTab = (value: string | null): value is AssetPanelTab =>
+		value === 'assets' ||
+		value === 'accounts' ||
+		value === 'transfers' ||
+		value === 'reserves' ||
+		value === 'caps';
 	let isUpdating = false;
 	let updateLocks = new Set<string>();
 	let expandedPnlNodes = new Set<string>();
@@ -2196,6 +2203,10 @@
 	});
 
 	onMount(() => {
+		const requestedWhatIfTab = $page.url.searchParams.get('whatIfTab');
+		if (isAssetPanelTab(requestedWhatIfTab)) {
+			assetPanelTab = requestedWhatIfTab;
+		}
 		void loadInitialDashboardSections();
 	});
 

@@ -1,24 +1,42 @@
 <script lang="ts">
-	import type { ActionData, PageData } from './$types';
+	import type { ActionData } from './$types';
+	import { onMount } from 'svelte';
+	import { page } from '$app/stores';
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import FormSection from '$lib/components/forms/FormSection.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 
-	export let data: PageData;
-	export let form: ActionData;
+	let { form }: { form: ActionData } = $props();
 
-	const selectedType = (form?.values?.assetType as string) ?? data.assetType;
-	const assetTypeTitle = selectedType.replace(/_/g, ' ');
-	const assetTypeLabel = selectedType.replace(/_/g, ' ').toUpperCase();
-	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
-	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
-	let propertyUse =
-		(form?.values?.propertyUse as string) ?? data.defaultPropertyUse ?? 'investment_property';
-	let useSameAccount =
-		(form?.values?.useSameAccount as string) === 'on' || form?.values?.useSameAccount == null;
-	let mortgagePaymentSourceChoice = (form?.values?.mortgagePaymentSourceChoice as string) ?? '';
-	let mortgageOffsetChoice = (form?.values?.mortgageOffsetChoice as string) ?? 'none';
-	let mortgageInterestOnly = (form?.values?.mortgageInterestOnly as string) === 'on';
+	type AssetContext = {
+		scenario: { id: string; name: string };
+		accounts: Array<{ id: string; name: string }>;
+		properties: Array<{ id: string; name: string; details: Record<string, unknown> | null }>;
+		people: Array<{ id: string; name: string }>;
+		cashAccounts: Array<{ id: string; name: string }>;
+		hasPrimaryResidence: boolean;
+		defaultPropertyUse: 'primary_residence' | 'investment_property';
+	};
+
+	const validAssetTypes = new Set(['person', 'property', 'mortgage', 'superannuation', 'shares']);
+	const fallbackAssetType = $page.params.assetType;
+	const formValues = $derived((form?.values ?? {}) as Record<string, string | string[]>);
+	const selectedType = $derived.by(() => {
+		const nextType = (formValues.assetType as string) ?? fallbackAssetType;
+		return validAssetTypes.has(nextType) ? nextType : 'person';
+	});
+	const assetTypeTitle = $derived(selectedType.replace(/_/g, ' '));
+	const assetTypeLabel = $derived(selectedType.replace(/_/g, ' ').toUpperCase());
+	let context = $state<AssetContext | null>(null);
+	let contextError = $state('');
+	let isContextLoading = $state(true);
+	let incomeAccountChoice = $state('');
+	let expenseAccountChoice = $state('');
+	let propertyUse = $state<'primary_residence' | 'investment_property'>('investment_property');
+	let useSameAccount = $state(true);
+	let mortgagePaymentSourceChoice = $state('');
+	let mortgageOffsetChoice = $state('none');
+	let mortgageInterestOnly = $state(false);
 
 	const now = new Date();
 	const defaultMonth = (() => {
@@ -27,10 +45,48 @@
 		const month = String(firstOfMonth.getMonth() + 1).padStart(2, '0');
 		return `${month} ${year}`;
 	})();
+
+	const loadContext = async () => {
+		isContextLoading = true;
+		contextError = '';
+		try {
+			const response = await fetch(`${$page.url.pathname}/data`);
+			if (!response.ok) {
+				const payload = (await response.json().catch(() => null)) as { message?: string } | null;
+				throw new Error(payload?.message ?? 'Unable to load form details.');
+			}
+			context = (await response.json()) as AssetContext;
+			if (!form?.values?.propertyUse) {
+				propertyUse = context.defaultPropertyUse;
+			}
+		} catch (error) {
+			contextError = error instanceof Error ? error.message : 'Unable to load form details.';
+		} finally {
+			isContextLoading = false;
+		}
+	};
+
+	onMount(() => {
+		void loadContext();
+	});
+
+	$effect(() => {
+		incomeAccountChoice = (formValues.incomeAccountChoice as string) ?? '';
+		expenseAccountChoice = (formValues.expenseAccountChoice as string) ?? '';
+		propertyUse =
+			((formValues.propertyUse as 'primary_residence' | 'investment_property' | undefined) ??
+				context?.defaultPropertyUse ??
+				'investment_property');
+		useSameAccount =
+			(formValues.useSameAccount as string) === 'on' || formValues.useSameAccount == null;
+		mortgagePaymentSourceChoice = (formValues.mortgagePaymentSourceChoice as string) ?? '';
+		mortgageOffsetChoice = (formValues.mortgageOffsetChoice as string) ?? 'none';
+		mortgageInterestOnly = (formValues.mortgageInterestOnly as string) === 'on';
+	});
 </script>
 
 <h1>Add {assetTypeTitle}</h1>
-<p class="app-text-muted">Scenario: {data.scenario.name}</p>
+<p class="app-text-muted">Scenario: {context?.scenario.name ?? 'Loading scenario...'}</p>
 
 <section class="not-prose app-panel mt-6">
 	<style>
@@ -46,6 +102,11 @@
 	{#if form?.formError}
 		<div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
 			{form.formError}
+		</div>
+	{/if}
+	{#if contextError}
+		<div class="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+			{contextError}
 		</div>
 	{/if}
 	{#if form?.errors}
@@ -193,11 +254,11 @@
 			<FormSection title={`${assetTypeLabel} DETAILS`}>
 				<label class="app-label">
 					Secured by property
-					<select name="mortgagePropertyId" class="app-input" required>
+					<select name="mortgagePropertyId" class="app-input" required disabled={isContextLoading}>
 						<option value="" disabled selected={(form?.values?.mortgagePropertyId ?? '') === ''}>
-							Select a property
+							{isContextLoading ? 'Loading properties...' : 'Select a property'}
 						</option>
-						{#each data.properties as property}
+						{#each context?.properties ?? [] as property}
 							<option
 								value={property.id}
 								selected={(form?.values?.mortgagePropertyId ?? '') === property.id}
@@ -301,11 +362,11 @@
 			<FormSection title={`${assetTypeLabel} DETAILS`}>
 				<label class="app-label">
 					Associated person
-					<select name="superPersonId" class="app-input" required>
+					<select name="superPersonId" class="app-input" required disabled={isContextLoading}>
 						<option value="" disabled selected={(form?.values?.superPersonId ?? '') === ''}>
-							Select a person
+							{isContextLoading ? 'Loading people...' : 'Select a person'}
 						</option>
-						{#each data.people as person}
+						{#each context?.people ?? [] as person}
 							<option
 								value={person.id}
 								selected={(form?.values?.superPersonId ?? '') === person.id}
@@ -375,12 +436,13 @@
 							class="app-input"
 							required
 							bind:value={expenseAccountChoice}
+							disabled={isContextLoading}
 						>
 							<option value="" disabled selected={expenseAccountChoice === ''}>
-								Select an account
+								{isContextLoading ? 'Loading accounts...' : 'Select an account'}
 							</option>
 							<option value="new">Create new account</option>
-							{#each data.accounts as account}
+							{#each context?.accounts ?? [] as account}
 								<option value={account.id}>{account.name}</option>
 							{/each}
 						</select>
@@ -472,12 +534,13 @@
 								class="app-input"
 								required
 								bind:value={incomeAccountChoice}
+								disabled={isContextLoading}
 							>
 								<option value="" disabled selected={incomeAccountChoice === ''}>
-									Select an account
+									{isContextLoading ? 'Loading accounts...' : 'Select an account'}
 								</option>
 								<option value="new">Create new account</option>
-								{#each data.accounts as account}
+								{#each context?.accounts ?? [] as account}
 									<option value={account.id}>{account.name}</option>
 								{/each}
 							</select>
@@ -541,12 +604,13 @@
 							class="app-input"
 							required
 							bind:value={expenseAccountChoice}
+							disabled={isContextLoading}
 						>
 							<option value="" disabled selected={expenseAccountChoice === ''}>
-								Select an account
+								{isContextLoading ? 'Loading accounts...' : 'Select an account'}
 							</option>
 							<option value="new">Create new account</option>
-							{#each data.accounts as account}
+							{#each context?.accounts ?? [] as account}
 								<option value={account.id}>{account.name}</option>
 							{/each}
 						</select>
@@ -631,12 +695,13 @@
 							class="app-input"
 							required
 							bind:value={mortgagePaymentSourceChoice}
+							disabled={isContextLoading}
 						>
 							<option value="" disabled selected={mortgagePaymentSourceChoice === ''}>
-								Select an account
+								{isContextLoading ? 'Loading cash accounts...' : 'Select an account'}
 							</option>
 							<option value="new">Create new cash account</option>
-							{#each data.cashAccounts as account}
+							{#each context?.cashAccounts ?? [] as account}
 								<option value={account.id}>{account.name}</option>
 							{/each}
 						</select>
@@ -683,11 +748,16 @@
 				<div class="mt-4 grid gap-4">
 					<label class="app-label">
 						Offset account
-						<select name="mortgageOffsetChoice" class="app-input" bind:value={mortgageOffsetChoice}>
+						<select
+							name="mortgageOffsetChoice"
+							class="app-input"
+							bind:value={mortgageOffsetChoice}
+							disabled={isContextLoading}
+						>
 							<option value="none">None</option>
 							<option value="same_as_payment_source">Same as payment source</option>
 							<option value="new">Create new cash account</option>
-							{#each data.cashAccounts as account}
+							{#each context?.cashAccounts ?? [] as account}
 								<option value={account.id}>{account.name}</option>
 							{/each}
 						</select>
@@ -752,15 +822,20 @@
 					/>
 					<label class="app-label">
 						Pays into (cash account)
-						<select name="sharePaysIntoAccountId" class="app-input" required>
+						<select
+							name="sharePaysIntoAccountId"
+							class="app-input"
+							required
+							disabled={isContextLoading}
+						>
 							<option
 								value=""
 								disabled
 								selected={(form?.values?.sharePaysIntoAccountId ?? '') === ''}
 							>
-								Select a cash account
+								{isContextLoading ? 'Loading cash accounts...' : 'Select a cash account'}
 							</option>
-							{#each data.cashAccounts as account}
+							{#each context?.cashAccounts ?? [] as account}
 								<option
 									value={account.id}
 									selected={(form?.values?.sharePaysIntoAccountId ?? '') === account.id}
@@ -795,15 +870,20 @@
 					/>
 					<label class="app-label">
 						Pays into (cash account)
-						<select name="superPaysIntoAccountId" class="app-input" required>
+						<select
+							name="superPaysIntoAccountId"
+							class="app-input"
+							required
+							disabled={isContextLoading}
+						>
 							<option
 								value=""
 								disabled
 								selected={(form?.values?.superPaysIntoAccountId ?? '') === ''}
 							>
-								Select a cash account
+								{isContextLoading ? 'Loading cash accounts...' : 'Select a cash account'}
 							</option>
-							{#each data.cashAccounts as account}
+							{#each context?.cashAccounts ?? [] as account}
 								<option
 									value={account.id}
 									selected={(form?.values?.superPaysIntoAccountId ?? '') === account.id}
@@ -821,7 +901,9 @@
 		</FormSection>
 
 		<div class="flex flex-wrap items-center gap-3">
-			<Button type="submit" variant="primary" size="sm">Add asset</Button>
+			<Button type="submit" variant="primary" size="sm" disabled={isContextLoading || !!contextError}>
+				{isContextLoading ? 'Loading form...' : 'Add asset'}
+			</Button>
 			<a class="text-sm font-semibold text-slate-600 hover:text-slate-900" href="/dashboard">
 				Cancel
 			</a>

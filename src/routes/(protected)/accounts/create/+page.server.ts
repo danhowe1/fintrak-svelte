@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
+import type { Actions } from './$types';
 import { z } from 'zod';
 import {
 	createAccountWithHolders,
@@ -31,28 +31,6 @@ const createAccountSchema = z.object({
 	openingBalance: currencySchema,
 	personIds: z.array(z.string()).min(1, 'Select at least one account holder')
 });
-
-export const load: PageServerLoad = async (event) => {
-	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
-	const scenarioId = event.cookies.get('currentScenarioId');
-	if (!scenarioId) {
-		throw redirect(303, '/scenarios');
-	}
-
-	const scenario = await getScenarioForUserById(userId, scenarioId);
-	if (!scenario) {
-		throw redirect(303, '/scenarios');
-	}
-
-	const assets = await getAssetsForScenario(scenario.id);
-	const people = assets.filter((asset) => asset.asset_type === 'person');
-
-	return { scenario, people };
-};
 
 export const actions: Actions = {
 	default: async (event) => {

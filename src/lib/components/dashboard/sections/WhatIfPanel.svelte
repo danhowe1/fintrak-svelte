@@ -2,6 +2,7 @@
 	import type { ComponentProps } from 'svelte';
 	import type { AssetPanelTab } from '$lib/dashboard/types';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
+	import PendingNavLink from '$lib/components/ui/PendingNavLink.svelte';
 	import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
 	import AssetsTab from '$lib/components/dashboard/tabs/AssetsTab.svelte';
 	import AccountsTab from '$lib/components/dashboard/tabs/AccountsTab.svelte';
@@ -74,28 +75,45 @@
 					class="absolute top-full right-0 z-10 mt-2 min-w-[13rem] rounded-xl border border-slate-200 bg-white p-2 shadow-lg"
 				>
 					<div class="flex flex-col gap-2">
-						<a href="/assets/person/create" class="app-btn-primary-xs justify-center">
+						<PendingNavLink
+							href="/assets/person/create"
+							class="app-btn-primary-xs justify-center"
+						>
 							Add person
-						</a>
-						<a href="/assets/property/create" class="app-btn-primary-xs justify-center">
+						</PendingNavLink>
+						<PendingNavLink
+							href="/assets/property/create"
+							class="app-btn-primary-xs justify-center"
+						>
 							Add property
-						</a>
+						</PendingNavLink>
 						{#if hasPropertyAsset()}
-							<a href="/assets/mortgage/create" class="app-btn-primary-xs justify-center">
+							<PendingNavLink
+								href="/assets/mortgage/create"
+								class="app-btn-primary-xs justify-center"
+							>
 								Add mortgage
-							</a>
+							</PendingNavLink>
 						{/if}
-						<a href="/assets/superannuation/create" class="app-btn-primary-xs justify-center">
+						<PendingNavLink
+							href="/assets/superannuation/create"
+							class="app-btn-primary-xs justify-center"
+						>
 							Add superannuation
-						</a>
-						<a href="/assets/shares/create" class="app-btn-primary-xs justify-center">
+						</PendingNavLink>
+						<PendingNavLink
+							href="/assets/shares/create"
+							class="app-btn-primary-xs justify-center"
+						>
 							Add shares
-						</a>
+						</PendingNavLink>
 					</div>
 				</div>
 			</details>
 		{:else if assetPanelTab === 'accounts'}
-			<a href="/accounts/create" class="app-btn-primary-xs">Add account</a>
+			<PendingNavLink href="/accounts/create" class="app-btn-primary-xs">
+				Add account
+			</PendingNavLink>
 		{/if}
 	</div>
 	{#if !isInitialWhatIfLoading}
