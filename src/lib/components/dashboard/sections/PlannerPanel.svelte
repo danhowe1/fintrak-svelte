@@ -329,8 +329,9 @@
 							<div class="flex items-center gap-1">
 								<span class="font-semibold">Growth Allocation Score</span>
 								<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
-									Shows how much of current value is in growth assets (shares, super, property)
-									versus defensive cash. Current growth allocation is {stage3Assessment.growthAllocationPct}%.
+									Shows how much of current value is in growth assets (shares, super,
+									investment properties) versus defensive cash. Current growth allocation is
+									{Math.round(stage3Assessment.growthAllocationPct)}%.
 								</InfoTooltip>
 							</div>
 							<span class="font-semibold">{stage3Assessment.growthScore}/100</span>

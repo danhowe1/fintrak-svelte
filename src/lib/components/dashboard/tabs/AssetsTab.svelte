@@ -128,6 +128,25 @@
 		formatYearMonthInput
 	} = ui;
 	const roundToOne = (value: number) => Math.round(value * 10) / 10;
+	const getPropertyUse = (propertyAsset: (typeof data.assetsList)[number]) => {
+		const rawPropertyUse = propertyAsset.details?.propertyUse;
+		if (rawPropertyUse === 'primary_residence' || rawPropertyUse === 'investment_property') {
+			return rawPropertyUse;
+		}
+		const propertyCount = assetsList.filter((asset) => asset.asset_type === 'property').length;
+		return propertyCount === 1 ? 'primary_residence' : 'investment_property';
+	};
+	const getPropertyDraft = (propertyAsset: (typeof data.assetsList)[number]) =>
+		propertyDetails[propertyAsset.id] ?? {
+			name: propertyAsset.name,
+			startDate: formatYearMonthInput(propertyAsset.start_date),
+			propertyUse: getPropertyUse(propertyAsset),
+			marketValue: Number(propertyAsset.details?.marketValue) || 0,
+			marketGrowthRate: 0,
+			saleDate: '',
+			fixedSellingCosts: Number(propertyAsset.details?.fixedSellingCosts) || 0,
+			variableSellingCosts: Number(propertyAsset.details?.variableSellingCosts) || 0
+		};
 </script>
 
 <div class="mt-3 flex flex-wrap gap-2">
@@ -893,15 +912,7 @@
 						step="0.5"
 						oninput={(event) => {
 							const next = Number((event.currentTarget as HTMLInputElement).value);
-							const current = propertyDetails[property.id] ?? {
-								name: property.name,
-								startDate: formatYearMonthInput(property.start_date),
-								marketValue: Number(property.details?.marketValue) || 0,
-								marketGrowthRate: 0,
-								saleDate: '',
-								fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
-								variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
-							};
+							const current = getPropertyDraft(property);
 							setPropertyDetails(property.id, {
 								...current,
 								marketGrowthRate: Number.isFinite(next) ? next : 0
@@ -909,15 +920,7 @@
 						}}
 						onchange={(event) => {
 							const next = Number((event.currentTarget as HTMLInputElement).value);
-							const current = propertyDetails[property.id] ?? {
-								name: property.name,
-								startDate: formatYearMonthInput(property.start_date),
-								marketValue: Number(property.details?.marketValue) || 0,
-								marketGrowthRate: 0,
-								saleDate: '',
-								fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
-								variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
-							};
+							const current = getPropertyDraft(property);
 							const value = Number.isFinite(next) ? next : 0;
 							setPropertyDetails(property.id, { ...current, marketGrowthRate: value });
 							scheduleUpdate(`property:${property.id}`, () =>
@@ -925,6 +928,7 @@
 									property.id,
 									current.name,
 									current.startDate,
+									current.propertyUse,
 									current.marketValue ?? 0,
 									value,
 									current.saleDate ?? '',
@@ -945,47 +949,32 @@
 							pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 							class="app-input-compact app-input-compact-lg w-24"
 							value={propertyDetails[property.id]?.saleDate ?? ''}
-							oninput={(event) => {
-								const next = (event.currentTarget as HTMLInputElement).value;
-								const current = propertyDetails[property.id] ?? {
-									name: property.name,
-									startDate: formatYearMonthInput(property.start_date),
-									marketValue: Number(property.details?.marketValue) || 0,
-									marketGrowthRate: 0,
-									saleDate: '',
-									fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
-									variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
-								};
-								setPropertyDetails(property.id, { ...current, saleDate: next });
-								if (next.trim().length === 0 || isValidMonthYear(next)) {
+						oninput={(event) => {
+							const next = (event.currentTarget as HTMLInputElement).value;
+							const current = getPropertyDraft(property);
+							setPropertyDetails(property.id, { ...current, saleDate: next });
+							if (next.trim().length === 0 || isValidMonthYear(next)) {
 									setPropertyError(property.id, 'saleDate', '');
 								}
 							}}
-							onchange={(event) => {
-								const next = (event.currentTarget as HTMLInputElement).value;
-								const current = propertyDetails[property.id] ?? {
-									name: property.name,
-									startDate: formatYearMonthInput(property.start_date),
-									marketValue: Number(property.details?.marketValue) || 0,
-									marketGrowthRate: 0,
-									saleDate: '',
-									fixedSellingCosts: Number(property.details?.fixedSellingCosts) || 0,
-									variableSellingCosts: Number(property.details?.variableSellingCosts) || 0
-								};
-								if (next.trim().length > 0 && !isValidMonthYear(next)) {
+						onchange={(event) => {
+							const next = (event.currentTarget as HTMLInputElement).value;
+							const current = getPropertyDraft(property);
+							if (next.trim().length > 0 && !isValidMonthYear(next)) {
 									setPropertyError(property.id, 'saleDate', 'Use MM YYYY format.');
 									return;
 								}
 								setPropertyError(property.id, 'saleDate', '');
 								setPropertyDetails(property.id, { ...current, saleDate: next });
 								scheduleUpdate(`property:${property.id}`, () =>
-									updatePropertyDetails(
-										property.id,
-										current.name,
-										current.startDate,
-										current.marketValue ?? 0,
-										current.marketGrowthRate ?? 0,
-										next,
+								updatePropertyDetails(
+									property.id,
+									current.name,
+									current.startDate,
+									current.propertyUse,
+									current.marketValue ?? 0,
+									current.marketGrowthRate ?? 0,
+									next,
 										current.fixedSellingCosts ?? 0,
 										current.variableSellingCosts ?? 0
 									)
@@ -1004,6 +993,74 @@
 					/>
 				</div>
 				{#if expandedPropertyDetailIds.has(property.id)}
+					<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
+						<span class="truncate text-slate-500">Property type</span>
+						<div class="flex flex-col items-end justify-self-end">
+							<select
+								class="app-input-compact app-input-compact-lg w-24"
+								value={propertyDetails[property.id]?.propertyUse ?? getPropertyUse(property)}
+								onchange={(event) => {
+									const next = (event.currentTarget as HTMLSelectElement).value as
+										| 'primary_residence'
+										| 'investment_property';
+									const current = getPropertyDraft(property);
+									const updatedProperties = Object.fromEntries(
+										Object.entries(propertyDetails).map(([assetId, detail]) => [
+											assetId,
+											{
+												...detail,
+												propertyUse:
+													next === 'primary_residence' && assetId !== property.id
+														? 'investment_property'
+														: detail.propertyUse
+											}
+										])
+									);
+									if (next === 'primary_residence') {
+										for (const [assetId, detail] of Object.entries(updatedProperties)) {
+											setPropertyDetails(assetId, detail);
+										}
+									}
+									setPropertyDetails(property.id, { ...current, propertyUse: next });
+									assetsList = assetsList.map((asset) =>
+										asset.asset_type === 'property'
+											? {
+													...asset,
+													details: {
+														...asset.details,
+														propertyUse:
+															next === 'primary_residence' && asset.id === property.id
+																? 'primary_residence'
+																: asset.id === property.id
+																	? next
+																	: asset.details?.propertyUse === 'primary_residence'
+																		? 'investment_property'
+																		: asset.details?.propertyUse
+													}
+												}
+											: asset
+									);
+									scheduleUpdate(`property:${property.id}`, () =>
+										updatePropertyDetails(
+											property.id,
+											current.name,
+											current.startDate,
+											next,
+											current.marketValue,
+											current.marketGrowthRate,
+											current.saleDate ?? '',
+											current.fixedSellingCosts,
+											current.variableSellingCosts
+										)
+									);
+								}}
+							>
+								<option value="primary_residence">Primary</option>
+								<option value="investment_property">Investment</option>
+							</select>
+						</div>
+						<span></span>
+					</div>
 					<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
 						<span class="truncate text-slate-500">Start date (MM YYYY)</span>
 						<div class="flex flex-col items-end justify-self-end">
@@ -1037,6 +1094,7 @@
 											property.id,
 											current.name,
 											next,
+											current.propertyUse,
 											current.marketValue,
 											current.marketGrowthRate,
 											current.saleDate ?? '',
@@ -1088,6 +1146,7 @@
 											property.id,
 											next,
 											current.startDate,
+											current.propertyUse,
 											current.marketValue,
 											current.marketGrowthRate,
 											current.saleDate ?? '',
@@ -1137,6 +1196,7 @@
 											property.id,
 											current.name,
 											current.startDate,
+											current.propertyUse,
 											next,
 											current.marketGrowthRate,
 											current.saleDate ?? '',
@@ -1189,6 +1249,7 @@
 											property.id,
 											current.name,
 											current.startDate,
+											current.propertyUse,
 											current.marketValue,
 											current.marketGrowthRate,
 											current.saleDate ?? '',
@@ -1241,6 +1302,7 @@
 											property.id,
 											current.name,
 											current.startDate,
+											current.propertyUse,
 											current.marketValue,
 											current.marketGrowthRate,
 											current.saleDate ?? '',

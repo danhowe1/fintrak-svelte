@@ -103,6 +103,8 @@ export const buildLiquidityPropertySaleDetails = (input: {
 	return {
 		name: property.name ?? '',
 		startDate: formatYearMonthInput(property.start_date),
+		propertyUse:
+			property.details?.propertyUse === 'primary_residence' ? 'primary_residence' : 'investment_property',
 		marketValue: toNumberOrZero(property.details?.marketValue),
 		marketGrowthRate: toNumberOrZero(property.details?.marketGrowthRate),
 		saleDate,

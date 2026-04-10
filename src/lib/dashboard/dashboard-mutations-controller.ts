@@ -41,12 +41,14 @@ type RefreshProjection = (options?: {
 }) => Promise<void>;
 
 type SetProjectionError = (message: string | null) => void;
+type RefreshWhatIf = () => Promise<void>;
 
 export type DashboardMutationControllerDeps = {
 	scenarioId: string;
 	getAutoRunProjection: () => boolean;
 	withLock: WithLock;
 	refreshProjection: RefreshProjection;
+	refreshWhatIf?: RefreshWhatIf;
 	setProjectionError: SetProjectionError;
 
 	getStage2AccessibilityShortfall: () => unknown;
@@ -264,7 +266,8 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 			errorMessage,
 			autoRunProjection: deps.getAutoRunProjection(),
 			withLock: deps.withLock,
-			refreshProjection: deps.refreshProjection
+			refreshProjection: deps.refreshProjection,
+			refreshWhatIf: deps.refreshWhatIf
 		});
 		if (error) deps.setProjectionError(error);
 	};
@@ -304,6 +307,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		assetId: string,
 		name: string,
 		startDate: string,
+		propertyUse: 'primary_residence' | 'investment_property',
 		marketValue: number,
 		marketGrowthRate: number,
 		saleDate: string,
@@ -317,6 +321,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				assetId,
 				name,
 				startDate,
+				propertyUse,
 				marketValue: String(marketValue),
 				marketGrowthRate: String(marketGrowthRate),
 				saleDate,

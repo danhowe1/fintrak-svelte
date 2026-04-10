@@ -10,6 +10,7 @@ type RefreshProjection = (options?: {
 	includeCashflows?: boolean;
 	force?: boolean;
 }) => Promise<void>;
+type RefreshWhatIf = () => Promise<void>;
 
 const postFormAction = async (
 	action: string,
@@ -34,6 +35,7 @@ export const runScenarioMutationCommand = async (params: {
 	autoRunProjection: boolean;
 	withLock: WithLock;
 	refreshProjection: RefreshProjection;
+	refreshWhatIf?: RefreshWhatIf;
 	headers?: Record<string, string>;
 }): Promise<string | null> => {
 	const {
@@ -45,6 +47,7 @@ export const runScenarioMutationCommand = async (params: {
 		autoRunProjection,
 		withLock,
 		refreshProjection,
+		refreshWhatIf,
 		headers
 	} = params;
 	try {
@@ -57,6 +60,9 @@ export const runScenarioMutationCommand = async (params: {
 					formData.set(key, value);
 				}
 				await postFormAction(action, formData, errorMessage, headers);
+				if (refreshWhatIf) {
+					await refreshWhatIf();
+				}
 				await refreshProjection();
 			},
 			autoRunProjection

@@ -238,6 +238,7 @@
 		{
 			name: string;
 			startDate: string;
+			propertyUse: import('$lib/dashboard/types').PropertyUse;
 			marketValue: number;
 			marketGrowthRate: number;
 			saleDate: string;
@@ -399,6 +400,7 @@
 	$: stage3Assessment = calculateStage3Assessment({
 		stage3Reached,
 		projectionData,
+		assets: assetsList,
 		accounts: accountsList,
 		assetAccounts: assetAccountsList,
 		accountBalanceTargets
@@ -522,11 +524,13 @@
 	}
 
 	$: if (Object.keys(propertyDetails).length === 0 && (assetsList.length ?? 0) > 0) {
+		const propertyAssets = assetsList.filter((asset) => asset.asset_type === 'property');
 		const next: Record<
 			string,
 			{
 				name: string;
 				startDate: string;
+				propertyUse: import('$lib/dashboard/types').PropertyUse;
 				marketValue: number;
 				marketGrowthRate: number;
 				saleDate: string;
@@ -537,6 +541,13 @@
 		for (const asset of assetsList) {
 			if (asset.asset_type === 'property') {
 				const details = asset.details ?? {};
+				const rawPropertyUse = details.propertyUse;
+				const propertyUse =
+					rawPropertyUse === 'primary_residence' || rawPropertyUse === 'investment_property'
+						? rawPropertyUse
+						: propertyAssets.length === 1
+							? 'primary_residence'
+							: 'investment_property';
 				const rawMarketValue = details.marketValue;
 				const marketValue =
 					typeof rawMarketValue === 'number' ? rawMarketValue : Number(rawMarketValue);
@@ -559,6 +570,7 @@
 				next[asset.id] = {
 					name: asset.name ?? '',
 					startDate,
+					propertyUse,
 					marketValue: Number.isFinite(marketValue) ? marketValue : 0,
 					marketGrowthRate: Number.isFinite(rate) ? rate : 0,
 					saleDate,
@@ -1038,6 +1050,7 @@
 		value: {
 			name: string;
 			startDate: string;
+			propertyUse: import('$lib/dashboard/types').PropertyUse;
 			marketValue: number;
 			marketGrowthRate: number;
 			saleDate: string;
@@ -1629,6 +1642,7 @@
 		assetId: string,
 		name: string,
 		startDate: string,
+		propertyUse: import('$lib/dashboard/types').PropertyUse,
 		marketValue: number,
 		marketGrowthRate: number,
 		saleDate: string,
@@ -1639,6 +1653,7 @@
 			assetId,
 			name,
 			startDate,
+			propertyUse,
 			marketValue,
 			marketGrowthRate,
 			saleDate,
@@ -1883,6 +1898,7 @@
 		getAutoRunProjection: () => autoRunProjection,
 		withLock,
 		refreshProjection,
+		refreshWhatIf: loadWhatIfSection,
 		setProjectionError,
 		getStage2AccessibilityShortfall: () => stage2AccessibilityShortfall,
 		getPlannerSourceAccountId: () => plannerSourceAccountId,

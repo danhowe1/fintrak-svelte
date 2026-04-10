@@ -91,6 +91,7 @@ describe('dashboard planner action helpers', () => {
 			existing: {
 				name: 'Home',
 				startDate: '01 2020',
+				propertyUse: 'primary_residence',
 				marketValue: 100,
 				marketGrowthRate: 2,
 				saleDate: '',

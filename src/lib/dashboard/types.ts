@@ -7,6 +7,7 @@ export type TransactionSortDirection = 'asc' | 'desc';
 export type MonthFrequency = 'monthly' | 'quarterly' | 'annually' | 'one_time';
 export type AccountOption = { id: string; name: string };
 export type LabelOption = { value: string; label: string };
+export type PropertyUse = 'primary_residence' | 'investment_property';
 
 export type AssetListItem = {
 	id: string;
@@ -16,6 +17,7 @@ export type AssetListItem = {
 	details: Record<string, unknown>;
 	property_id?: string | null;
 	person_id?: string | null;
+	created_at?: string;
 };
 
 export type AccountListItem = {
@@ -94,6 +96,7 @@ export type PersonDetailErrors = { name?: string; startDate?: string; dob?: stri
 export type PropertyDetail = {
 	name: string;
 	startDate: string;
+	propertyUse: PropertyUse;
 	marketValue: number;
 	marketGrowthRate: number;
 	saleDate: string;

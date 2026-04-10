@@ -12,6 +12,8 @@
 	const assetTypeLabel = selectedType.replace(/_/g, ' ').toUpperCase();
 	let incomeAccountChoice = (form?.values?.incomeAccountChoice as string) ?? '';
 	let expenseAccountChoice = (form?.values?.expenseAccountChoice as string) ?? '';
+	let propertyUse =
+		(form?.values?.propertyUse as string) ?? data.defaultPropertyUse ?? 'investment_property';
 	let useSameAccount =
 		(form?.values?.useSameAccount as string) === 'on' || form?.values?.useSameAccount == null;
 	let mortgagePaymentSourceChoice = (form?.values?.mortgagePaymentSourceChoice as string) ?? '';
@@ -119,6 +121,17 @@
 		{#if selectedType === 'property'}
 			<FormSection title={`${assetTypeLabel} DETAILS`}>
 				<div class="grid gap-4 md:grid-cols-3">
+					<label class="app-label">
+						Property type
+						<select name="propertyUse" class="app-input" bind:value={propertyUse}>
+							<option value="primary_residence">Primary residence</option>
+							<option value="investment_property">Investment property</option>
+						</select>
+						{#if form?.errors?.propertyUse?.[0]}
+							<span class="app-error">{form.errors.propertyUse[0]}</span>
+						{/if}
+					</label>
+
 					<FormField
 						type="number"
 						class="no-spin"

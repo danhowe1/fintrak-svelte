@@ -18,6 +18,7 @@ export type PropertyDetails = {
 	type: 'property';
 	id: string;
 	name: string;
+	propertyUse: 'primary_residence' | 'investment_property';
 	marketValue: number;
 	startDate: number;
 	marketGrowthRate: number;

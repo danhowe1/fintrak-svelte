@@ -41,6 +41,7 @@ const roundToTwo = (value: number) => Number(value.toFixed(2));
 
 const uuidSchema = z.string().uuid();
 const assetTypeSchema = z.enum(['person', 'property', 'mortgage', 'superannuation', 'shares']);
+const propertyUseSchema = z.enum(['primary_residence', 'investment_property']);
 
 const createAssetSchema = z
 	.object({
@@ -49,6 +50,7 @@ const createAssetSchema = z
 		startMonth: monthSchema,
 		personDob: z.string().trim().optional(),
 		retirementAge: z.string().trim().optional(),
+		propertyUse: z.string().trim().optional(),
 		propertyMarketValue: z.string().trim().optional(),
 		propertySaleDate: z.string().trim().optional(),
 		propertyMarketGrowthRate: z.string().trim().optional(),
@@ -224,6 +226,13 @@ const createAssetSchema = z
 		}
 
 		if (data.assetType === 'property') {
+			if (data.propertyUse && !propertyUseSchema.safeParse(data.propertyUse).success) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: 'Property type is invalid',
+					path: ['propertyUse']
+				});
+			}
 			if (!data.propertyMarketValue || !/^-?\d+(\.\d{1,2})?$/.test(data.propertyMarketValue)) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -672,7 +681,22 @@ export const load: PageServerLoad = async (event) => {
 	);
 	const cashAccounts = accounts.filter((account) => account.account_type === 'cash_account');
 
-	return { scenario, assetType: assetType.data, accounts, properties, people, cashAccounts };
+	const hasPrimaryResidence = properties.some(
+		(asset) => asset.details?.propertyUse === 'primary_residence'
+	);
+	const defaultPropertyUse =
+		properties.length === 0 ? 'primary_residence' : 'investment_property';
+
+	return {
+		scenario,
+		assetType: assetType.data,
+		accounts,
+		properties,
+		people,
+		cashAccounts,
+		hasPrimaryResidence,
+		defaultPropertyUse
+	};
 };
 
 export const actions: Actions = {
@@ -697,6 +721,9 @@ export const actions: Actions = {
 		if (!assetType.success) {
 			throw redirect(303, '/dashboard');
 		}
+		const properties = (await getAssetsForScenario(scenario.id)).filter(
+			(asset) => asset.asset_type === 'property'
+		);
 
 		const formData = await event.request.formData();
 		const payload = {
@@ -705,6 +732,7 @@ export const actions: Actions = {
 			startMonth: formData.get('startMonth'),
 			personDob: formData.get('personDob') ?? '',
 			retirementAge: formData.get('retirementAge') ?? '',
+			propertyUse: formData.get('propertyUse') ?? '',
 			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
 			propertySaleDate: formData.get('propertySaleDate') ?? '',
 			propertyMarketGrowthRate: formData.get('propertyMarketGrowthRate') ?? '5',
@@ -764,6 +792,7 @@ export const actions: Actions = {
 			startMonth,
 			personDob,
 			retirementAge,
+			propertyUse,
 			propertyMarketValue,
 			propertySaleDate,
 			propertyMarketGrowthRate,
@@ -858,11 +887,17 @@ export const actions: Actions = {
 								: { type: 'existing', accountId: incomeAccountChoice ?? '' }
 				});
 			} else if (assetType.data === 'property') {
+				const resolvedPropertyUse = propertyUseSchema.safeParse(propertyUse).success
+					? propertyUseSchema.parse(propertyUse)
+					: properties.length === 0
+						? 'primary_residence'
+						: 'investment_property';
 				await createPropertyAssetWithExpense({
 					scenarioId: scenario.id,
 					userId,
 					name,
 					startDate,
+					propertyUse: resolvedPropertyUse,
 					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
 					marketGrowthRate: decimalUpToOnePlaceSchema.parse(propertyMarketGrowthRate ?? '5'),
 					fixedSellingCosts: currencySchema.parse(propertyFixedSellingCosts ?? '10000'),

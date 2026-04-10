@@ -43,6 +43,33 @@ function getPool() {
 
 type DbClient = Pool | PoolClient;
 const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
+export type PropertyUse = 'primary_residence' | 'investment_property';
+
+const normalizePropertyUse = (value: unknown): PropertyUse =>
+	value === 'primary_residence' ? 'primary_residence' : 'investment_property';
+
+const clearPrimaryResidenceForOtherProperties = async (
+	db: DbClient,
+	scenarioId: string,
+	assetId?: string
+) => {
+	await db.query(
+		`
+			update assets
+			set details = jsonb_set(
+				coalesce(details, '{}'::jsonb),
+				'{propertyUse}',
+				to_jsonb('investment_property'::text),
+				true
+			)
+			where scenario_id = $1::uuid
+			  and asset_type = 'property'
+			  and ($2::uuid is null or id <> $2::uuid)
+			  and coalesce(details->>'propertyUse', '') = 'primary_residence'
+		`,
+		[scenarioId, assetId ?? null]
+	);
+};
 
 export function getAuthenticatedUser(
 	session: {
@@ -344,6 +371,7 @@ export async function updatePropertyDetails(
 	input: {
 		name: string;
 		startDate: string;
+		propertyUse: PropertyUse;
 		marketValue: number;
 		marketGrowthRate: number;
 		saleDate?: string | null;
@@ -361,7 +389,14 @@ export async function updatePropertyDetails(
 	if (normalizedStartDate === null) {
 		throw new Error('Invalid property start date');
 	}
-	await getPool().query(
+	const propertyUse = normalizePropertyUse(input.propertyUse);
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+		if (propertyUse === 'primary_residence') {
+			await clearPrimaryResidenceForOtherProperties(client, scenarioId, assetId);
+		}
+		await client.query(
 		`
 			update assets
 			set name = $3::text,
@@ -371,25 +406,30 @@ export async function updatePropertyDetails(
 						jsonb_set(
 							jsonb_set(
 								jsonb_set(
-									coalesce(details, '{}'::jsonb),
-									'{marketValue}',
-									to_jsonb($5::numeric),
+									jsonb_set(
+										coalesce(details, '{}'::jsonb),
+										'{marketValue}',
+										to_jsonb($5::numeric),
+										true
+									),
+									'{marketGrowthRate}',
+									to_jsonb($6::numeric),
 									true
 								),
-								'{marketGrowthRate}',
-								to_jsonb($6::numeric),
+								'{saleDate}',
+								case when $7::int is null then 'null'::jsonb else to_jsonb($7::int) end,
 								true
 							),
-							'{saleDate}',
-							case when $7::int is null then 'null'::jsonb else to_jsonb($7::int) end,
+							'{fixedSellingCosts}',
+							to_jsonb($8::numeric),
 							true
 						),
-						'{fixedSellingCosts}',
-						to_jsonb($8::numeric),
+						'{variableSellingCosts}',
+						to_jsonb($9::numeric),
 						true
 					),
-					'{variableSellingCosts}',
-					to_jsonb($9::numeric),
+					'{propertyUse}',
+					to_jsonb($10::text),
 					true
 				)
 			where id = $2::uuid
@@ -405,9 +445,17 @@ export async function updatePropertyDetails(
 			input.marketGrowthRate,
 			normalizedSaleDate,
 			input.fixedSellingCosts,
-			input.variableSellingCosts
+			input.variableSellingCosts,
+			propertyUse
 		]
-	);
+		);
+		await client.query('commit');
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
 }
 
 export async function updateShareDetails(
@@ -1794,6 +1842,7 @@ export type CreatePropertyAssetWithExpenseInput = {
 	userId: string;
 	name: string;
 	startDate: number;
+	propertyUse: PropertyUse;
 	marketValue: number;
 	marketGrowthRate: number;
 	fixedSellingCosts: number;
@@ -1955,6 +2004,10 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
+		const propertyUse = normalizePropertyUse(input.propertyUse);
+		if (propertyUse === 'primary_residence') {
+			await clearPrimaryResidenceForOtherProperties(client, input.scenarioId);
+		}
 
 		const assetId = await createAsset(
 			{
@@ -1967,6 +2020,7 @@ export async function createPropertyAssetWithExpense(input: CreatePropertyAssetW
 					marketGrowthRate: input.marketGrowthRate,
 					fixedSellingCosts: input.fixedSellingCosts,
 					variableSellingCosts: input.variableSellingCosts,
+					propertyUse,
 					...(input.saleDate ? { saleDate: input.saleDate } : {})
 				}
 			},

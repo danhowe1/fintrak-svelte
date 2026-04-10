@@ -37,6 +37,7 @@ describe('dashboard planner logic helpers', () => {
 					]
 				}
 			},
+			assets: [],
 			accounts: [{ id: 'cash-1', account_type: 'cash_account' }],
 			assetAccounts: [],
 			accountBalanceTargets: [{ account_id: 'cash-1', enabled: true, min_balance: 5000 }]
@@ -46,6 +47,44 @@ describe('dashboard planner logic helpers', () => {
 		expect(assessment?.safetyScore).toBeGreaterThan(0);
 		expect(assessment?.growthScore).toBeGreaterThan(0);
 		expect(assessment?.profile).toMatch(/Conservative|Balanced|Growth/);
+	});
+
+	it('excludes primary residence property from growth allocation and includes investment property', () => {
+		const assessment = calculateStage3Assessment({
+			stage3Reached: true,
+			projectionData: {
+				startDate: 203001,
+				transactions: [],
+				accounts: [{ accountId: 'cash-1', points: [{ balance: 20000 }] }],
+				assets: [
+					{ assetId: 'property-home', assetType: 'property', points: [{ value: 500000 }] },
+					{ assetId: 'property-investment', assetType: 'property', points: [{ value: 300000 }] }
+				],
+				liquidity: {
+					points: [
+						{ date: 203001, balance: 100000 },
+						{ date: 203002, balance: 100000 }
+					]
+				}
+			},
+			assets: [
+				{
+					id: 'property-home',
+					asset_type: 'property',
+					details: { propertyUse: 'primary_residence' }
+				},
+				{
+					id: 'property-investment',
+					asset_type: 'property',
+					details: { propertyUse: 'investment_property' }
+				}
+			],
+			accounts: [{ id: 'cash-1', account_type: 'cash_account' }],
+			assetAccounts: [],
+			accountBalanceTargets: []
+		});
+
+		expect(assessment?.growthAllocationPct).toBe(93.8);
 	});
 
 	it('derives source options from shortfall and existing rules', () => {

@@ -140,6 +140,7 @@ export type AssetsTabPropertyProps = {
 		assetId: string,
 		name: string,
 		startDate: string,
+		propertyUse: 'primary_residence' | 'investment_property',
 		marketValue: number,
 		marketGrowthRate: number,
 		saleDate: string,

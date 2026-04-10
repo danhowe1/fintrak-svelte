@@ -72,6 +72,7 @@ type ProjectionAccountSeriesLike = {
 };
 
 type ProjectionAssetSeriesLike = {
+	assetId?: string | null;
 	assetType?: string | null;
 	points?: { value?: number | null }[] | null;
 };
@@ -105,14 +106,22 @@ type AccountBalanceTargetLike = {
 	min_balance?: number | null;
 };
 
+type ScenarioAssetLike = {
+	id: string;
+	asset_type?: string | null;
+	details?: Record<string, unknown> | null;
+};
+
 export const calculateStage3Assessment = (input: {
 	stage3Reached: boolean;
 	projectionData: ProjectionDataLike;
+	assets: ScenarioAssetLike[];
 	accounts: AccountLike[];
 	assetAccounts: AssetAccountLinkLike[];
 	accountBalanceTargets: AccountBalanceTargetLike[];
 }): Stage3Assessment | null => {
-	const { stage3Reached, projectionData, accounts, assetAccounts, accountBalanceTargets } = input;
+	const { stage3Reached, projectionData, assets, accounts, assetAccounts, accountBalanceTargets } =
+		input;
 	if (!stage3Reached) return null;
 
 	const startYearMonth = fromYearMonthInt(projectionData.startDate);
@@ -179,12 +188,28 @@ export const calculateStage3Assessment = (input: {
 					? 30 + ((safetyMonths - 3) / 3) * 30
 					: (safetyMonths / 3) * 30;
 
+	const propertyAssets = assets.filter((asset) => asset.asset_type === 'property');
+	const propertyUseByAssetId = new Map(
+		propertyAssets.map((asset) => {
+			const rawPropertyUse = asset.details?.propertyUse;
+			const propertyUse =
+				rawPropertyUse === 'primary_residence' || rawPropertyUse === 'investment_property'
+					? rawPropertyUse
+					: propertyAssets.length === 1
+						? 'primary_residence'
+						: 'investment_property';
+			return [asset.id, propertyUse] as const;
+		})
+	);
+
 	const growthAssetValue = (projectionData.assets ?? [])
 		.filter(
 			(series) =>
 				series.assetType === 'shares' ||
 				series.assetType === 'superannuation' ||
-				series.assetType === 'property'
+				(series.assetType === 'property' &&
+					(propertyUseByAssetId.size === 0 ||
+						propertyUseByAssetId.get(series.assetId ?? '') === 'investment_property'))
 		)
 		.reduce((sum, series) => sum + Math.max(0, series.points?.[0]?.value ?? 0), 0);
 	const defensiveValue = Array.from(liquidBufferAccountIds).reduce(

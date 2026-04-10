@@ -528,6 +528,9 @@ export const actions: Actions = {
 		const assetId = String(formData.get('assetId') ?? '');
 		const name = String(formData.get('name') ?? '').trim();
 		const startDate = String(formData.get('startDate') ?? '').trim();
+		const propertyUseRaw = String(formData.get('propertyUse') ?? '').trim();
+		const propertyUse =
+			propertyUseRaw === 'primary_residence' ? 'primary_residence' : 'investment_property';
 		const marketValueRaw = Number(formData.get('marketValue'));
 		const marketGrowthRateRaw = Number(formData.get('marketGrowthRate'));
 		const marketGrowthRate = Number.isFinite(marketGrowthRateRaw)
@@ -567,6 +570,7 @@ export const actions: Actions = {
 		await updatePropertyDetails(scenarioId, assetId, {
 			name,
 			startDate,
+			propertyUse,
 			marketValue,
 			marketGrowthRate,
 			saleDate,
