@@ -26,6 +26,8 @@
 	let {
 		draft,
 		isEdit,
+		categoryInputId = '',
+		descriptionInputId = '',
 		categoryOptions,
 		frequencyOptions,
 		assetAccountOptions,
@@ -37,6 +39,8 @@
 	} = $props<{
 		draft: CashflowDraftModel;
 		isEdit: boolean;
+		categoryInputId?: string;
+		descriptionInputId?: string;
 		categoryOptions: Option[];
 		frequencyOptions: Option[];
 		assetAccountOptions: AccountOption[];
@@ -55,6 +59,7 @@
 	</div>
 	<FormRow label="Category">
 		<select
+			id={categoryInputId || undefined}
 			class="app-input-block-compact"
 			value={draft.category}
 			disabled={categoryOptions.length === 1}
@@ -71,6 +76,7 @@
 	</FormRow>
 	<FormRow label="Description">
 		<input
+			id={descriptionInputId || undefined}
 			type="text"
 			class="app-input-block-compact"
 			value={draft.description}

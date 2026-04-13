@@ -77,6 +77,7 @@
 								{:else}
 									<div class="flex items-center gap-1">
 										<input
+											id={`account-interest-rate-input-${account.id}`}
 											type="number"
 											class="no-spin app-input-compact w-20"
 											value={ui.formatRate(data.accountInterestRates[account.id] ?? 0, 2)}

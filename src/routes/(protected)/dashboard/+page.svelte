@@ -1525,6 +1525,161 @@
 		}
 	};
 
+	const jumpToWhatIfIncome = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstPerson = assetsList.find((asset) => asset.asset_type === 'person');
+		if (!firstPerson) return;
+
+		openCashflowForm(firstPerson.id, 'income');
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const categoryInput = document.getElementById(
+			`cashflow-category-${firstPerson.id}-income`
+		) as HTMLSelectElement | null;
+		categoryInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		categoryInput?.focus({ preventScroll: true });
+		try {
+			(categoryInput as HTMLSelectElement & { showPicker?: () => void })?.showPicker?.();
+		} catch {
+			categoryInput?.click();
+		}
+	};
+
+	const jumpToWhatIfEmploymentIncome = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstPersonWithEmploymentIncome = assetsList
+			.filter((asset) => asset.asset_type === 'person')
+			.find((person) =>
+				(cashflowsByAssetId[person.id] ?? []).some(
+					(cashflow) =>
+						cashflow.cashflow_type === 'income' && cashflow.category === 'employment_income'
+				)
+			);
+		const firstEmploymentIncome = firstPersonWithEmploymentIncome
+			? (cashflowsByAssetId[firstPersonWithEmploymentIncome.id] ?? []).find(
+					(cashflow) =>
+						cashflow.cashflow_type === 'income' && cashflow.category === 'employment_income'
+				)
+			: null;
+
+		if (!firstEmploymentIncome) return;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const targetInput = document.getElementById(
+			`cashflow-input-${firstEmploymentIncome.id}`
+		) as HTMLInputElement | null;
+		targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		targetInput?.focus({ preventScroll: true });
+		try {
+			targetInput?.select();
+		} catch {
+			// Some input types may not support text selection.
+		}
+	};
+
+	const jumpToWhatIfRetirementAge = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstPerson = assetsList.find((asset) => asset.asset_type === 'person');
+		if (!firstPerson) return;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const targetInput = document.getElementById(
+			`retirement-age-input-${firstPerson.id}`
+		) as HTMLInputElement | null;
+		targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		targetInput?.focus({ preventScroll: true });
+		try {
+			targetInput?.select();
+		} catch {
+			// Some input types may not support text selection.
+		}
+	};
+
+	const jumpToWhatIfInterestRates = async () => {
+		assetPanelTab = 'accounts';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstAdjustableAccount = accountsList.find(
+			(account) =>
+				account.account_type !== 'super_account' && account.account_type !== 'brokerage'
+		);
+		if (!firstAdjustableAccount) return;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const targetInput = document.getElementById(
+			`account-interest-rate-input-${firstAdjustableAccount.id}`
+		) as HTMLInputElement | null;
+		targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		targetInput?.focus({ preventScroll: true });
+		try {
+			targetInput?.select();
+		} catch {
+			// Some input types may not support text selection.
+		}
+	};
+
+	const jumpToWhatIfInvestmentPropertySale = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstInvestmentProperty = assetsList.find(
+			(asset) =>
+				asset.asset_type === 'property' &&
+				(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
+					'investment_property' &&
+				!(propertyDetails[asset.id]?.saleDate ?? '').trim()
+		);
+		if (!firstInvestmentProperty) return;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const targetInput = document.getElementById(
+			`property-sale-date-input-${firstInvestmentProperty.id}`
+		) as HTMLInputElement | null;
+		targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		targetInput?.focus({ preventScroll: true });
+		try {
+			targetInput?.select();
+		} catch {
+			// Some input types may not support text selection.
+		}
+	};
+
+	const jumpToWhatIfPrimaryResidenceSale = async () => {
+		assetPanelTab = 'assets';
+		isWhatIfAddAssetMenuOpen = false;
+		const firstPrimaryResidence = assetsList.find(
+			(asset) =>
+				asset.asset_type === 'property' &&
+				(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
+					'primary_residence'
+		);
+		if (!firstPrimaryResidence) return;
+
+		await tick();
+
+		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+		const targetInput = document.getElementById(
+			`property-sale-date-input-${firstPrimaryResidence.id}`
+		) as HTMLInputElement | null;
+		targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+		targetInput?.focus({ preventScroll: true });
+		try {
+			targetInput?.select();
+		} catch {
+			// Some input types may not support text selection.
+		}
+	};
+
 	const jumpToWhatIfAddAsset = async () => {
 		assetPanelTab = 'assets';
 		isWhatIfAddAssetMenuOpen = true;
@@ -2216,10 +2371,42 @@
 			stage1Passed,
 			plannerStage,
 			stage1PlannerMessage,
-			assetsList,
 			jumpToWhatIfAssetsExpense,
 			jumpToWhatIfAddAsset,
 			jumpToWhatIfLivingExpenses,
+			showEmploymentIncomeShortcut: assetsList
+				.filter((asset) => asset.asset_type === 'person')
+				.some((person) =>
+					(cashflowsByAssetId[person.id] ?? []).some(
+						(cashflow) =>
+							cashflow.cashflow_type === 'income' &&
+							cashflow.category === 'employment_income'
+					)
+				),
+			jumpToWhatIfEmploymentIncome,
+			jumpToWhatIfIncome,
+			jumpToWhatIfRetirementAge,
+			showInterestRateShortcut: accountsList.some(
+				(account) =>
+					account.account_type !== 'super_account' && account.account_type !== 'brokerage'
+			),
+			jumpToWhatIfInterestRates,
+			showInvestmentPropertyShortcut: assetsList.some(
+				(asset) =>
+					asset.asset_type === 'property' &&
+					(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
+						'investment_property' &&
+					!(propertyDetails[asset.id]?.saleDate ?? '').trim()
+			),
+			jumpToWhatIfInvestmentPropertySale,
+			showPrimaryResidenceShortcut: assetsList.some(
+				(asset) =>
+					asset.asset_type === 'property' &&
+					(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
+						'primary_residence' &&
+					!(propertyDetails[asset.id]?.saleDate ?? '').trim()
+			),
+			jumpToWhatIfPrimaryResidenceSale,
 			stage2Reached,
 			stage2Passed,
 			stage2PlannerMessage,

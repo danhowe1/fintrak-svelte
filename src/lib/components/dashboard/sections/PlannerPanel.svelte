@@ -6,10 +6,19 @@
 	export let stage1Passed: boolean;
 	export let plannerStage: string;
 	export let stage1PlannerMessage: string;
-	export let assetsList: Array<{ asset_type?: string }>;
 	export let jumpToWhatIfAssetsExpense: () => void;
 	export let jumpToWhatIfAddAsset: () => void;
 	export let jumpToWhatIfLivingExpenses: () => void;
+	export let jumpToWhatIfIncome: () => void;
+	export let jumpToWhatIfRetirementAge: () => void;
+	export let showEmploymentIncomeShortcut: boolean;
+	export let jumpToWhatIfEmploymentIncome: () => void;
+	export let showInterestRateShortcut: boolean;
+	export let jumpToWhatIfInterestRates: () => void;
+	export let showInvestmentPropertyShortcut: boolean;
+	export let jumpToWhatIfInvestmentPropertySale: () => void;
+	export let showPrimaryResidenceShortcut: boolean;
+	export let jumpToWhatIfPrimaryResidenceSale: () => void;
 
 	export let stage2Reached: boolean;
 	export let stage2Passed: boolean;
@@ -98,15 +107,74 @@
 							Reduce or remove expenses.
 						</button>
 					</li>
-					<li>Increase income or add an income stream.</li>
-					<li>Keep working for longer.</li>
+					{#if showEmploymentIncomeShortcut}
+						<li>
+							<button
+								type="button"
+								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+								onclick={jumpToWhatIfEmploymentIncome}
+							>
+								Increase employment income.
+							</button>
+						</li>
+					{/if}
 					<li>
-						Sell an item or asset to bring in income{assetsList.some(
-							(asset) => asset.asset_type === 'property'
-						)
-							? ' (e.g. property).'
-							: '.'}
+						<button
+							type="button"
+							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+							onclick={jumpToWhatIfIncome}
+						>
+							Sell something or generate new income.
+						</button>
 					</li>
+					<li>
+						<button
+							type="button"
+							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+							onclick={jumpToWhatIfRetirementAge}
+						>
+							Keep working for longer.
+						</button>
+					</li>
+					{#if showInterestRateShortcut}
+						<li>
+							<button
+								type="button"
+								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+								onclick={jumpToWhatIfInterestRates}
+							>
+								Nogotiate better interest rates.
+							</button>
+						</li>
+					{/if}
+					{#if showInvestmentPropertyShortcut}
+						<li>
+							<button
+								type="button"
+								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+								onclick={jumpToWhatIfInvestmentPropertySale}
+							>
+								Sell an investment property.
+							</button>
+						</li>
+					{/if}
+					{#if showPrimaryResidenceShortcut}
+						<li>
+							<button
+								type="button"
+								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+							onclick={jumpToWhatIfPrimaryResidenceSale}
+						>
+							Sell your home.
+						</button>
+					</li>
+					{/if}
 				</ul>
 				<div class="mt-2 text-xs">
 					Head down to the

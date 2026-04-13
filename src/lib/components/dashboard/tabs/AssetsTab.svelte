@@ -192,6 +192,7 @@
 				<div class="app-hint mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1">
 					<span class="truncate text-slate-500">Retirement age</span>
 					<input
+						id={`retirement-age-input-${person.id}`}
 						type="number"
 						class="app-input-compact app-input-compact-lg w-24 justify-self-end"
 						value={personRetirementAges[person.id] ?? ''}
@@ -214,8 +215,8 @@
 					<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
 						<span class="truncate text-slate-500">Start date (MM YYYY)</span>
 						<div class="flex flex-col items-end justify-self-end">
-							<input
-								type="text"
+								<input
+									type="text"
 								inputmode="numeric"
 								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 								class="app-input-compact app-input-compact-lg w-24"
@@ -492,6 +493,12 @@
 						<CashflowDraftForm
 							{draft}
 							isEdit={Boolean(activeCashflowForm.cashflowId)}
+							categoryInputId={`cashflow-category-${person.id}-${activeCashflowForm.type}${
+								activeCashflowForm.cashflowId ? `-${activeCashflowForm.cashflowId}` : ''
+							}`}
+							descriptionInputId={`cashflow-description-${person.id}-${activeCashflowForm.type}${
+								activeCashflowForm.cashflowId ? `-${activeCashflowForm.cashflowId}` : ''
+							}`}
 							categoryOptions={getCategoryOptionsFor(person.id, draft.type)}
 							frequencyOptions={cashflowFrequencyOptions}
 							assetAccountOptions={getAssetAccountOptions(person.id)}
@@ -810,10 +817,10 @@
 				<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
 					<span class="truncate text-slate-500">Start date (MM YYYY)</span>
 					<div class="flex flex-col items-end justify-self-end">
-						<input
-							type="text"
-							inputmode="numeric"
-							pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
+							<input
+								type="text"
+								inputmode="numeric"
+								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 							class="app-input-compact app-input-compact-lg w-24"
 							value={shareDetails[share.id]?.startDate ?? ''}
 							oninput={(event) => {
@@ -972,6 +979,7 @@
 					<span class="truncate text-slate-500">Sale date (MM YYYY)</span>
 					<div class="flex flex-col items-end justify-self-end">
 						<input
+							id={`property-sale-date-input-${property.id}`}
 							type="text"
 							inputmode="numeric"
 							pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
@@ -1092,8 +1100,8 @@
 					<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
 						<span class="truncate text-slate-500">Start date (MM YYYY)</span>
 						<div class="flex flex-col items-end justify-self-end">
-							<input
-								type="text"
+								<input
+									type="text"
 								inputmode="numeric"
 								pattern="^(0[1-9]|1[0-2])(\\s|/|-)?\\d{4}$"
 								class="app-input-compact app-input-compact-lg w-24"
@@ -1143,8 +1151,8 @@
 					<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
 						<span class="truncate text-slate-500">Name</span>
 						<div class="flex flex-col items-end justify-self-end">
-							<input
-								type="text"
+						<input
+							type="text"
 								class="app-input-compact app-input-compact-lg w-24"
 								value={propertyDetails[property.id]?.name ?? property.name}
 								oninput={(event) => {
@@ -1461,6 +1469,12 @@
 						<CashflowDraftForm
 							{draft}
 							isEdit={Boolean(activeCashflowForm.cashflowId)}
+							categoryInputId={`cashflow-category-${property.id}-${activeCashflowForm.type}${
+								activeCashflowForm.cashflowId ? `-${activeCashflowForm.cashflowId}` : ''
+							}`}
+							descriptionInputId={`cashflow-description-${property.id}-${activeCashflowForm.type}${
+								activeCashflowForm.cashflowId ? `-${activeCashflowForm.cashflowId}` : ''
+							}`}
 							categoryOptions={getCategoryOptionsFor(property.id, draft.type)}
 							frequencyOptions={cashflowFrequencyOptions}
 							assetAccountOptions={getAssetAccountOptions(property.id)}
