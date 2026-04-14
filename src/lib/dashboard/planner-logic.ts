@@ -9,6 +9,11 @@ export type PlannerRunOutEvent = {
 	monthLabel?: string | null;
 };
 
+export const isStage2RunOutEvent = (event: PlannerRunOutEvent | null | undefined) =>
+	event?.tone === 'negative' &&
+	typeof event?.message === 'string' &&
+	event.message.includes('runs out of money.');
+
 export type PlannerStageState = {
 	stage1Passed: boolean;
 	stage2Reached: boolean;
@@ -21,13 +26,7 @@ export type PlannerStageState = {
 
 export const findStage2RunOutEvent = (
 	events: PlannerRunOutEvent[] | null | undefined
-): PlannerRunOutEvent | null =>
-	(events ?? []).find(
-		(event) =>
-			event.tone === 'negative' &&
-			typeof event.message === 'string' &&
-			event.message.includes('runs out of money.')
-	) ?? null;
+): PlannerRunOutEvent | null => (events ?? []).find((event) => isStage2RunOutEvent(event)) ?? null;
 
 export const derivePlannerStageState = (
 	firstLiquidityDeficit: unknown | null,
@@ -290,63 +289,10 @@ export type PlannerShortfallLike = {
 	}[];
 };
 
-export type PlannerSourceOption = {
-	id: string;
-	name: string;
-	availableNow?: boolean;
-	availableFromDate?: number | null;
-};
-
 export const getStage2AccessibilityShortfall = (
 	firstShortfall: PlannerShortfallLike | null
 ): PlannerShortfallLike | null =>
 	firstShortfall && (firstShortfall.minBalance ?? 0) <= 0 ? firstShortfall : null;
-
-export const getPlannerExistingRules = <
-	TRule extends { target_account_id: string; enabled: boolean; priority_order: number }
->(
-	stage2AccessibilityShortfall: PlannerShortfallLike | null,
-	autoFundingRules: TRule[]
-): TRule[] | null =>
-	stage2AccessibilityShortfall
-		? autoFundingRules
-				.filter(
-					(rule) =>
-						rule.target_account_id === stage2AccessibilityShortfall.targetAccountId && rule.enabled
-				)
-				.sort((a, b) => a.priority_order - b.priority_order)
-		: null;
-
-export const getPlannerSourceOptions = (
-	stage2AccessibilityShortfall: PlannerShortfallLike | null,
-	plannerExistingRules: { source_account_id: string }[] | null
-): PlannerSourceOption[] => {
-	if (!stage2AccessibilityShortfall) return [];
-	const usedSourceIds = new Set((plannerExistingRules ?? []).map((rule) => rule.source_account_id));
-	return (stage2AccessibilityShortfall.availableSourceAccounts ?? [])
-		.filter(
-			(option) =>
-				option.accountId !== stage2AccessibilityShortfall.targetAccountId &&
-				!usedSourceIds.has(option.accountId)
-		)
-		.map((option) => ({
-			id: option.accountId,
-			name: option.accountName,
-			availableNow: option.availableNow,
-			availableFromDate: option.availableFromDate
-		}))
-		.sort((a, b) => a.name.localeCompare(b.name));
-};
-
-export const getPlannerSourceAvailabilityWarning = (
-	plannerSelectedSourceOption: PlannerSourceOption | null,
-	toMonthLabel: (value: number) => string
-) => {
-	if (!plannerSelectedSourceOption || plannerSelectedSourceOption.availableNow) return '';
-	return plannerSelectedSourceOption.availableFromDate
-		? `${plannerSelectedSourceOption.name} is not available yet. Transfers will take over from ${toMonthLabel(plannerSelectedSourceOption.availableFromDate)}.`
-		: `${plannerSelectedSourceOption.name} is not available yet and can be used once it becomes available.`;
-};
 
 type PlannerDeficitLike = {
 	startDate: number;

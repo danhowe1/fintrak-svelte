@@ -105,6 +105,7 @@
 										</div>
 									{:else if canSelectDestination && availableSweepDestinationOptions.length > 0}
 										<select
+											id={`cap-destination-select-${account.id}-${priority}`}
 											class="app-input-compact w-full min-w-[160px]"
 											value=""
 											onchange={(event) => {

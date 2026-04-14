@@ -3,8 +3,6 @@ import {
 	calculateStage3Assessment,
 	findStage2RunOutEvent,
 	getPlannerLiquiditySaleShortcut,
-	getPlannerSourceAvailabilityWarning,
-	getPlannerSourceOptions,
 	getStage2AccessibilityShortfall
 } from '../src/lib/dashboard/planner-logic';
 
@@ -85,37 +83,6 @@ describe('dashboard planner logic helpers', () => {
 		});
 
 		expect(assessment?.growthAllocationPct).toBe(93.8);
-	});
-
-	it('derives source options from shortfall and existing rules', () => {
-		const shortfall = getStage2AccessibilityShortfall({
-			minBalance: -100,
-			targetAccountId: 'target-1',
-			targetAccountName: 'Target',
-			availableSourceAccounts: [
-				{ accountId: 'src-2', accountName: 'Zeta', availableNow: true },
-				{
-					accountId: 'src-1',
-					accountName: 'Alpha',
-					availableNow: false,
-					availableFromDate: 203004
-				},
-				{ accountId: 'target-1', accountName: 'Target', availableNow: true }
-			]
-		});
-		const options = getPlannerSourceOptions(shortfall, [{ source_account_id: 'src-2' }]);
-
-		expect(options).toEqual([
-			{
-				id: 'src-1',
-				name: 'Alpha',
-				availableNow: false,
-				availableFromDate: 203004
-			}
-		]);
-		expect(
-			getPlannerSourceAvailabilityWarning(options[0], (value) => `M${value.toString()}`)
-		).toContain('M203004');
 	});
 
 	it('builds a liquidity sale shortcut from best available source', () => {

@@ -280,9 +280,7 @@ export type DashboardScenarioResetState = {
 	transferFormError: string;
 	transferInlineError: string;
 	accountInlineError: string;
-	autoFundingRuleError: string;
 	plannerLiquidityShortcutError: string;
-	plannerSourceAccountId: string;
 	plannerAdvancedOpenStage: 'stage3' | 'stage4';
 	fundingReserveDrafts: Record<string, string>;
 	fundingCapDrafts: Record<string, string>;
@@ -317,9 +315,7 @@ export const createDashboardScenarioResetState = (): DashboardScenarioResetState
 	transferFormError: '',
 	transferInlineError: '',
 	accountInlineError: '',
-	autoFundingRuleError: '',
 	plannerLiquidityShortcutError: '',
-	plannerSourceAccountId: '',
 	plannerAdvancedOpenStage: 'stage3',
 	fundingReserveDrafts: {},
 	fundingCapDrafts: {},

@@ -256,7 +256,7 @@ export type TransfersTabProps = {
 };
 
 export type ReservesTabDataProps = {
-	fundingCashAccountOptions: AccountOption[];
+	fundingReserveAccountOptions: AccountOption[];
 	fundingReserveDrafts: Record<string, string>;
 	fundingReservePriorityRowCount: number;
 	fundingReserveRulesByAccount: Record<string, AutoFundingRule[]>;

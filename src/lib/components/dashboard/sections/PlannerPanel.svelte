@@ -1,5 +1,4 @@
 <script lang="ts">
-	import Button from '$lib/components/ui/Button.svelte';
 	import InfoTooltip from '$lib/components/ui/InfoTooltip.svelte';
 	import StatusMessage from '$lib/components/ui/StatusMessage.svelte';
 
@@ -24,14 +23,6 @@
 	export let stage2Passed: boolean;
 	export let stage2PlannerMessage: string | null | undefined;
 	export let stage2AccessibilityShortfall: any;
-	export let plannerExistingRules: any[] | null;
-	export let accountsList: Array<{ id: string; name?: string }>;
-	export let removeAutoFundingRule: (ruleId: string) => void;
-	export let plannerSourceAccountId: string;
-	export let plannerSourceOptions: Array<{ id: string; name: string }>;
-	export let plannerSourceAvailabilityWarning: string;
-	export let saveAutoFundingRule: () => void;
-	export let autoFundingRuleError: string;
 
 	export let plannerAdvancedOpenStage: 'stage3' | 'stage4';
 	export let stage3Reached: boolean;
@@ -39,8 +30,8 @@
 	export let stage3Assessment: any;
 	export let stage4Reached: boolean;
 	export let stage4Passed: boolean;
-	export let jumpToWhatIfReserves: () => void;
-	export let jumpToWhatIfCaps: () => void;
+	export let jumpToWhatIfReserves: (targetAccountId?: string) => void;
+	export let jumpToWhatIfCaps: (targetAccountId?: string) => void;
 	export let monthLabelFromDate: (value?: unknown | null) => string;
 
 	export let projectionEvents: Array<{
@@ -77,11 +68,11 @@
 			</StatusMessage>
 		{/if}
 		{#if plannerStage === 'liquidity'}
-			<StatusMessage tone="warning" class="mt-3">
+			<StatusMessage tone="error" class="mt-3">
 				{stage1PlannerMessage}
 			</StatusMessage>
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-				<div class="font-semibold">Fix Liquidity First</div>
+				<div class="font-semibold">Fix Liquidity</div>
 				<div class="mt-1 text-xs">
 					You need to reduce your expenses or increase your income to ensure your liquidity.
 				</div>
@@ -216,73 +207,27 @@
 			</StatusMessage>
 		{/if}
 		{#if stage2Reached && !stage2Passed}
-			<StatusMessage tone="warning" class="mt-3">
+			<StatusMessage tone="error" class="mt-3">
 				{stage2PlannerMessage}
 			</StatusMessage>
 			{#if stage2AccessibilityShortfall}
-				<div class="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
-					<div class="font-semibold">
-						Stage 2: Accessibility for {stage2AccessibilityShortfall.targetAccountName} from {stage2AccessibilityShortfall.monthLabel}
-						from which account...
-					</div>
-					{#if (plannerExistingRules?.length ?? 0) > 0}
-						<div class="mt-2 space-y-1 text-xs">
-							{#each plannerExistingRules ?? [] as rule}
-								{@const sourceAccountName =
-									accountsList.find((account) => account.id === rule.source_account_id)?.name ??
-									'Source account'}
-								<div
-									class="flex items-center justify-between gap-2 rounded border border-slate-200 bg-white px-2 py-1"
-								>
-									<span>Priority {rule.priority_order}: {sourceAccountName}</span>
-									<Button
-										type="button"
-										variant="secondary"
-										size="2xs"
-										onclick={() => removeAutoFundingRule(rule.id)}
-									>
-										Remove
-									</Button>
-								</div>
-							{/each}
-						</div>
-					{/if}
-					<div class="app-hint mt-2 block">
-						<select
-							class="app-input-compact app-input-compact-lg w-full"
-							bind:value={plannerSourceAccountId}
+				<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+					<div class="font-semibold">Fix Accessibility</div>
+					<div class="mt-1 text-xs">
+						You need to specify another account that will fund
+						{stage2AccessibilityShortfall.targetAccountName}. Head to the
+						<a
+							href="#what-if-panel"
+							class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
+							onclick={(event) => {
+								event.preventDefault();
+								void jumpToWhatIfReserves(stage2AccessibilityShortfall.targetAccountId);
+							}}
 						>
-							{#if plannerSourceOptions.length === 0}
-								<option value="">No valid funding accounts</option>
-							{:else}
-								<option value="">Add next funding account...</option>
-								{#each plannerSourceOptions as option}
-									<option value={option.id}>{option.name}</option>
-								{/each}
-							{/if}
-						</select>
+							Reserves
+						</a>
+						area below to select the funding accounts.
 					</div>
-					{#if plannerSourceAvailabilityWarning}
-						<div
-							class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-800"
-						>
-							{plannerSourceAvailabilityWarning}
-						</div>
-					{/if}
-					<div class="mt-2">
-						<Button
-							type="button"
-							variant="secondary"
-							size="xs"
-							disabled={!plannerSourceAccountId || plannerSourceOptions.length === 0}
-							onclick={saveAutoFundingRule}
-						>
-							Add Funding Account
-						</Button>
-					</div>
-					{#if autoFundingRuleError}
-						<StatusMessage tone="error" class="mt-2">{autoFundingRuleError}</StatusMessage>
-					{/if}
 				</div>
 			{:else}
 				<StatusMessage tone="info" class="mt-3 border-slate-200 bg-slate-50 text-slate-700">
@@ -480,36 +425,6 @@
 									</div>
 								<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
 							</div>
-							<div
-								class="rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900"
-							>
-								<div class="flex items-center justify-between gap-2">
-									<div class="flex items-center gap-1">
-										<span class="font-semibold">Total Financial Health Score</span>
-										<InfoTooltip
-											label="What is the total financial health score?"
-											theme="sky"
-											align="right"
-										>
-											Measures your overall planner position by combining the safety buffer,
-											resilience, growth allocation and horizon fit scores. Current profile is
-											{stage3Assessment.profile}.
-											<br /><br />
-											This is measured so you can quickly see the overall shape of the plan rather
-											than needing to interpret each score separately.
-											<br /><br />
-											It is worked out as a weighted blend of the other planner scores: safety
-											buffer 35%, growth allocation 35%, resilience 20%, and horizon fit 10%.
-											The combined result is then grouped into a profile: Conservative for lower
-											scores, Balanced for mid-range scores, and Growth for higher scores.
-										</InfoTooltip>
-									</div>
-									<span class="font-semibold">{stage3Assessment.totalScore}/100</span>
-								</div>
-								<div class="mt-1 text-[11px] text-sky-800">
-									Current profile: {stage3Assessment.profile}.
-								</div>
-							</div>
 						</div>
 				{/if}
 				{#if !stage4Passed}
@@ -518,11 +433,7 @@
 					>
 						<div class="font-semibold">Set Cap Settings In What If</div>
 						<div class="mt-1 text-xs">
-							Use the Caps tab in the What if?... section to set cap amounts and funding destination
-							priorities.
-						</div>
-						<div class="mt-2 text-xs">
-							Head down to the
+							Use the
 							<a
 								href="#what-if-panel"
 								class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
@@ -531,9 +442,40 @@
 									void jumpToWhatIfCaps();
 								}}
 							>
-								What if?...
+								Caps
 							</a>
-							section below to make your changes.
+							tab in the What if?... section to set cap amounts and funding destination
+							priorities.
+						</div>
+					</div>
+				{/if}
+				{#if stage3Assessment}
+					<div class="mt-3 rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900">
+						<div class="flex items-center justify-between gap-2">
+							<div class="flex items-center gap-1">
+								<span class="font-semibold">Total Financial Health Score</span>
+								<InfoTooltip
+									label="What is the total financial health score?"
+									theme="sky"
+									align="right"
+								>
+									Measures your overall planner position by combining the safety buffer,
+									resilience, growth allocation and horizon fit scores. Current profile is
+									{stage3Assessment.profile}.
+									<br /><br />
+									This is measured so you can quickly see the overall shape of the plan rather
+									than needing to interpret each score separately.
+									<br /><br />
+									It is worked out as a weighted blend of the other planner scores: safety
+									buffer 35%, growth allocation 35%, resilience 20%, and horizon fit 10%.
+									The combined result is then grouped into a profile: Conservative for lower
+									scores, Balanced for mid-range scores, and Growth for higher scores.
+								</InfoTooltip>
+							</div>
+							<span class="font-semibold">{stage3Assessment.totalScore}/100</span>
+						</div>
+						<div class="mt-1 text-[11px] text-sky-800">
+							Current profile: {stage3Assessment.profile}.
 						</div>
 					</div>
 				{/if}

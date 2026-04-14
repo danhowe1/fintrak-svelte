@@ -204,19 +204,25 @@ export const actions: Actions = {
 				superAssetByAccountId.set(link.account_id, link.asset_id);
 			}
 		}
+		const offsetAccountIds = new Set(
+			assetAccounts
+				.filter((link) => link.relationship_role === 'offsets')
+				.map((link) => link.account_id)
+		);
 		const isAllowedAutoFundingSource = (accountId: string, accountType: string | undefined) =>
 			accountType === 'cash_account' ||
+			offsetAccountIds.has(accountId) ||
 			(accountType === 'brokerage' && shareAssetByAccountId.has(accountId)) ||
 			(accountType === 'super_account' && superAssetByAccountId.has(accountId));
 		if (
 			!sourceAccount ||
 			!targetAccount ||
 			!isAllowedAutoFundingSource(sourceAccountId, sourceAccount.account_type) ||
-			targetAccount.account_type !== 'cash_account'
+			(targetAccount.account_type !== 'cash_account' && !offsetAccountIds.has(targetAccountId))
 		) {
 			return fail(400, {
 				error:
-					'Auto-funding source must be a cash account, shares brokerage account, or eligible super account. Target must be a cash account.'
+					'Auto-funding source must be a cash account, offset account, shares brokerage account, or eligible super account. Target must be a cash or offset account.'
 			});
 		}
 

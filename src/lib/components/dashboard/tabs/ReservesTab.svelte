@@ -7,15 +7,15 @@
 </script>
 
 <div class="mt-5 space-y-4">
-	{#if data.fundingCashAccountOptions.length === 0}
-		<div class="app-card app-text-muted">No eligible cash accounts available yet.</div>
+	{#if data.fundingReserveAccountOptions.length === 0}
+		<div class="app-card app-text-muted">No eligible reserve accounts available yet.</div>
 	{:else}
 		<div class="overflow-x-auto rounded-xl border border-slate-200 bg-white">
 			<AppTable>
 				<thead class="app-table-head">
 					<tr>
-						<th class="app-cell text-slate-600 normal-case">Cash accounts</th>
-						{#each data.fundingCashAccountOptions as account (account.id)}
+						<th class="app-cell text-slate-600 normal-case">Cash and offset accounts</th>
+						{#each data.fundingReserveAccountOptions as account (account.id)}
 							<th class="app-cell text-slate-700 normal-case">{account.name}</th>
 						{/each}
 					</tr>
@@ -23,7 +23,7 @@
 				<tbody class="app-table-body">
 					<tr>
 						<td class="app-cell-strong">Reserve amount</td>
-						{#each data.fundingCashAccountOptions as account (account.id)}
+						{#each data.fundingReserveAccountOptions as account (account.id)}
 							<td class="app-cell">
 								<input
 									id={`reserve-amount-input-${account.id}`}
@@ -45,7 +45,7 @@
 					</tr>
 					<tr>
 						<td
-							colspan={data.fundingCashAccountOptions.length + 1}
+							colspan={data.fundingReserveAccountOptions.length + 1}
 							class="app-cell text-xs text-sky-800"
 						>
 							Select the assets or accounts to fund the account from once it falls below its
@@ -56,7 +56,7 @@
 						{@const priority = priorityIndex + 1}
 						<tr>
 							<td class="app-cell-strong">Funding source priority {priority}</td>
-							{#each data.fundingCashAccountOptions as account (account.id)}
+							{#each data.fundingReserveAccountOptions as account (account.id)}
 								{@const accountReserveRules = data.fundingReserveRulesByAccount[account.id] ?? []}
 								{@const rule = accountReserveRules[priorityIndex] ?? null}
 								{@const canSelectSource =
@@ -98,6 +98,7 @@
 										</div>
 									{:else if canSelectSource && availableReserveSourceOptions.length > 0}
 										<select
+											id={`reserve-source-select-${account.id}-${priority}`}
 											class="app-input-compact w-full min-w-[160px]"
 											value=""
 											onchange={(event) => {

@@ -37,10 +37,8 @@
 	import {
 		calculateStage3Assessment,
 		findStage2RunOutEvent,
-		getPlannerExistingRules,
 		getPlannerLiquiditySaleShortcut,
-		getPlannerSourceAvailabilityWarning,
-		getPlannerSourceOptions,
+		isStage2RunOutEvent,
 		getStage2AccessibilityShortfall
 	} from '$lib/dashboard/planner-logic';
 	import {
@@ -227,6 +225,8 @@
 	let fundingReserveDrafts: Record<string, string> = {};
 	let fundingCapDrafts: Record<string, string> = {};
 	let fundingCashAccountOptions: AccountOption[] = [];
+	let fundingReserveAccountOptions: AccountOption[] = [];
+	let fundingReserveSourceAccountOptions: AccountOption[] = [];
 	let fundingReserveRulesByAccount: Record<string, typeof autoFundingRules> = {};
 	let fundingReserveSourceOptionsByAccount: Record<string, AccountOption[]> = {};
 	let fundingReservePriorityRowCount = 1;
@@ -342,8 +342,6 @@
 	let transferEditDrafts: Record<string, TransferEditDraft>;
 	let accountEditDrafts: Record<string, AccountEditDraft>;
 	let accountInlineError: string;
-	let plannerSourceAccountId = '';
-	let autoFundingRuleError = '';
 	let plannerLiquidityShortcutError = '';
 	let plannerHeadline = '';
 	let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
@@ -423,23 +421,6 @@
 			: stage2FirstRunOutEvent.message
 		: 'Auto-funding needs attention.';
 	$: stage2AccessibilityShortfall = getStage2AccessibilityShortfall(plannerFirstShortfall);
-	$: plannerExistingRules = getPlannerExistingRules(stage2AccessibilityShortfall, autoFundingRules);
-	$: plannerSourceOptions = getPlannerSourceOptions(
-		stage2AccessibilityShortfall,
-		plannerExistingRules
-	);
-	$: plannerSelectedSourceOption =
-		plannerSourceOptions.find((option) => option.id === plannerSourceAccountId) ?? null;
-	$: plannerSourceAvailabilityWarning = getPlannerSourceAvailabilityWarning(
-		plannerSelectedSourceOption,
-		(date) => monthLabelFromDate(date)
-	);
-	$: if (
-		plannerSourceAccountId &&
-		!plannerSourceOptions.some((option) => option.id === plannerSourceAccountId)
-	) {
-		plannerSourceAccountId = '';
-	}
 	$: {
 		const nextReserveDrafts = { ...fundingReserveDrafts };
 		const nextCapDrafts = { ...fundingCapDrafts };
@@ -480,9 +461,7 @@
 			personDetailsErrors,
 			updateTimers,
 			editingCashflowIds,
-			autoFundingRuleError,
 			plannerLiquidityShortcutError,
-			plannerSourceAccountId,
 			plannerAdvancedOpenStage,
 			fundingReserveDrafts,
 			fundingCapDrafts,
@@ -770,7 +749,11 @@
 	);
 
 	$: transferAccountOptions = (() => {
-		const accountIdsWithAssetLinks = new Set(assetAccountsList.map((link) => link.account_id));
+		const offsetAccountIds = new Set(
+			assetAccountsList
+				.filter((link) => link.relationship_role === 'offsets')
+				.map((link) => link.account_id)
+		);
 		const assetsById = new Map(assetsList.map((asset) => [asset.id, asset]));
 		const sharesBrokerageAccountIds = new Set(
 			assetAccountsList
@@ -784,10 +767,10 @@
 		return accountsList
 			.filter(
 				(account) =>
-					accountIdsWithAssetLinks.has(account.id) &&
-					(account.account_type === 'cash_account' ||
-						(account.account_type === 'brokerage' && sharesBrokerageAccountIds.has(account.id)) ||
-						account.account_type === 'super_account')
+					account.account_type === 'cash_account' ||
+					offsetAccountIds.has(account.id) ||
+					(account.account_type === 'brokerage' && sharesBrokerageAccountIds.has(account.id)) ||
+					account.account_type === 'super_account'
 			)
 			.map((account) => ({ id: account.id, name: account.name }))
 			.sort((a, b) => a.name.localeCompare(b.name));
@@ -796,8 +779,31 @@
 		(option) =>
 			accountsList.find((account) => account.id === option.id)?.account_type === 'cash_account'
 	);
+	$: fundingReserveAccountOptions = (() => {
+		const offsetAccountIds = new Set(
+			assetAccountsList
+				.filter((link) => link.relationship_role === 'offsets')
+				.map((link) => link.account_id)
+		);
+		return accountsList
+			.filter(
+				(account) => account.account_type === 'cash_account' || offsetAccountIds.has(account.id)
+			)
+			.map((account) => ({ id: account.id, name: account.name }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	})();
+	$: fundingReserveSourceAccountOptions = (() => {
+		const optionById = new Map<string, AccountOption>();
+		for (const option of transferAccountOptions) {
+			optionById.set(option.id, option);
+		}
+		for (const option of fundingReserveAccountOptions) {
+			optionById.set(option.id, option);
+		}
+		return Array.from(optionById.values()).sort((a, b) => a.name.localeCompare(b.name));
+	})();
 	$: fundingReserveRulesByAccount = Object.fromEntries(
-		fundingCashAccountOptions.map((account) => [
+		fundingReserveAccountOptions.map((account) => [
 			account.id,
 			autoFundingRules
 				.filter((rule) => rule.target_account_id === account.id)
@@ -805,11 +811,11 @@
 		])
 	);
 	$: fundingReserveSourceOptionsByAccount = Object.fromEntries(
-		fundingCashAccountOptions.map((account) => {
+		fundingReserveAccountOptions.map((account) => {
 			const existingSourceIds = new Set(
 				(fundingReserveRulesByAccount[account.id] ?? []).map((rule) => rule.source_account_id)
 			);
-			const options = transferAccountOptions.filter(
+			const options = fundingReserveSourceAccountOptions.filter(
 				(option) => option.id !== account.id && !existingSourceIds.has(option.id)
 			);
 			return [account.id, options];
@@ -817,7 +823,7 @@
 	);
 	$: fundingReservePriorityRowCount = (() => {
 		let maxRows = 1;
-		for (const account of fundingCashAccountOptions) {
+		for (const account of fundingReserveAccountOptions) {
 			const rows = (fundingReserveRulesByAccount[account.id]?.length ?? 0) + 1;
 			if (rows > maxRows) maxRows = rows;
 		}
@@ -1690,17 +1696,11 @@
 		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	};
 
-	const saveAutoFundingRule = async () => {
-		await dashboardMutations.saveAutoFundingRule();
-	};
-	const removeAutoFundingRule = async (ruleId: string) => {
-		await dashboardMutations.removeAutoFundingRule(ruleId);
-	};
-	const jumpToWhatIfReserves = async () => {
-		const firstCashAccountId = fundingCashAccountOptions[0]?.id ?? '';
+	const jumpToWhatIfReserves = async (targetAccountId = '') => {
+		const firstCashAccountId = fundingReserveAccountOptions[0]?.id ?? '';
 		await jumpToWhatIfFundingInput({
 			tab: 'reserves',
-			firstCashAccountId,
+			targetAccountId: targetAccountId || firstCashAccountId,
 			setAssetPanelTab: (tab) => (assetPanelTab = tab),
 			tick,
 			whatIfPanelElement,
@@ -1708,11 +1708,11 @@
 		});
 	};
 
-	const jumpToWhatIfCaps = async () => {
+	const jumpToWhatIfCaps = async (targetAccountId = '') => {
 		const firstCashAccountId = fundingCashAccountOptions[0]?.id ?? '';
 		await jumpToWhatIfFundingInput({
 			tab: 'caps',
-			firstCashAccountId,
+			targetAccountId: targetAccountId || firstCashAccountId,
 			setAssetPanelTab: (tab) => (assetPanelTab = tab),
 			tick,
 			whatIfPanelElement,
@@ -2116,23 +2116,15 @@
 		scenarioId: data.scenario.id,
 		getAutoRunProjection: () => autoRunProjection,
 			withLock,
-			refreshProjection,
-			refreshWhatIf: loadWhatIfSection,
-			setProjectionError,
-			setWhatIfLoadError: (value) => {
-				dashboardLoadState.setWhatIfLoadError(value);
+				refreshProjection,
+				refreshWhatIf: loadWhatIfSection,
+				setProjectionError,
+				setWhatIfLoadError: (value) => {
+					dashboardLoadState.setWhatIfLoadError(value);
+				},
+			setFundingTabError: (value) => {
+				fundingTabError = value;
 			},
-			getStage2AccessibilityShortfall: () => stage2AccessibilityShortfall,
-		getPlannerSourceAccountId: () => plannerSourceAccountId,
-		setPlannerSourceAccountId: (value) => {
-			plannerSourceAccountId = value;
-		},
-		setAutoFundingRuleError: (value) => {
-			autoFundingRuleError = value;
-		},
-		setFundingTabError: (value) => {
-			fundingTabError = value;
-		},
 		getAutoFundingRules: () => (autoFundingRules ?? []) as Array<Record<string, unknown>>,
 		setAutoFundingRules: (rules) => {
 			setAutoFundingRules(rules as typeof autoFundingRules);
@@ -2347,7 +2339,7 @@
 			},
 			reservesTabProps: {
 				data: {
-					fundingCashAccountOptions,
+					fundingReserveAccountOptions,
 					fundingReserveDrafts,
 					fundingReservePriorityRowCount,
 					fundingReserveRulesByAccount,
@@ -2428,13 +2420,6 @@
 			stage2Passed,
 			stage2PlannerMessage,
 			stage2AccessibilityShortfall,
-			plannerExistingRules,
-			accountsList,
-			removeAutoFundingRule,
-			plannerSourceOptions,
-			plannerSourceAvailabilityWarning,
-			saveAutoFundingRule,
-			autoFundingRuleError,
 			stage3Reached,
 			stage3Passed,
 			stage3Assessment,
@@ -2443,7 +2428,7 @@
 			jumpToWhatIfReserves,
 			jumpToWhatIfCaps,
 			monthLabelFromDate,
-			projectionEvents: projectionData.events ?? [],
+			projectionEvents: (projectionData.events ?? []).filter((event) => !isStage2RunOutEvent(event)),
 			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
 		}
 	});
@@ -2517,7 +2502,6 @@
 		</div>
 		<PlannerPanel
 			{...dashboardSections.plannerPanelProps}
-			bind:plannerSourceAccountId
 			bind:plannerAdvancedOpenStage
 		/>
 	</div>

@@ -28,10 +28,6 @@ import {
 	runScenarioMutationCommand,
 	saveAccountEditDraftCommand
 } from '$lib/dashboard/entity-commands';
-import {
-	removeAutoFundingRuleCommand,
-	saveAutoFundingRuleCommand
-} from '$lib/dashboard/planner-commands';
 
 type WithLock = (key: string, run: () => Promise<void>, showSpinner?: boolean) => Promise<void>;
 
@@ -52,11 +48,6 @@ export type DashboardMutationControllerDeps = {
 	refreshWhatIf?: RefreshWhatIf;
 	setProjectionError: SetProjectionError;
 	setWhatIfLoadError?: SetWhatIfLoadError;
-
-	getStage2AccessibilityShortfall: () => unknown;
-	getPlannerSourceAccountId: () => string;
-	setPlannerSourceAccountId: (value: string) => void;
-	setAutoFundingRuleError: (value: string) => void;
 
 	setFundingTabError: (value: string) => void;
 	getAutoFundingRules: () => Array<Record<string, unknown>>;
@@ -103,38 +94,6 @@ export type DashboardMutationControllerDeps = {
 };
 
 export const createDashboardMutationController = (deps: DashboardMutationControllerDeps) => {
-	const saveAutoFundingRule = async () => {
-		const result = await saveAutoFundingRuleCommand({
-			stage2AccessibilityShortfall: deps.getStage2AccessibilityShortfall() as any,
-			plannerSourceAccountId: deps.getPlannerSourceAccountId(),
-			scenarioId: deps.scenarioId,
-			autoRunProjection: deps.getAutoRunProjection(),
-			withLock: deps.withLock,
-			postAction,
-			setAutoFundingRules: deps.setAutoFundingRules,
-			refreshProjection: deps.refreshProjection
-		});
-		deps.setAutoFundingRuleError(result.autoFundingRuleError);
-		if (result.nextPlannerSourceAccountId !== undefined) {
-			deps.setPlannerSourceAccountId(result.nextPlannerSourceAccountId);
-		}
-		deps.setProjectionError(result.projectionError);
-	};
-
-	const removeAutoFundingRule = async (ruleId: string) => {
-		const result = await removeAutoFundingRuleCommand({
-			ruleId,
-			scenarioId: deps.scenarioId,
-			autoRunProjection: deps.getAutoRunProjection(),
-			withLock: deps.withLock,
-			postAction,
-			setAutoFundingRules: deps.setAutoFundingRules,
-			refreshProjection: deps.refreshProjection
-		});
-		deps.setAutoFundingRuleError(result.autoFundingRuleError);
-		deps.setProjectionError(result.projectionError);
-	};
-
 	const upsertFundingTargetForAccount = async (accountId: string) => {
 		deps.setFundingTabError(
 			await upsertFundingTargetForAccountCommand({
@@ -603,8 +562,6 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 	};
 
 	return {
-		saveAutoFundingRule,
-		removeAutoFundingRule,
 		upsertFundingTargetForAccount,
 		addReserveRuleForTarget,
 		removeReserveRule,

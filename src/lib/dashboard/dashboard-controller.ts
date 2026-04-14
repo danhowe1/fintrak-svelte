@@ -16,7 +16,7 @@ export type WhatIfPanelStaticProps = Omit<WhatIfPanelProps, 'assetPanelTab' | 'w
 
 export type PlannerPanelStaticProps = Omit<
 	PlannerPanelProps,
-	'plannerSourceAccountId' | 'plannerAdvancedOpenStage'
+	'plannerAdvancedOpenStage'
 >;
 
 export type DashboardSectionsControllerState = {

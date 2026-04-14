@@ -1,68 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-	jumpToWhatIfFundingInput,
-	removeAutoFundingRuleCommand,
-	saveAutoFundingRuleCommand
-} from '../src/lib/dashboard/planner-commands';
+import { jumpToWhatIfFundingInput } from '../src/lib/dashboard/planner-commands';
 
 describe('dashboard planner command helpers', () => {
-	it('returns validation error when source account is missing', async () => {
-		const result = await saveAutoFundingRuleCommand({
-			stage2AccessibilityShortfall: { targetAccountId: 'target-1' },
-			plannerSourceAccountId: '',
-			scenarioId: 'sc-1',
-			autoRunProjection: true,
-			withLock: vi.fn(async (_key, callback) => callback()),
-			postAction: vi.fn(),
-			setAutoFundingRules: vi.fn(),
-			refreshProjection: vi.fn(async () => {})
-		});
-		expect(result.autoFundingRuleError).toBe('Select a source account.');
-		expect(result.projectionError).toBeNull();
-	});
-
-	it('saves auto-funding rule and clears source selection', async () => {
-		const setAutoFundingRules = vi.fn();
-		const refreshProjection = vi.fn(async () => {});
-		const postAction = vi.fn(async () => ({ autoFundingRules: [{ id: 'r1' }] }));
-		const result = await saveAutoFundingRuleCommand({
-			stage2AccessibilityShortfall: { targetAccountId: 'target-1' },
-			plannerSourceAccountId: 'src-1',
-			scenarioId: 'sc-1',
-			autoRunProjection: true,
-			withLock: vi.fn(async (_key, callback) => callback()),
-			postAction,
-			setAutoFundingRules,
-			refreshProjection
-		});
-		expect(postAction).toHaveBeenCalledWith(
-			'upsertAutoFundingRule',
-			expect.any(FormData),
-			'Unable to save auto-funding rule.'
-		);
-		expect(setAutoFundingRules).toHaveBeenCalledWith([{ id: 'r1' }]);
-		expect(refreshProjection).toHaveBeenCalledWith({ includeCashflows: true, force: true });
-		expect(result.nextPlannerSourceAccountId).toBe('');
-		expect(result.autoFundingRuleError).toBe('');
-	});
-
-	it('removes auto-funding rule and maps lock errors', async () => {
-		const result = await removeAutoFundingRuleCommand({
-			ruleId: 'rule-1',
-			scenarioId: 'sc-1',
-			autoRunProjection: true,
-			withLock: vi.fn(async () => {
-				throw new Error('boom');
-			}),
-			postAction: vi.fn(async () => ({})),
-			setAutoFundingRules: vi.fn(),
-			refreshProjection: vi.fn(async () => {})
-		});
-		expect(result.autoFundingRuleError).toBe('boom');
-		expect(result.projectionError).toBe('boom');
-	});
-
-	it('jumps to reserve/cap inputs and focuses target element', async () => {
+	it('jumps to reserve fallback input when no selector is available', async () => {
 		const setAssetPanelTab = vi.fn();
 		const tick = vi.fn(async () => {});
 		const panel = { scrollIntoView: vi.fn() } as any;
@@ -73,7 +13,7 @@ describe('dashboard planner command helpers', () => {
 		} as any;
 		await jumpToWhatIfFundingInput({
 			tab: 'reserves',
-			firstCashAccountId: 'cash-1',
+			targetAccountId: 'cash-1',
 			setAssetPanelTab,
 			tick,
 			whatIfPanelElement: panel,
@@ -81,5 +21,25 @@ describe('dashboard planner command helpers', () => {
 		});
 		expect(setAssetPanelTab).toHaveBeenCalledWith('reserves');
 		expect(input.focus).toHaveBeenCalled();
+	});
+
+	it('jumps to the next available reserve selector when earlier priorities are filled', async () => {
+		const setAssetPanelTab = vi.fn();
+		const tick = vi.fn(async () => {});
+		const panel = { scrollIntoView: vi.fn() } as any;
+		const select = {
+			scrollIntoView: vi.fn(),
+			focus: vi.fn()
+		} as any;
+		await jumpToWhatIfFundingInput({
+			tab: 'reserves',
+			targetAccountId: 'cash-1',
+			setAssetPanelTab,
+			tick,
+			whatIfPanelElement: panel,
+			getElementById: (id) => (id === 'reserve-source-select-cash-1-2' ? select : null)
+		});
+		expect(setAssetPanelTab).toHaveBeenCalledWith('reserves');
+		expect(select.focus).toHaveBeenCalled();
 	});
 });
