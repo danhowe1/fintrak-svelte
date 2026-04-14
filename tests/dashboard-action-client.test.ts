@@ -54,6 +54,20 @@ describe('dashboard action client', () => {
 		).rejects.toThrow('Scenario not found.');
 	});
 
+	it('throws payload error messages for action failure payloads on ok responses', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ type: 'failure', status: 400, data: { error: 'Keep one person.' } }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(
+			postAction('deleteAsset', new FormData(), 'Unable to delete asset.')
+		).rejects.toThrow('Keep one person.');
+	});
+
 	it('normalizes unknown thrown errors to fallback text', () => {
 		expect(getThrownErrorMessage(new Error('Boom'), 'Fallback')).toBe('Boom');
 		expect(getThrownErrorMessage({ value: 'From value' }, 'Fallback')).toBe('From value');

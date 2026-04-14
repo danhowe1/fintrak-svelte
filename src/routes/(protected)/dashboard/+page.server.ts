@@ -27,6 +27,7 @@ import {
 	updateMortgageDetails,
 	updateSuperannuationDetails,
 	getOrCreateHeldInAssetAccount,
+	deleteAssetForScenario,
 	getAutoFundingRulesForScenario,
 	createAutoFundingRule,
 	deleteAutoFundingRule,
@@ -738,8 +739,8 @@ export const actions: Actions = {
 		});
 		return { success: true };
 	},
-	updateSuperannuationDetails: async (event) => {
-		const userId = event.locals.appUserId;
+		updateSuperannuationDetails: async (event) => {
+			const userId = event.locals.appUserId;
 		if (!userId) {
 			throw redirect(303, '/login');
 		}
@@ -771,15 +772,42 @@ export const actions: Actions = {
 		if (!scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await updateSuperannuationDetails(scenarioId, assetId, {
-			preservationAge,
-			capitalGrowthRate,
-			managementFeeRate
-		});
-		return { success: true };
-	},
-	createTransferCashflow: async (event) => {
-		const userId = event.locals.appUserId;
+			await updateSuperannuationDetails(scenarioId, assetId, {
+				preservationAge,
+				capitalGrowthRate,
+				managementFeeRate
+			});
+			return { success: true };
+		},
+		deleteAsset: async (event) => {
+			const userId = event.locals.appUserId;
+			if (!userId) {
+				throw redirect(303, '/login');
+			}
+			const formData = await event.request.formData();
+			const scenarioId = String(formData.get('scenarioId') ?? '');
+			const assetId = String(formData.get('assetId') ?? '');
+			if (!scenarioId || !assetId) {
+				return fail(400, { error: 'Invalid asset deletion input.' });
+			}
+			const scenario = await getScenarioForUserById(userId, scenarioId);
+			if (!scenario) {
+				return fail(404, { error: 'Scenario not found.' });
+			}
+			try {
+				await deleteAssetForScenario(scenarioId, assetId);
+			} catch (error) {
+				return fail(400, {
+					error:
+						error instanceof Error
+							? error.message
+							: 'Unable to delete asset. Please try again.'
+				});
+			}
+			return { success: true };
+		},
+		createTransferCashflow: async (event) => {
+			const userId = event.locals.appUserId;
 		if (!userId) {
 			throw redirect(303, '/login');
 		}

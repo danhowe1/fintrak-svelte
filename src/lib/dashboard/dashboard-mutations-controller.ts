@@ -1,4 +1,4 @@
-import { postAction } from '$lib/dashboard/action-client';
+import { getPayloadErrorMessage, postAction } from '$lib/dashboard/action-client';
 import type {
 	AccountEditDraft,
 	CashflowDraft,
@@ -41,6 +41,7 @@ type RefreshProjection = (options?: {
 }) => Promise<void>;
 
 type SetProjectionError = (message: string | null) => void;
+type SetWhatIfLoadError = (message: string | null) => void;
 type RefreshWhatIf = () => Promise<void>;
 
 export type DashboardMutationControllerDeps = {
@@ -50,6 +51,7 @@ export type DashboardMutationControllerDeps = {
 	refreshProjection: RefreshProjection;
 	refreshWhatIf?: RefreshWhatIf;
 	setProjectionError: SetProjectionError;
+	setWhatIfLoadError?: SetWhatIfLoadError;
 
 	getStage2AccessibilityShortfall: () => unknown;
 	getPlannerSourceAccountId: () => string;
@@ -566,6 +568,40 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		if (error) deps.setProjectionError(error);
 	};
 
+	const confirmDeleteAsset = async (assetId: string) => {
+		try {
+			await deps.withLock(
+				`deleteAsset:${assetId}`,
+				async () => {
+					const formData = new FormData();
+					formData.set('scenarioId', deps.scenarioId);
+					formData.set('assetId', assetId);
+					const response = await fetch('/dashboard/data/delete-asset', {
+						method: 'POST',
+						body: formData,
+						headers: { accept: 'application/json' }
+					});
+					const payload = await response.json().catch(() => ({}));
+					if (!response.ok) {
+						throw new Error(
+							getPayloadErrorMessage(payload, 'Unable to delete asset. Please try again.')
+						);
+					}
+					deps.setWhatIfLoadError?.(null);
+					if (deps.refreshWhatIf) {
+						await deps.refreshWhatIf();
+					}
+					await deps.refreshProjection();
+				},
+				deps.getAutoRunProjection()
+			);
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : 'Unable to delete asset. Please try again.';
+			deps.setWhatIfLoadError?.(message);
+		}
+	};
+
 	return {
 		saveAutoFundingRule,
 		removeAutoFundingRule,
@@ -590,6 +626,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 		updateTransferInflationAffected,
 		saveTransferEditDraft,
 		saveAccountEditDraft,
-		confirmDeleteCashflow
+		confirmDeleteCashflow,
+		confirmDeleteAsset
 	};
 };

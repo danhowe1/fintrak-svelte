@@ -333,6 +333,7 @@
 	let expandedMortgageDetailIds: Set<string>;
 	let expandedShareDetailIds: Set<string>;
 	let deleteConfirmId: string | null = null;
+	let deleteAssetConfirm: { assetId: string; assetName: string } | null = null;
 	let transferFormError: string;
 	let transferInlineError: string;
 	let transferDraft: TransferDraft;
@@ -1844,6 +1845,18 @@
 		deleteConfirmId = null;
 		await dashboardMutations.confirmDeleteCashflow(cashflowId);
 	};
+	const requestDeleteAsset = (assetId: string, assetName: string) => {
+		deleteAssetConfirm = { assetId, assetName };
+	};
+	const cancelDeleteAsset = () => {
+		deleteAssetConfirm = null;
+	};
+	const confirmDeleteAsset = async () => {
+		const pendingDelete = deleteAssetConfirm;
+		if (!pendingDelete) return;
+		deleteAssetConfirm = null;
+		await dashboardMutations.confirmDeleteAsset(pendingDelete.assetId);
+	};
 	const updatePropertyDetails = async (
 		assetId: string,
 		name: string,
@@ -2102,11 +2115,14 @@
 	$: dashboardMutations = createDashboardMutationController({
 		scenarioId: data.scenario.id,
 		getAutoRunProjection: () => autoRunProjection,
-		withLock,
-		refreshProjection,
-		refreshWhatIf: loadWhatIfSection,
-		setProjectionError,
-		getStage2AccessibilityShortfall: () => stage2AccessibilityShortfall,
+			withLock,
+			refreshProjection,
+			refreshWhatIf: loadWhatIfSection,
+			setProjectionError,
+			setWhatIfLoadError: (value) => {
+				dashboardLoadState.setWhatIfLoadError(value);
+			},
+			getStage2AccessibilityShortfall: () => stage2AccessibilityShortfall,
 		getPlannerSourceAccountId: () => plannerSourceAccountId,
 		setPlannerSourceAccountId: (value) => {
 			plannerSourceAccountId = value;
@@ -2215,12 +2231,13 @@
 			transactionPivot,
 			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
 		},
-		whatIfPanelProps: {
-			isAddAssetMenuOpen: isWhatIfAddAssetMenuOpen,
-			isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
-			whatIfLoadError: $dashboardLoadState.whatIfLoadError,
-			assetsTabProps: {
-				data: { assetsList, assetAccountsList, accountsList },
+					whatIfPanelProps: {
+						isAddAssetMenuOpen: isWhatIfAddAssetMenuOpen,
+						isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
+						whatIfLoadError: $dashboardLoadState.whatIfLoadError,
+						hasPropertyAsset: assetsList.some((asset) => asset.asset_type === 'property'),
+						assetsTabProps: {
+							data: { assetsList, assetAccountsList, accountsList, requestDeleteAsset },
 				person: {
 					personDetails,
 					personRetirementAges,
@@ -2514,6 +2531,18 @@
 	cancelLabel="Cancel"
 	onCancel={cancelDeleteCashflow}
 	onConfirm={confirmDeleteCashflow}
+/>
+
+<ConfirmDialog
+	open={Boolean(deleteAssetConfirm)}
+	title="Delete asset?"
+	message={`${
+		deleteAssetConfirm?.assetName ?? 'This asset'
+	} will be permanently removed along with its associated cashflows. Fixed accounts created specifically for it, like mortgage, brokerage, or super accounts, will also be deleted.`}
+	confirmLabel="Delete"
+	cancelLabel="Cancel"
+	onCancel={cancelDeleteAsset}
+	onConfirm={confirmDeleteAsset}
 />
 
 <style>

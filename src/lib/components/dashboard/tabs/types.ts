@@ -54,6 +54,7 @@ export type AssetsTabDataProps = {
 	assetsList: AssetListItem[];
 	assetAccountsList: AssetAccountLink[];
 	accountsList: AccountListItem[];
+	requestDeleteAsset: (assetId: string, assetName: string) => void;
 };
 
 export type AssetsTabPersonProps = {

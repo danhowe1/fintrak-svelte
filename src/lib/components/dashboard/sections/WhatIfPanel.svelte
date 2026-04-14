@@ -15,6 +15,7 @@
 	export let isAddAssetMenuOpen = false;
 	export let isInitialWhatIfLoading: boolean;
 	export let whatIfLoadError: string | null;
+	export let hasPropertyAsset = false;
 
 	export let assetsTabProps: ComponentProps<typeof AssetsTab>;
 	export let accountsTabProps: ComponentProps<typeof AccountsTab>;
@@ -30,8 +31,6 @@
 		{ value: 'caps', label: 'Caps' }
 	];
 
-	const hasPropertyAsset = () =>
-		assetsTabProps.data.assetsList.some((asset) => asset.asset_type === 'property');
 </script>
 
 <div id="what-if-panel" bind:this={whatIfPanelElement} class="app-panel relative">
@@ -88,10 +87,10 @@
 						>
 							Add property
 						</PendingNavLink>
-						{#if hasPropertyAsset()}
-							<PendingNavLink
-								href="/assets/mortgage/create"
-								class="app-btn-primary-xs justify-center"
+							{#if hasPropertyAsset}
+								<PendingNavLink
+									href="/assets/mortgage/create"
+									class="app-btn-primary-xs justify-center"
 							>
 								Add mortgage
 							</PendingNavLink>
@@ -116,10 +115,15 @@
 				Add account
 			</PendingNavLink>
 		{/if}
-	</div>
-	{#if !isInitialWhatIfLoading}
-		{#if assetPanelTab === 'assets'}
-			<AssetsTab
+		</div>
+		{#if whatIfLoadError}
+			<StatusMessage tone="error" class="mt-4">
+				{whatIfLoadError}
+			</StatusMessage>
+		{/if}
+		{#if !isInitialWhatIfLoading}
+			{#if assetPanelTab === 'assets'}
+				<AssetsTab
 				data={assetsTabProps.data}
 				person={assetsTabProps.person}
 				cashflow={assetsTabProps.cashflow}
@@ -151,12 +155,7 @@
 			<CapsTab data={capsTabProps.data} actions={capsTabProps.actions} ui={capsTabProps.ui} />
 		{/if}
 	{/if}
-	{#if whatIfLoadError}
-		<StatusMessage tone="error" class="mt-4">
-			{whatIfLoadError}
-		</StatusMessage>
-	{/if}
-	{#if isInitialWhatIfLoading}
+		{#if isInitialWhatIfLoading}
 		<div class="absolute inset-0 z-20 rounded-2xl bg-white/85 p-6">
 			<div class="animate-pulse space-y-4">
 				<div class="h-5 w-40 rounded bg-slate-200"></div>

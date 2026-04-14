@@ -17,6 +17,7 @@
 	let assetsList = $state<typeof data.assetsList>([]);
 	let accountsList = $state<typeof data.accountsList>([]);
 	let assetsCardsElement: HTMLElement | null = null;
+	const requestDeleteAsset = $derived(data.requestDeleteAsset);
 	const applyLabelTitles = () => {
 		if (!assetsCardsElement) return;
 		const labels = assetsCardsElement.querySelectorAll<HTMLElement>('.truncate.text-slate-500');
@@ -183,12 +184,22 @@
 	bind:this={assetsCardsElement}
 	class="assets-cards mt-5 grid gap-3 p-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4"
 >
-	{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
-		<div class="flex w-full flex-col gap-3">
-			<div class="app-card-muted w-full">
-				<h3 class="app-title-sm">
-					{personDetails[person.id]?.name ?? person.name}
-				</h3>
+		{#each assetsList.filter((asset) => asset.asset_type === 'person') as person}
+			<div class="flex w-full flex-col gap-3">
+				<div class="app-card-muted w-full">
+					<div class="flex items-center justify-between gap-2">
+						<h3 class="app-title-sm">
+							{personDetails[person.id]?.name ?? person.name}
+						</h3>
+						<button
+							type="button"
+							class="text-xs font-semibold text-rose-600 hover:text-rose-700"
+							onclick={() =>
+								requestDeleteAsset(person.id, personDetails[person.id]?.name ?? person.name)}
+						>
+							Delete
+						</button>
+					</div>
 				<div class="app-hint mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1">
 					<span class="truncate text-slate-500">Retirement age</span>
 					<input
@@ -521,11 +532,20 @@
 					{/if}
 				{/if}
 			</div>
-			{#each assetsList.filter((asset) => asset.asset_type === 'superannuation' && asset.person_id === person.id) as superannuation}
-				<div class="app-card-muted w-full">
-					<h3 class="app-title-sm truncate">
-						{superannuation.name}
-					</h3>
+				{#each assetsList.filter((asset) => asset.asset_type === 'superannuation' && asset.person_id === person.id) as superannuation}
+					<div class="app-card-muted w-full">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="app-title-sm truncate">
+								{superannuation.name}
+							</h3>
+							<button
+								type="button"
+								class="text-xs font-semibold text-rose-600 hover:text-rose-700"
+								onclick={() => requestDeleteAsset(superannuation.id, superannuation.name)}
+							>
+								Delete
+							</button>
+						</div>
 					<div class="app-hint mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1">
 						<span class="truncate text-slate-500">Preservation age</span>
 						<input
@@ -657,11 +677,20 @@
 			{/each}
 		</div>
 	{/each}
-	{#each assetsList.filter((asset) => asset.asset_type === 'shares') as share}
-		<div class="app-card-muted w-full">
-			<h3 class="app-title-sm truncate">
-				{shareDetails[share.id]?.name ?? share.name}
-			</h3>
+		{#each assetsList.filter((asset) => asset.asset_type === 'shares') as share}
+			<div class="app-card-muted w-full">
+				<div class="flex items-center justify-between gap-2">
+					<h3 class="app-title-sm truncate">
+						{shareDetails[share.id]?.name ?? share.name}
+					</h3>
+					<button
+						type="button"
+						class="text-xs font-semibold text-rose-600 hover:text-rose-700"
+						onclick={() => requestDeleteAsset(share.id, shareDetails[share.id]?.name ?? share.name)}
+					>
+						Delete
+					</button>
+				</div>
 			<div class="app-hint mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1">
 				<span class="truncate text-slate-500">Capital growth rate</span>
 				<div class="flex flex-col items-end justify-self-end">
@@ -932,12 +961,22 @@
 			{/if}
 		</div>
 	{/each}
-	{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
-		<div class="flex w-full flex-col gap-3">
-			<div class="app-card-muted w-full">
-				<h3 class="app-title-sm">
-					{propertyDetails[property.id]?.name ?? property.name}
-				</h3>
+		{#each assetsList.filter((asset) => asset.asset_type === 'property') as property}
+			<div class="flex w-full flex-col gap-3">
+				<div class="app-card-muted w-full">
+					<div class="flex items-center justify-between gap-2">
+						<h3 class="app-title-sm">
+							{propertyDetails[property.id]?.name ?? property.name}
+						</h3>
+						<button
+							type="button"
+							class="text-xs font-semibold text-rose-600 hover:text-rose-700"
+							onclick={() =>
+								requestDeleteAsset(property.id, propertyDetails[property.id]?.name ?? property.name)}
+						>
+							Delete
+						</button>
+					</div>
 				<div class="app-hint mt-3 grid grid-cols-[140px_100px_32px] items-center gap-1">
 					<span class="truncate text-slate-500">Market growth rate</span>
 					<input
@@ -1501,16 +1540,26 @@
 				{@const mortgageAccountLink = assetAccountsList.find(
 					(link) => link.asset_id === mortgage.id && link.relationship_role === 'held_in'
 				)}
-				<div class="app-card-muted w-full">
-					<div class="flex items-center justify-between gap-2">
-						<h3 class="app-title-sm truncate">
-							{mortgageDetails[mortgage.id]?.name ?? mortgage.name}
-						</h3>
-						<DisclosureToggle
-							expanded={expandedMortgageDetailIds.has(mortgage.id)}
-							onToggle={() => toggleMortgageDetails(mortgage.id)}
-						/>
-					</div>
+					<div class="app-card-muted w-full">
+						<div class="flex items-center justify-between gap-2">
+							<h3 class="app-title-sm truncate">
+								{mortgageDetails[mortgage.id]?.name ?? mortgage.name}
+							</h3>
+							<div class="flex items-center gap-2">
+								<button
+									type="button"
+									class="text-xs font-semibold text-rose-600 hover:text-rose-700"
+									onclick={() =>
+										requestDeleteAsset(mortgage.id, mortgageDetails[mortgage.id]?.name ?? mortgage.name)}
+								>
+									Delete
+								</button>
+								<DisclosureToggle
+									expanded={expandedMortgageDetailIds.has(mortgage.id)}
+									onToggle={() => toggleMortgageDetails(mortgage.id)}
+								/>
+							</div>
+						</div>
 					{#if expandedMortgageDetailIds.has(mortgage.id)}
 						<div class="app-hint mt-2 grid grid-cols-[140px_100px_32px] items-center gap-1">
 							<span class="truncate text-slate-500">Start date (MM YYYY)</span>

@@ -26,6 +26,29 @@ describe('dashboard entity commands', () => {
 			refreshProjection
 		});
 		expect(error).toBeNull();
+			expect(refreshProjection).toHaveBeenCalled();
+		});
+
+	it('refreshes what-if data when provided', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({ ok: true }))
+		);
+		const refreshProjection = vi.fn(async () => {});
+		const refreshWhatIf = vi.fn(async () => {});
+		const error = await runScenarioMutationCommand({
+			lockKey: 'deleteAsset:a1',
+			action: 'deleteAsset',
+			scenarioId: 'sc-1',
+			fields: { assetId: 'a1' },
+			errorMessage: 'Unable',
+			autoRunProjection: true,
+			withLock: vi.fn(async (_k, cb) => cb()),
+			refreshProjection,
+			refreshWhatIf
+		});
+		expect(error).toBeNull();
+		expect(refreshWhatIf).toHaveBeenCalled();
 		expect(refreshProjection).toHaveBeenCalled();
 	});
 

@@ -3,6 +3,7 @@ import { Pool } from 'pg';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { parseYearMonthInput } from '$lib/yearMonth';
+import { planAssetDeletion } from '$lib/server/asset-deletion';
 
 const databaseUrlSchema = z
 	.string()
@@ -1206,6 +1207,106 @@ export async function deleteCashflow(scenarioId: string, cashflowId: string) {
 		`,
 		[scenarioId, cashflowId]
 	);
+}
+
+export async function deleteAssetForScenario(scenarioId: string, assetId: string) {
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+
+		const assetsResult = await client.query<{
+			id: string;
+			asset_type: 'person' | 'property' | 'mortgage' | 'superannuation' | 'shares';
+			property_id: string | null;
+			person_id: string | null;
+			name: string;
+		}>(
+			`
+				select id, asset_type, property_id, person_id, name
+				from assets
+				where scenario_id = $1::uuid
+			`,
+			[scenarioId]
+		);
+		const accountsResult = await client.query<{
+			id: string;
+			account_type:
+				| 'cash_account'
+				| 'mortgage_account'
+				| 'credit_card'
+				| 'brokerage'
+				| 'super_account';
+			name: string;
+		}>(
+			`
+				select id, account_type, name
+				from accounts
+				where scenario_id = $1::uuid
+			`,
+			[scenarioId]
+		);
+		const assetAccountsResult = await client.query<{
+			id: string;
+			asset_id: string;
+			account_id: string;
+			relationship_role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+		}>(
+			`
+				select id, asset_id, account_id, relationship_role
+				from asset_accounts
+				where scenario_id = $1::uuid
+			`,
+			[scenarioId]
+		);
+
+		const deletionPlan = planAssetDeletion({
+			assetId,
+			assets: assetsResult.rows,
+			accounts: accountsResult.rows,
+			assetAccounts: assetAccountsResult.rows
+		});
+
+		if (deletionPlan.assetAccountIdsToDelete.length > 0) {
+			await client.query(
+				`
+					delete from cashflows
+					where scenario_id = $1::uuid
+					  and (
+						source_asset_account_id = any($2::uuid[])
+						or destination_asset_account_id = any($2::uuid[])
+					  )
+				`,
+				[scenarioId, deletionPlan.assetAccountIdsToDelete]
+			);
+		}
+
+		if (deletionPlan.fixedAccountIdsToDelete.length > 0) {
+			await client.query(
+				`
+					delete from accounts
+					where scenario_id = $1::uuid
+					  and id = any($2::uuid[])
+				`,
+				[scenarioId, deletionPlan.fixedAccountIdsToDelete]
+			);
+		}
+
+		await client.query(
+			`
+				delete from assets
+				where scenario_id = $1::uuid
+				  and id = $2::uuid
+			`,
+			[scenarioId, assetId]
+		);
+
+		await client.query('commit');
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
 }
 
 export async function updateCashflow(input: {
