@@ -1696,11 +1696,15 @@
 		whatIfPanelElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	};
 
-	const jumpToWhatIfReserves = async (targetAccountId = '') => {
+	const jumpToWhatIfReserves = async (
+		targetAccountId = '',
+		focusTarget: 'amount' | 'priority' = 'priority'
+	) => {
 		const firstCashAccountId = fundingReserveAccountOptions[0]?.id ?? '';
 		await jumpToWhatIfFundingInput({
 			tab: 'reserves',
 			targetAccountId: targetAccountId || firstCashAccountId,
+			focusTarget,
 			setAssetPanelTab: (tab) => (assetPanelTab = tab),
 			tick,
 			whatIfPanelElement,

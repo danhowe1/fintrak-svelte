@@ -30,7 +30,10 @@
 	export let stage3Assessment: any;
 	export let stage4Reached: boolean;
 	export let stage4Passed: boolean;
-	export let jumpToWhatIfReserves: (targetAccountId?: string) => void;
+	export let jumpToWhatIfReserves: (
+		targetAccountId?: string,
+		focusTarget?: 'amount' | 'priority'
+	) => void;
 	export let jumpToWhatIfCaps: (targetAccountId?: string) => void;
 	export let monthLabelFromDate: (value?: unknown | null) => string;
 
@@ -326,22 +329,18 @@
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 				<div class="font-semibold">Set Reserve Settings In What If</div>
 				<div class="mt-1 text-xs">
-					You don't have a safe level of cash reserves. If possible, increase reserve amounts and set funding source
-					priorities.
-				</div>
-				<div class="mt-2 text-xs">
-					Head down to the
+					You don't have a safe level of cash reserves. If possible, increase
 					<a
 						href="#what-if-panel"
 						class="font-semibold text-amber-900 underline decoration-amber-400 underline-offset-2 hover:text-amber-950"
 						onclick={(event) => {
 							event.preventDefault();
-							void jumpToWhatIfReserves();
+							void jumpToWhatIfReserves(undefined, 'amount');
 						}}
 					>
-						What if?...
+						reserve amounts
 					</a>
-					section below to make your changes.
+					and set funding source priorities.
 				</div>
 			</div>
 		{/if}
@@ -449,37 +448,37 @@
 						</div>
 					</div>
 				{/if}
-				{#if stage3Assessment}
-					<div class="mt-3 rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900">
-						<div class="flex items-center justify-between gap-2">
-							<div class="flex items-center gap-1">
-								<span class="font-semibold">Total Financial Health Score</span>
-								<InfoTooltip
-									label="What is the total financial health score?"
-									theme="sky"
-									align="right"
-								>
-									Measures your overall planner position by combining the safety buffer,
-									resilience, growth allocation and horizon fit scores. Current profile is
-									{stage3Assessment.profile}.
-									<br /><br />
-									This is measured so you can quickly see the overall shape of the plan rather
-									than needing to interpret each score separately.
-									<br /><br />
-									It is worked out as a weighted blend of the other planner scores: safety
-									buffer 35%, growth allocation 35%, resilience 20%, and horizon fit 10%.
-									The combined result is then grouped into a profile: Conservative for lower
-									scores, Balanced for mid-range scores, and Growth for higher scores.
-								</InfoTooltip>
-							</div>
-							<span class="font-semibold">{stage3Assessment.totalScore}/100</span>
-						</div>
-						<div class="mt-1 text-[11px] text-sky-800">
-							Current profile: {stage3Assessment.profile}.
-						</div>
-					</div>
-				{/if}
 			{/if}
+		{/if}
+		{#if stage2Passed && stage3Assessment}
+			<div class="mt-3 rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900">
+				<div class="flex items-center justify-between gap-2">
+					<div class="flex items-center gap-1">
+						<span class="font-semibold">Total Financial Health Score</span>
+						<InfoTooltip
+							label="What is the total financial health score?"
+							theme="sky"
+							align="right"
+						>
+							Measures your overall planner position by combining the safety buffer,
+							resilience, growth allocation and horizon fit scores. Current profile is
+							{stage3Assessment.profile}.
+							<br /><br />
+							This is measured so you can quickly see the overall shape of the plan rather
+							than needing to interpret each score separately.
+							<br /><br />
+							It is worked out as a weighted blend of the other planner scores: safety
+							buffer 35%, growth allocation 35%, resilience 20%, and horizon fit 10%.
+							The combined result is then grouped into a profile: Conservative for lower
+							scores, Balanced for mid-range scores, and Growth for higher scores.
+						</InfoTooltip>
+					</div>
+					<span class="font-semibold">{stage3Assessment.totalScore}/100</span>
+				</div>
+				<div class="mt-1 text-[11px] text-sky-800">
+					Current profile: {stage3Assessment.profile}.
+				</div>
+			</div>
 		{/if}
 		{#if isInitialProjectionLoading}
 			<div class="absolute inset-0 z-20 rounded-2xl bg-white/85 p-4">

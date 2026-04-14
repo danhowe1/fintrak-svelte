@@ -1,13 +1,21 @@
 export const jumpToWhatIfFundingInput = async (params: {
 	tab: 'reserves' | 'caps';
 	targetAccountId: string;
+	focusTarget?: 'amount' | 'priority';
 	setAssetPanelTab: (tab: 'reserves' | 'caps') => void;
 	tick: () => Promise<void>;
 	whatIfPanelElement: HTMLElement | null;
 	getElementById: (id: string) => HTMLElement | null;
 }) => {
-	const { tab, targetAccountId, setAssetPanelTab, tick, whatIfPanelElement, getElementById } =
-		params;
+	const {
+		tab,
+		targetAccountId,
+		focusTarget = 'priority',
+		setAssetPanelTab,
+		tick,
+		whatIfPanelElement,
+		getElementById
+	} = params;
 	const findFirstPrioritySelect = () => {
 		for (let priority = 1; priority <= 20; priority += 1) {
 			const elementId =
@@ -27,9 +35,9 @@ export const jumpToWhatIfFundingInput = async (params: {
 		tab === 'reserves'
 			? `reserve-amount-input-${targetAccountId}`
 			: `cap-amount-input-${targetAccountId}`;
+	const amountInput = getElementById(fallbackInputId) as HTMLInputElement | null;
 	const targetInput =
-		findFirstPrioritySelect() ??
-		(getElementById(fallbackInputId) as HTMLInputElement | null);
+		focusTarget === 'amount' ? amountInput : findFirstPrioritySelect() ?? amountInput;
 	targetInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 	targetInput?.focus({ preventScroll: true });
 	try {
