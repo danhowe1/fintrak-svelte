@@ -147,7 +147,7 @@
 								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 								onclick={jumpToWhatIfInterestRates}
 							>
-								Nogotiate better interest rates.
+								Negotiate better interest rates.
 							</button>
 						</li>
 					{/if}
