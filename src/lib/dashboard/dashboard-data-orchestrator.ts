@@ -1,6 +1,8 @@
 import {
+	parseDashboardReloadResponse,
 	parseDashboardProjectionResponse,
 	parseDashboardWhatIfResponse,
+	type DashboardReloadResponse,
 	type DashboardProjectionResponse,
 	type DashboardWhatIfResponse
 } from '$lib/dashboard/contracts';
@@ -41,6 +43,18 @@ export const fetchDashboardProjection = async (
 		throw new Error('Unable to refresh the projection. Please try again.');
 	}
 	return parseDashboardProjectionResponse(await response.json());
+};
+
+export const fetchDashboardReload = async (
+	scenarioId: string
+): Promise<DashboardReloadResponse> => {
+	const url = new URL('/dashboard/data/reload', window.location.origin);
+	url.searchParams.set('scenarioId', scenarioId);
+	const response = await fetch(url, { cache: 'no-store' });
+	if (!response.ok) {
+		throw new Error('Unable to refresh the dashboard. Please try again.');
+	}
+	return parseDashboardReloadResponse(await response.json());
 };
 
 export const runInitialDashboardLoad = async (args: {

@@ -6,6 +6,7 @@
 	import { formatYearMonthInput, normalizeYearMonthValue } from '$lib/yearMonth';
 	import { postAction } from '$lib/dashboard/action-client';
 	import {
+		fetchDashboardReload,
 		fetchDashboardProjection,
 		fetchDashboardWhatIf,
 		runInitialDashboardLoad
@@ -1356,14 +1357,71 @@
 		});
 	};
 
+	const applyWhatIfPayload = (payload: {
+		assets: AssetItem[];
+		accounts: AccountItem[];
+		assetAccounts: AssetAccountItem[];
+		cashflows: CashflowSummary[];
+		autoFundingRules?: typeof autoFundingRules;
+		accountBalanceTargets?: typeof accountBalanceTargets;
+		autoSweepRules?: typeof autoSweepRules;
+	}) => {
+		const nextCashflows = payload.cashflows ?? [];
+		dashboardWhatIfState.applyWhatIfPayload({
+			assetsList: payload.assets ?? [],
+			accountsList: payload.accounts ?? [],
+			assetAccountsList: payload.assetAccounts ?? [],
+			cashflows: nextCashflows,
+			autoFundingRules: payload.autoFundingRules
+				? applyReserveOrderOverrides(payload.autoFundingRules)
+				: undefined,
+			accountBalanceTargets: payload.accountBalanceTargets
+				? [...payload.accountBalanceTargets]
+				: undefined,
+			autoSweepRules: payload.autoSweepRules ? [...payload.autoSweepRules] : undefined
+		});
+		syncCashflowAmounts(nextCashflows);
+		setWhatIfLoadError(null);
+	};
+
+	const applyProjectionPayload = (payload: {
+		projection: ProjectionData;
+		sessionRates: { inflationRate: number };
+		projectionRange: ProjectionRange;
+		autoFundingRules?: typeof autoFundingRules;
+		accountBalanceTargets?: typeof accountBalanceTargets;
+		autoSweepRules?: typeof autoSweepRules;
+		cashflows?: CashflowSummary[];
+	}) => {
+		if (payload.autoFundingRules) {
+			setAutoFundingRules(payload.autoFundingRules);
+		}
+		if (payload.accountBalanceTargets) {
+			dashboardWhatIfState.setAccountBalanceTargets([...payload.accountBalanceTargets]);
+		}
+		if (payload.autoSweepRules) {
+			dashboardWhatIfState.setAutoSweepRules([...payload.autoSweepRules]);
+		}
+		if (payload.cashflows) {
+			const nextCashflows = [...payload.cashflows];
+			dashboardWhatIfState.setCashflows(nextCashflows);
+			syncCashflowAmounts(nextCashflows);
+		}
+		dashboardProjectionState.applyProjectionPayload({
+			projectionData: payload.projection,
+			sessionRates: payload.sessionRates,
+			projectionRange: payload.projectionRange
+		});
+		setProjectionError(null);
+	};
+
 	const loadWhatIfSection = async () => {
 		const payload = await fetchDashboardWhatIf(data.scenario.id);
-		const nextCashflows = (payload.cashflows as CashflowSummary[]) ?? [];
-		dashboardWhatIfState.applyWhatIfPayload({
-			assetsList: (payload.assets as AssetItem[]) ?? [],
-			accountsList: (payload.accounts as AccountItem[]) ?? [],
-			assetAccountsList: (payload.assetAccounts as AssetAccountItem[]) ?? [],
-			cashflows: nextCashflows,
+		applyWhatIfPayload({
+			assets: (payload.assets as AssetItem[]) ?? [],
+			accounts: (payload.accounts as AccountItem[]) ?? [],
+			assetAccounts: (payload.assetAccounts as AssetAccountItem[]) ?? [],
+			cashflows: (payload.cashflows as CashflowSummary[]) ?? [],
 			autoFundingRules: payload.autoFundingRules
 				? applyReserveOrderOverrides(payload.autoFundingRules as typeof autoFundingRules)
 				: undefined,
@@ -1374,8 +1432,41 @@
 				? [...(payload.autoSweepRules as typeof autoSweepRules)]
 				: undefined
 		});
-		syncCashflowAmounts(nextCashflows);
-		setWhatIfLoadError(null);
+	};
+
+	const loadDashboardSection = async () => {
+		const requestId = ++refreshProjectionRequestId;
+		const payload = await fetchDashboardReload(data.scenario.id);
+		if (requestId !== refreshProjectionRequestId) {
+			return;
+		}
+		applyWhatIfPayload({
+			assets: (payload.assets as AssetItem[]) ?? [],
+			accounts: (payload.accounts as AccountItem[]) ?? [],
+			assetAccounts: (payload.assetAccounts as AssetAccountItem[]) ?? [],
+			cashflows: (payload.cashflows as CashflowSummary[]) ?? [],
+			autoFundingRules: payload.autoFundingRules
+				? applyReserveOrderOverrides(payload.autoFundingRules as typeof autoFundingRules)
+				: undefined,
+			accountBalanceTargets: payload.accountBalanceTargets
+				? [...(payload.accountBalanceTargets as typeof accountBalanceTargets)]
+				: undefined,
+			autoSweepRules: payload.autoSweepRules
+				? [...(payload.autoSweepRules as typeof autoSweepRules)]
+				: undefined
+		});
+		applyProjectionPayload({
+			projection: payload.projection as ProjectionData,
+			sessionRates: payload.sessionRates,
+			projectionRange: payload.projectionRange as ProjectionRange,
+			autoFundingRules: payload.autoFundingRules as typeof autoFundingRules,
+			accountBalanceTargets: payload.accountBalanceTargets
+				? [...(payload.accountBalanceTargets as typeof accountBalanceTargets)]
+				: undefined,
+			autoSweepRules: payload.autoSweepRules
+				? [...(payload.autoSweepRules as typeof autoSweepRules)]
+				: undefined
+		});
 	};
 
 	const loadInitialDashboardSections = async (options?: { includeProjection?: boolean }) => {
@@ -1396,31 +1487,19 @@
 		if (requestId !== refreshProjectionRequestId) {
 			return;
 		}
-		const projectionDataPayload = payload.projection as ProjectionData;
-		if (payload.autoFundingRules) {
-			setAutoFundingRules(payload.autoFundingRules as typeof autoFundingRules);
-		}
-		if (payload.accountBalanceTargets) {
-			dashboardWhatIfState.setAccountBalanceTargets([
-				...(payload.accountBalanceTargets as typeof accountBalanceTargets)
-			]);
-		}
-		if (payload.autoSweepRules) {
-			dashboardWhatIfState.setAutoSweepRules([
-				...(payload.autoSweepRules as typeof autoSweepRules)
-			]);
-		}
-		if (payload.cashflows) {
-			const nextCashflows = [...(payload.cashflows as CashflowSummary[])];
-			dashboardWhatIfState.setCashflows(nextCashflows);
-			syncCashflowAmounts(nextCashflows);
-		}
-		dashboardProjectionState.applyProjectionPayload({
-			projectionData: projectionDataPayload,
+		applyProjectionPayload({
+			projection: payload.projection as ProjectionData,
 			sessionRates: payload.sessionRates,
-			projectionRange: payload.projectionRange
+			projectionRange: payload.projectionRange as ProjectionRange,
+			autoFundingRules: payload.autoFundingRules as typeof autoFundingRules,
+			accountBalanceTargets: payload.accountBalanceTargets
+				? [...(payload.accountBalanceTargets as typeof accountBalanceTargets)]
+				: undefined,
+			autoSweepRules: payload.autoSweepRules
+				? [...(payload.autoSweepRules as typeof autoSweepRules)]
+				: undefined,
+			cashflows: payload.cashflows ? [...(payload.cashflows as CashflowSummary[])] : undefined
 		});
-		setProjectionError(null);
 	};
 
 	const refreshProjection = async (options?: { includeCashflows?: boolean }) => {
@@ -2182,6 +2261,7 @@
 		getAutoRunProjection: () => autoRunProjection,
 		withLock,
 		refreshProjection,
+		refreshDashboard: loadDashboardSection,
 		refreshWhatIf: loadWhatIfSection,
 		setProjectionError,
 		setWhatIfLoadError: (value) => {

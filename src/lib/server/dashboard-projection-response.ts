@@ -1,5 +1,5 @@
 import type { ProjectionRangeValue } from '$lib/server/dashboard-context';
-import type { DashboardProjectionResponse } from '$lib/dashboard/contracts';
+import type { DashboardProjectionResponse, DashboardReloadResponse } from '$lib/dashboard/contracts';
 import type { ProjectionResult } from '$lib/server/projection';
 import { buildProjection } from '$lib/server/projection';
 import type { ProjectionScenarioBundle } from '$lib/server/database';
@@ -34,5 +34,25 @@ export const buildDashboardProjectionResponse = (input: {
 		sessionRates: {
 			inflationRate
 		}
+	};
+};
+
+export const buildDashboardReloadResponse = (input: {
+	projectionBundle: ProjectionScenarioBundle;
+	inflationRate: number;
+	projectionRange: ProjectionRangeValue;
+}): DashboardReloadResponse & { projection: ProjectionResult } => {
+	const { projectionBundle } = input;
+	const projectionResponse = buildDashboardProjectionResponse({
+		...input,
+		includeCashflows: true
+	});
+
+	return {
+		accounts: projectionBundle.accounts,
+		assets: projectionBundle.assets,
+		assetAccounts: projectionBundle.assetAccounts,
+		cashflows: projectionBundle.cashflows,
+		...projectionResponse
 	};
 };

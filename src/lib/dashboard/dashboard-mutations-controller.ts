@@ -34,6 +34,7 @@ type WithLock = (key: string, run: () => Promise<void>, showSpinner?: boolean) =
 type RefreshProjection = (options?: {
 	includeCashflows?: boolean;
 }) => Promise<void>;
+type RefreshDashboard = () => Promise<void>;
 
 type SetProjectionError = (message: string | null) => void;
 type SetWhatIfLoadError = (message: string | null) => void;
@@ -44,6 +45,7 @@ export type DashboardMutationControllerDeps = {
 	getAutoRunProjection: () => boolean;
 	withLock: WithLock;
 	refreshProjection: RefreshProjection;
+	refreshDashboard?: RefreshDashboard;
 	refreshWhatIf?: RefreshWhatIf;
 	setProjectionError: SetProjectionError;
 	setWhatIfLoadError?: SetWhatIfLoadError;
@@ -227,6 +229,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 			autoRunProjection: deps.getAutoRunProjection(),
 			withLock: deps.withLock,
 			refreshProjection: deps.refreshProjection,
+			refreshDashboard: deps.refreshDashboard,
 			refreshWhatIf: deps.refreshWhatIf
 		});
 		if (error) deps.setProjectionError(error);
@@ -546,10 +549,14 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 						);
 					}
 					deps.setWhatIfLoadError?.(null);
-					if (deps.refreshWhatIf) {
-						await deps.refreshWhatIf();
+					if (deps.refreshDashboard) {
+						await deps.refreshDashboard();
+					} else {
+						if (deps.refreshWhatIf) {
+							await deps.refreshWhatIf();
+						}
+						await deps.refreshProjection();
 					}
-					await deps.refreshProjection();
 				},
 				deps.getAutoRunProjection()
 			);

@@ -78,8 +78,30 @@ export const dashboardProjectionResponseSchema = z
 	})
 	.transform((value) => value as DashboardProjectionResponse);
 
+export type DashboardReloadResponse = DashboardWhatIfResponse & DashboardProjectionResponse;
+
+export const dashboardReloadResponseSchema = z
+	.object({
+		accounts: objectArraySchema,
+		assets: objectArraySchema,
+		assetAccounts: objectArraySchema,
+		cashflows: objectArraySchema,
+		autoFundingRules: objectArraySchema,
+		accountBalanceTargets: objectArraySchema,
+		autoSweepRules: objectArraySchema,
+		projection: projectionSchema,
+		projectionRange: projectionRangeSchema,
+		sessionRates: z.object({
+			inflationRate: z.number()
+		})
+	})
+	.transform((value) => value as DashboardReloadResponse);
+
 export const parseDashboardWhatIfResponse = (input: unknown): DashboardWhatIfResponse =>
 	dashboardWhatIfResponseSchema.parse(input);
 
 export const parseDashboardProjectionResponse = (input: unknown): DashboardProjectionResponse =>
 	dashboardProjectionResponseSchema.parse(input);
+
+export const parseDashboardReloadResponse = (input: unknown): DashboardReloadResponse =>
+	dashboardReloadResponseSchema.parse(input);

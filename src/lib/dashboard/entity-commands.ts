@@ -10,6 +10,7 @@ type RefreshProjection = (options?: {
 	includeCashflows?: boolean;
 }) => Promise<void>;
 type RefreshWhatIf = () => Promise<void>;
+type RefreshDashboard = () => Promise<void>;
 
 const postFormAction = async (
 	action: string,
@@ -34,6 +35,7 @@ export const runScenarioMutationCommand = async (params: {
 	autoRunProjection: boolean;
 	withLock: WithLock;
 	refreshProjection: RefreshProjection;
+	refreshDashboard?: RefreshDashboard;
 	refreshWhatIf?: RefreshWhatIf;
 	headers?: Record<string, string>;
 }): Promise<string | null> => {
@@ -46,6 +48,7 @@ export const runScenarioMutationCommand = async (params: {
 		autoRunProjection,
 		withLock,
 		refreshProjection,
+		refreshDashboard,
 		refreshWhatIf,
 		headers
 	} = params;
@@ -59,10 +62,14 @@ export const runScenarioMutationCommand = async (params: {
 					formData.set(key, value);
 				}
 				await postFormAction(action, formData, errorMessage, headers);
-				if (refreshWhatIf) {
+				if (refreshDashboard) {
+					await refreshDashboard();
+				} else if (refreshWhatIf) {
 					await refreshWhatIf();
+					await refreshProjection();
+				} else {
+					await refreshProjection();
 				}
-				await refreshProjection();
 			},
 			autoRunProjection
 		);
