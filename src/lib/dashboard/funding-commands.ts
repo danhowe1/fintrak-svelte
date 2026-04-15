@@ -15,13 +15,6 @@ type PostAction = (
 
 type RefreshProjection = (options: { includeCashflows: boolean; force: boolean }) => Promise<void>;
 
-type AccountBalanceTargetLike = {
-	account_id: string;
-	enabled: boolean;
-	min_balance: number;
-	max_balance: number | null;
-};
-
 type ReserveRuleLike = {
 	id: string;
 	scenario_id: string;

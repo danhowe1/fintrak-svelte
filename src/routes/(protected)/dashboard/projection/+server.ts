@@ -1,24 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import type { DashboardProjectionResponse } from '$lib/dashboard/contracts';
-import {
-	getAccountsForScenario,
-	getAccountBalanceTargetsForScenario,
-	getAutoFundingRulesForScenario,
-	getAutoSweepRulesForScenario,
-	getAssetAccountsForScenario,
-	getAssetsForScenario,
-	getCashflowsForScenario
-} from '$lib/server/database';
-import {
-	parseProjectionRange,
-	parseRateCookie,
-	resolveDashboardScenario
-} from '$lib/server/dashboard-context';
-import { buildProjection } from '$lib/server/projection';
+import { getProjectionBundleForUser } from '$lib/server/database';
+import { parseProjectionRange, parseRateCookie } from '$lib/server/dashboard-context';
+import { buildDashboardProjectionResponse } from '$lib/server/dashboard-projection-response';
 
 export const GET: RequestHandler = async (event) => {
-	const { scenario } = await resolveDashboardScenario(event);
+	const userId = event.locals.appUserId;
+	if (!userId) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+	const scenarioId =
+		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
+	const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+	const { scenario } = projectionBundle;
 
 	if (!scenario) {
 		return json({ error: 'Scenario not found' }, { status: 404 });
@@ -26,50 +20,13 @@ export const GET: RequestHandler = async (event) => {
 
 	const projectionRange = parseProjectionRange(event.cookies.get('projectionRange'));
 	const inflationRate = parseRateCookie(event.cookies.get('inflationRate'), 2.0);
-
-	const [
-		cashflows,
-		accounts,
-		assets,
-		assetAccounts,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules
-	] = await Promise.all([
-		getCashflowsForScenario(scenario.id),
-		getAccountsForScenario(scenario.id),
-		getAssetsForScenario(scenario.id),
-		getAssetAccountsForScenario(scenario.id),
-		getAutoFundingRulesForScenario(scenario.id),
-		getAccountBalanceTargetsForScenario(scenario.id),
-		getAutoSweepRulesForScenario(scenario.id)
-	]);
 	const includeCashflows = event.url.searchParams.get('includeCashflows') === 'true';
-
-	const projection = buildProjection({
+	const response = buildDashboardProjectionResponse({
+		projectionBundle,
 		inflationRate,
-		projectionRange: 'all',
-		maxMonths: null,
-		cashflows,
-		accounts,
-		assets,
-		assetAccounts,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules
-	});
-
-	const response: DashboardProjectionResponse = {
-		projection,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules,
-		...(includeCashflows ? { cashflows } : {}),
 		projectionRange,
-		sessionRates: {
-			inflationRate
-		}
-	};
+		includeCashflows
+	});
 
 	return json(response);
 };

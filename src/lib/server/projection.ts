@@ -281,6 +281,13 @@ const getPointValueAtDate = <
 	return 0;
 };
 
+const createProjectionProfiler = () => ({
+	enabled: false,
+	time: <T>(_label: string, fn: () => T) => fn(),
+	add(_label: string, _durationMs: number) {},
+	flush(_summary: Record<string, unknown>) {}
+});
+
 export const buildProjection = (input: {
 	inflationRate?: number | null;
 	projectionRange?: '1y' | '5y' | '10y' | 'all';
@@ -293,7 +300,8 @@ export const buildProjection = (input: {
 	accountBalanceTargets?: ProjectionAccountBalanceTarget[];
 	autoSweepRules?: ProjectionAutoSweepRule[];
 }): ProjectionResult => {
-	const startYearMonth = (() => {
+	const profiler = createProjectionProfiler();
+	const startYearMonth = profiler.time('setup:start-date', () => {
 		const candidates: YearMonth[] = [];
 		for (const cashflow of input.cashflows) {
 			const start = parseYearMonth(cashflow.start_date);
@@ -313,9 +321,9 @@ export const buildProjection = (input: {
 		return candidates.reduce((earliest, current) =>
 			yearMonthIndex(current) < yearMonthIndex(earliest) ? current : earliest
 		);
-	})();
+	});
 
-	const cappedEnd = (() => {
+	const cappedEnd = profiler.time('setup:end-date', () => {
 		const naturalEnd = getYoungestHundredYearMonth(input.assets, startYearMonth);
 		if (!input.maxMonths || input.maxMonths <= 0) {
 			return naturalEnd;
@@ -324,7 +332,7 @@ export const buildProjection = (input: {
 		const naturalIndex = yearMonthIndex(naturalEnd);
 		const cappedIndex = yearMonthIndex(capped);
 		return cappedIndex < naturalIndex ? capped : naturalEnd;
-	})();
+	});
 	const alignToCompletedYearEnd = (end: YearMonth) => {
 		if (end.month === 12) {
 			return end;
@@ -338,18 +346,22 @@ export const buildProjection = (input: {
 	const totalMonths = Math.max(0, monthsBetweenYearMonths(startYearMonth, endYearMonth));
 	const inflationRate = input.inflationRate ?? 0;
 
-	const accountMap = new Map(
-		input.accounts.map((account) => [
-			account.id,
-			{
-				name: account.name,
-				type: account.account_type,
-				interestRate: getInterestRate(account.details),
-				startDate: parseYearMonth(account.start_date),
-				openingBalance: Number.isFinite(account.opening_balance) ? account.opening_balance : 0,
-				balance: 0
-			}
-		])
+	const accountMap = profiler.time(
+		'setup:accounts',
+		() =>
+			new Map(
+				input.accounts.map((account) => [
+					account.id,
+					{
+						name: account.name,
+						type: account.account_type,
+						interestRate: getInterestRate(account.details),
+						startDate: parseYearMonth(account.start_date),
+						openingBalance: Number.isFinite(account.opening_balance) ? account.opening_balance : 0,
+						balance: 0
+					}
+				])
+			)
 	);
 
 	for (const [, accountInfo] of accountMap) {
@@ -400,24 +412,26 @@ export const buildProjection = (input: {
 	const blockedAutoSweepSourceIds = new Set<string>();
 	const recordedAutoFundingExecutionRuleIds = new Set<string>();
 	const recordedAutoSweepExecutionRuleIds = new Set<string>();
-	const autoFundingRules = (input.autoFundingRules ?? [])
-		.map((rule) => ({
-			id: rule.id,
-			sourceAccountId: rule.source_account_id,
-			targetAccountId: rule.target_account_id,
-			priorityOrder:
-				typeof rule.priority_order === 'number' && Number.isFinite(rule.priority_order)
-					? rule.priority_order
-					: Number.MAX_SAFE_INTEGER,
-			minTargetBalance:
-				typeof rule.min_target_balance === 'number' && Number.isFinite(rule.min_target_balance)
-					? rule.min_target_balance
-					: 0
-		}))
-		.sort(
-			(a, b) =>
-				a.targetAccountId.localeCompare(b.targetAccountId) || a.priorityOrder - b.priorityOrder
-		);
+	const autoFundingRules = profiler.time('setup:auto-funding', () =>
+		(input.autoFundingRules ?? [])
+			.map((rule) => ({
+				id: rule.id,
+				sourceAccountId: rule.source_account_id,
+				targetAccountId: rule.target_account_id,
+				priorityOrder:
+					typeof rule.priority_order === 'number' && Number.isFinite(rule.priority_order)
+						? rule.priority_order
+						: Number.MAX_SAFE_INTEGER,
+				minTargetBalance:
+					typeof rule.min_target_balance === 'number' && Number.isFinite(rule.min_target_balance)
+						? rule.min_target_balance
+						: 0
+			}))
+			.sort(
+				(a, b) =>
+					a.targetAccountId.localeCompare(b.targetAccountId) || a.priorityOrder - b.priorityOrder
+			)
+	);
 	const autoFundingRulesByTarget = new Map<string, typeof autoFundingRules>();
 	for (const rule of autoFundingRules) {
 		const existing = autoFundingRulesByTarget.get(rule.targetAccountId) ?? [];
@@ -437,38 +451,42 @@ export const buildProjection = (input: {
 	const accountBalanceTargetsByAccountId = new Map(
 		accountBalanceTargets.map((target) => [target.accountId, target])
 	);
-	const autoSweepRules = (input.autoSweepRules ?? [])
-		.map((rule) => ({
-			id: rule.id,
-			sourceAccountId: rule.source_account_id,
-			destinationAccountId: rule.destination_account_id,
-			priorityOrder:
-				typeof rule.priority_order === 'number' && Number.isFinite(rule.priority_order)
-					? rule.priority_order
-					: Number.MAX_SAFE_INTEGER
-		}))
-		.sort(
-			(a, b) =>
-				a.sourceAccountId.localeCompare(b.sourceAccountId) || a.priorityOrder - b.priorityOrder
-		);
+	const autoSweepRules = profiler.time('setup:auto-sweep', () =>
+		(input.autoSweepRules ?? [])
+			.map((rule) => ({
+				id: rule.id,
+				sourceAccountId: rule.source_account_id,
+				destinationAccountId: rule.destination_account_id,
+				priorityOrder:
+					typeof rule.priority_order === 'number' && Number.isFinite(rule.priority_order)
+						? rule.priority_order
+						: Number.MAX_SAFE_INTEGER
+			}))
+			.sort(
+				(a, b) =>
+					a.sourceAccountId.localeCompare(b.sourceAccountId) || a.priorityOrder - b.priorityOrder
+			)
+	);
 	const autoSweepRulesBySource = new Map<string, typeof autoSweepRules>();
 	for (const rule of autoSweepRules) {
 		const existing = autoSweepRulesBySource.get(rule.sourceAccountId) ?? [];
 		autoSweepRulesBySource.set(rule.sourceAccountId, [...existing, rule]);
 	}
 
-	const cashflowMeta = input.cashflows.map((cashflow) => {
-		const start = parseYearMonth(cashflow.start_date);
-		const end = parseYearMonth(cashflow.end_date ?? undefined);
-		const interval = getFrequencyInterval(cashflow.frequency);
-		const assetName =
-			cashflow.cashflow_type === 'expense'
-				? (cashflow.source_asset_name ?? null)
-				: cashflow.cashflow_type === 'income'
-					? (cashflow.destination_asset_name ?? null)
-					: null;
-		return { cashflow, start, end, interval, assetName };
-	});
+	const cashflowMeta = profiler.time('setup:cashflow-meta', () =>
+		input.cashflows.map((cashflow) => {
+			const start = parseYearMonth(cashflow.start_date);
+			const end = parseYearMonth(cashflow.end_date ?? undefined);
+			const interval = getFrequencyInterval(cashflow.frequency);
+			const assetName =
+				cashflow.cashflow_type === 'expense'
+					? (cashflow.source_asset_name ?? null)
+					: cashflow.cashflow_type === 'income'
+						? (cashflow.destination_asset_name ?? null)
+						: null;
+			return { cashflow, start, end, interval, assetName };
+		})
+	);
 
 	const personAssets = new Map<string, { retirementDate: YearMonth; hundredDate: YearMonth }>();
 	for (const asset of input.assets) {
@@ -802,6 +820,7 @@ export const buildProjection = (input: {
 	let hasCapBreach = false;
 
 	for (let i = 0; i <= totalMonths; i += 1) {
+		const monthLoopStartedAt = profiler.enabled ? performance.now() : 0;
 		const current = addMonthsToYearMonth(startYearMonth, i);
 		const monthLabel = formatYearMonthLabel(current);
 		const currentDate = toYearMonthInt(current);
@@ -862,6 +881,7 @@ export const buildProjection = (input: {
 			blockedTransferSourceAccountIds.add(sourceAccountId);
 		};
 
+		const cashflowPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const meta of cashflowMeta) {
 			const { cashflow, start, end, interval, assetName } = meta;
 			if (!start) continue;
@@ -1176,7 +1196,11 @@ export const buildProjection = (input: {
 				}
 			}
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:cashflows', performance.now() - cashflowPhaseStartedAt);
+		}
 
+		const sharePhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [assetId, state] of shareStates.entries()) {
 			if (state.startDate && monthsBetweenYearMonths(state.startDate, current) < 0) continue;
 			if (!Number.isFinite(state.currentValue) || state.currentValue === 0) continue;
@@ -1238,7 +1262,11 @@ export const buildProjection = (input: {
 				state.assetName
 			);
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:shares', performance.now() - sharePhaseStartedAt);
+		}
 
+		const superPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [assetId, state] of superStates.entries()) {
 			if (state.startDate && monthsBetweenYearMonths(state.startDate, current) < 0) continue;
 			if (state.preservationDate && !state.preservationEventRecorded) {
@@ -1310,7 +1338,11 @@ export const buildProjection = (input: {
 			if (!Number.isFinite(netGrowthAmount) || netGrowthAmount === 0) continue;
 			state.currentValue += netGrowthAmount;
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:super', performance.now() - superPhaseStartedAt);
+		}
 
+		const propertyPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [assetId, property] of propertyValuationStates.entries()) {
 			if (property.sold) continue;
 			const monthsHeld = monthsBetweenYearMonths(property.startDate, current);
@@ -1378,7 +1410,11 @@ export const buildProjection = (input: {
 			property.currentValue = 0;
 			property.sold = true;
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:property', performance.now() - propertyPhaseStartedAt);
+		}
 
+		const mortgagePhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [assetId, state] of mortgageStates.entries()) {
 			if (state.termRemainingMonths <= 0) continue;
 			if (state.startDate && monthsBetweenYearMonths(state.startDate, current) < 0) {
@@ -1482,7 +1518,11 @@ export const buildProjection = (input: {
 
 			state.termRemainingMonths -= 1;
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:mortgages', performance.now() - mortgagePhaseStartedAt);
+		}
 
+		const accountInterestPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [accountId, accountInfo] of accountMap.entries()) {
 			if (accountInfo.type !== 'cash_account') {
 				continue;
@@ -1518,7 +1558,11 @@ export const buildProjection = (input: {
 				monthLabel
 			});
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:account-interest', performance.now() - accountInterestPhaseStartedAt);
+		}
 
+		const autoFundingPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [targetAccountId, rules] of autoFundingRulesByTarget.entries()) {
 			const targetAccount = accountMap.get(targetAccountId);
 			if (!targetAccount) continue;
@@ -1626,7 +1670,11 @@ export const buildProjection = (input: {
 				blockedAutoFundingTargetIds.add(targetAccountId);
 			}
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:auto-funding', performance.now() - autoFundingPhaseStartedAt);
+		}
 
+		const autoSweepPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const [sourceAccountId, rules] of autoSweepRulesBySource.entries()) {
 			const sourceAccount = accountMap.get(sourceAccountId);
 			if (!sourceAccount) continue;
@@ -1769,7 +1817,11 @@ export const buildProjection = (input: {
 				blockedAutoSweepSourceIds.add(sourceAccountId);
 			}
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:auto-sweep', performance.now() - autoSweepPhaseStartedAt);
+		}
 
+		const seriesPhaseStartedAt = profiler.enabled ? performance.now() : 0;
 		for (const series of accountSeries) {
 			const accountInfo = accountMap.get(series.accountId);
 			series.points.push({
@@ -1908,6 +1960,10 @@ export const buildProjection = (input: {
 				insolventEventAccountIds.add(accountId);
 			}
 		}
+		if (profiler.enabled) {
+			profiler.add('loop:series-and-liquidity', performance.now() - seriesPhaseStartedAt);
+			profiler.add('loop:total-months', performance.now() - monthLoopStartedAt);
+		}
 	}
 
 	const firstLiquidityDeficitPoint = liquidityPoints.find((point) => point.balance < 0) ?? null;
@@ -1981,7 +2037,7 @@ export const buildProjection = (input: {
 			}
 		: null;
 
-	return {
+	const result: ProjectionResult = {
 		startDate: toYearMonthInt(startYearMonth),
 		endDate: toYearMonthInt(endYearMonth),
 		transactions,
@@ -2009,4 +2065,5 @@ export const buildProjection = (input: {
 		},
 		events
 	};
+	return result;
 };

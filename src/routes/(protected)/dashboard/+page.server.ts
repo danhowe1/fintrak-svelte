@@ -38,14 +38,15 @@ import {
 	createAutoSweepRule,
 	deleteAutoSweepRule,
 	reorderAutoFundingRules,
-	reorderAutoSweepRules
+	reorderAutoSweepRules,
+	getProjectionBundleForUser
 } from '$lib/server/database';
 import {
+	parseRateCookie,
 	parseProjectionRange,
-	resolveDashboardScenario,
 	syncCurrentScenarioCookie
 } from '$lib/server/dashboard-context';
-import type { ProjectionResult } from '$lib/server/projection';
+import { buildDashboardProjectionResponse } from '$lib/server/dashboard-projection-response';
 import { parseYearMonthInput } from '$lib/yearMonth';
 
 const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
@@ -55,30 +56,17 @@ const parseSelectedAccountId = (value: string) =>
 		? value.slice(CASH_ACCOUNT_SELECTION_PREFIX.length)
 		: null;
 
-const EMPTY_PROJECTION: ProjectionResult = {
-	startDate: 0,
-	endDate: 0,
-	transactions: [],
-	accounts: [],
-	assets: [],
-	liquidity: {
-		series: [],
-		points: []
-	},
-	planner: {
-		stage: 'reserves_caps',
-		status: 'on_track',
-		headline: '',
-		firstLiquidityDeficit: null,
-		hasCapBreach: false,
-		firstShortfall: null
-	},
-	events: []
-};
-
 export const load: PageServerLoad = async (event) => {
 	const parentData = await event.parent();
-	const { scenario, scenarioId } = await resolveDashboardScenario(event);
+	const userId = event.locals.appUserId;
+	if (!userId) {
+		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
+		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
+	}
+	const scenarioId =
+		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
+	const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+	const { scenario } = projectionBundle;
 
 	if (!scenario) {
 		throw redirect(303, '/scenarios');
@@ -105,6 +93,12 @@ export const load: PageServerLoad = async (event) => {
 			sameSite: 'lax'
 		});
 	}
+	const inflationRate = parseRateCookie(event.cookies.get('inflationRate'), 2.0);
+	const projectionResponse = buildDashboardProjectionResponse({
+		projectionBundle,
+		inflationRate,
+		projectionRange
+	});
 	return {
 		scenario,
 		cashflows: [] as CashflowSummary[],
@@ -114,7 +108,7 @@ export const load: PageServerLoad = async (event) => {
 		autoFundingRules: [] as AutoFundingRule[],
 		accountBalanceTargets: [] as AccountBalanceTarget[],
 		autoSweepRules: [] as AutoSweepRule[],
-		projection: EMPTY_PROJECTION,
+		projection: projectionResponse.projection,
 		projectionRange,
 		sessionRates: parentData.sessionRates
 	};
@@ -745,8 +739,8 @@ export const actions: Actions = {
 		});
 		return { success: true };
 	},
-		updateSuperannuationDetails: async (event) => {
-			const userId = event.locals.appUserId;
+	updateSuperannuationDetails: async (event) => {
+		const userId = event.locals.appUserId;
 		if (!userId) {
 			throw redirect(303, '/login');
 		}
@@ -778,42 +772,39 @@ export const actions: Actions = {
 		if (!scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-			await updateSuperannuationDetails(scenarioId, assetId, {
-				preservationAge,
-				capitalGrowthRate,
-				managementFeeRate
+		await updateSuperannuationDetails(scenarioId, assetId, {
+			preservationAge,
+			capitalGrowthRate,
+			managementFeeRate
+		});
+		return { success: true };
+	},
+	deleteAsset: async (event) => {
+		const userId = event.locals.appUserId;
+		if (!userId) {
+			throw redirect(303, '/login');
+		}
+		const formData = await event.request.formData();
+		const scenarioId = String(formData.get('scenarioId') ?? '');
+		const assetId = String(formData.get('assetId') ?? '');
+		if (!scenarioId || !assetId) {
+			return fail(400, { error: 'Invalid asset deletion input.' });
+		}
+		const scenario = await getScenarioForUserById(userId, scenarioId);
+		if (!scenario) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		try {
+			await deleteAssetForScenario(scenarioId, assetId);
+		} catch (error) {
+			return fail(400, {
+				error: error instanceof Error ? error.message : 'Unable to delete asset. Please try again.'
 			});
-			return { success: true };
-		},
-		deleteAsset: async (event) => {
-			const userId = event.locals.appUserId;
-			if (!userId) {
-				throw redirect(303, '/login');
-			}
-			const formData = await event.request.formData();
-			const scenarioId = String(formData.get('scenarioId') ?? '');
-			const assetId = String(formData.get('assetId') ?? '');
-			if (!scenarioId || !assetId) {
-				return fail(400, { error: 'Invalid asset deletion input.' });
-			}
-			const scenario = await getScenarioForUserById(userId, scenarioId);
-			if (!scenario) {
-				return fail(404, { error: 'Scenario not found.' });
-			}
-			try {
-				await deleteAssetForScenario(scenarioId, assetId);
-			} catch (error) {
-				return fail(400, {
-					error:
-						error instanceof Error
-							? error.message
-							: 'Unable to delete asset. Please try again.'
-				});
-			}
-			return { success: true };
-		},
-		createTransferCashflow: async (event) => {
-			const userId = event.locals.appUserId;
+		}
+		return { success: true };
+	},
+	createTransferCashflow: async (event) => {
+		const userId = event.locals.appUserId;
 		if (!userId) {
 			throw redirect(303, '/login');
 		}

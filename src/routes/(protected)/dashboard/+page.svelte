@@ -127,6 +127,17 @@
 		}
 	};
 
+	const hasProjectionPayload = (projection: ProjectionData | null | undefined) =>
+		Boolean(projection && projection.startDate > 0 && projection.endDate > 0);
+
+	const applyServerProjectionPayload = (nextData: PageData) => {
+		dashboardProjectionState.applyProjectionPayload({
+			projectionData: nextData.projection ?? EMPTY_PROJECTION,
+			sessionRates: nextData.sessionRates,
+			projectionRange: normalizeProjectionRange(nextData.projectionRange)
+		});
+	};
+
 	const dashboardProjectionState = createDashboardProjectionStateStore<
 		ProjectionData,
 		PageData['sessionRates'],
@@ -180,7 +191,10 @@
 	let autoRunProjection = true;
 	let whatIfPanelElement: HTMLElement | null = null;
 	let isWhatIfAddAssetMenuOpen = false;
-	const dashboardLoadState = createDashboardLoadStateStore();
+	const dashboardLoadState = createDashboardLoadStateStore({
+		isInitialProjectionLoading: !hasProjectionPayload(data.projection),
+		isInitialWhatIfLoading: true
+	});
 	const setProjectionError = (message: string | null) =>
 		dashboardLoadState.setProjectionError(message);
 	const setWhatIfLoadError = (message: string | null) =>
@@ -347,6 +361,7 @@
 	let plannerAdvancedOpenStage: 'stage3' | 'stage4' = 'stage3';
 	let wasStage3Passed = false;
 	let stage3Assessment: Stage3Assessment | null = null;
+	let isPlannerDeferredReady = false;
 	let dashboardSections: DashboardSectionsControllerState;
 	let dashboardMutations: ReturnType<typeof createDashboardMutationController>;
 
@@ -379,14 +394,20 @@
 	$: if (!stage2Passed) {
 		plannerAdvancedOpenStage = 'stage3';
 	}
-	$: plannerLiquiditySaleShortcut = getPlannerLiquiditySaleShortcut({
-		firstLiquidityDeficit: plannerFirstLiquidityDeficit,
-		plannerFirstShortfall,
-		accounts: accountsList,
-		assets: assetsList,
-		assetAccounts: assetAccountsList,
-		liquiditySeries: projectionData.liquidity?.series ?? []
-	});
+	$: isPlannerDataReady =
+		isPlannerDeferredReady &&
+		!$dashboardLoadState.isInitialProjectionLoading &&
+		!$dashboardLoadState.isInitialWhatIfLoading;
+	$: plannerLiquiditySaleShortcut = isPlannerDataReady
+		? getPlannerLiquiditySaleShortcut({
+				firstLiquidityDeficit: plannerFirstLiquidityDeficit,
+				plannerFirstShortfall,
+				accounts: accountsList,
+				assets: assetsList,
+				assetAccounts: assetAccountsList,
+				liquiditySeries: projectionData.liquidity?.series ?? []
+			})
+		: null;
 	$: stage1Passed = !plannerFirstLiquidityDeficit;
 	$: stage2Reached = stage1Passed;
 	$: stage2Passed = stage2Reached && !stage2FirstRunOutEvent;
@@ -406,14 +427,15 @@
 		}
 		wasStage3Passed = stage3Passed;
 	}
-	$: stage3Assessment = calculateStage3Assessment({
-		stage3Reached,
-		projectionData,
-		assets: assetsList,
-		accounts: accountsList,
-		assetAccounts: assetAccountsList,
-		accountBalanceTargets
-	});
+	$: stage3Assessment = isPlannerDataReady
+		? calculateStage3Assessment({
+				stage3Reached,
+				projectionData,
+				assets: assetsList,
+				accounts: accountsList,
+				assetAccounts: assetAccountsList
+			})
+		: null;
 	$: stage1PlannerMessage = plannerStage === 'liquidity' ? plannerHeadline : '';
 	$: stage2PlannerMessage = stage2FirstRunOutEvent
 		? stage2FirstRunOutEvent.monthLabel
@@ -470,13 +492,24 @@
 		dashboardUiState.reset();
 		reserveOrderOverridesByTarget = {};
 		dashboardWhatIfState.resetData();
-		dashboardProjectionState.setProjectionData(EMPTY_PROJECTION);
+		isPlannerDeferredReady = false;
 	};
 
 	$: if (data.scenario.id !== lastScenarioId) {
 		resetScenarioState();
 		lastScenarioId = data.scenario.id;
-		void loadInitialDashboardSections();
+		applyServerProjectionPayload(data);
+		dashboardLoadState.apply((state) => ({
+			...state,
+			isInitialProjectionLoading: !hasProjectionPayload(data.projection),
+			isInitialWhatIfLoading: true,
+			projectionError: null,
+			whatIfLoadError: null
+		}));
+		deferPlannerWork();
+		void loadInitialDashboardSections({
+			includeProjection: !hasProjectionPayload(data.projection)
+		});
 	}
 
 	$: if (Object.keys(personRetirementAges).length === 0 && (assetsList.length ?? 0) > 0) {
@@ -1313,6 +1346,15 @@
 		expandedPnlNodes = new Set();
 	};
 
+	const deferPlannerWork = () => {
+		isPlannerDeferredReady = false;
+		requestAnimationFrame(() => {
+			requestAnimationFrame(() => {
+				isPlannerDeferredReady = true;
+			});
+		});
+	};
+
 	const loadWhatIfSection = async () => {
 		const payload = await fetchDashboardWhatIf(data.scenario.id);
 		const nextCashflows = (payload.cashflows as CashflowSummary[]) ?? [];
@@ -1335,10 +1377,12 @@
 		setWhatIfLoadError(null);
 	};
 
-	const loadInitialDashboardSections = async () => {
+	const loadInitialDashboardSections = async (options?: { includeProjection?: boolean }) => {
 		await runInitialDashboardLoad({
 			loadWhatIf: loadWhatIfSection,
-			refreshProjection: () => refreshProjection({ force: true }),
+			refreshProjection: options?.includeProjection
+				? () => refreshProjection({ force: true })
+				: undefined,
 			setState: (updater) => dashboardLoadState.apply(updater)
 		});
 	};
@@ -1614,8 +1658,7 @@
 		assetPanelTab = 'accounts';
 		isWhatIfAddAssetMenuOpen = false;
 		const firstAdjustableAccount = accountsList.find(
-			(account) =>
-				account.account_type !== 'super_account' && account.account_type !== 'brokerage'
+			(account) => account.account_type !== 'super_account' && account.account_type !== 'brokerage'
 		);
 		if (!firstAdjustableAccount) return;
 
@@ -1968,6 +2011,7 @@
 		accountsList,
 		projectionBalanceSource,
 		projectionRange,
+		projectionView,
 		transactionSortKey,
 		transactionSortDirection,
 		expandedPnlNodes,
@@ -2119,16 +2163,16 @@
 	$: dashboardMutations = createDashboardMutationController({
 		scenarioId: data.scenario.id,
 		getAutoRunProjection: () => autoRunProjection,
-			withLock,
-				refreshProjection,
-				refreshWhatIf: loadWhatIfSection,
-				setProjectionError,
-				setWhatIfLoadError: (value) => {
-					dashboardLoadState.setWhatIfLoadError(value);
-				},
-			setFundingTabError: (value) => {
-				fundingTabError = value;
-			},
+		withLock,
+		refreshProjection,
+		refreshWhatIf: loadWhatIfSection,
+		setProjectionError,
+		setWhatIfLoadError: (value) => {
+			dashboardLoadState.setWhatIfLoadError(value);
+		},
+		setFundingTabError: (value) => {
+			fundingTabError = value;
+		},
 		getAutoFundingRules: () => (autoFundingRules ?? []) as Array<Record<string, unknown>>,
 		setAutoFundingRules: (rules) => {
 			setAutoFundingRules(rules as typeof autoFundingRules);
@@ -2227,13 +2271,13 @@
 			transactionPivot,
 			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
 		},
-					whatIfPanelProps: {
-						isAddAssetMenuOpen: isWhatIfAddAssetMenuOpen,
-						isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
-						whatIfLoadError: $dashboardLoadState.whatIfLoadError,
-						hasPropertyAsset: assetsList.some((asset) => asset.asset_type === 'property'),
-						assetsTabProps: {
-							data: { assetsList, assetAccountsList, accountsList, requestDeleteAsset },
+		whatIfPanelProps: {
+			isAddAssetMenuOpen: isWhatIfAddAssetMenuOpen,
+			isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
+			whatIfLoadError: $dashboardLoadState.whatIfLoadError,
+			hasPropertyAsset: assetsList.some((asset) => asset.asset_type === 'property'),
+			assetsTabProps: {
+				data: { assetsList, assetAccountsList, accountsList, requestDeleteAsset },
 				person: {
 					personDetails,
 					personRetirementAges,
@@ -2387,38 +2431,45 @@
 			jumpToWhatIfAssetsExpense,
 			jumpToWhatIfAddAsset,
 			jumpToWhatIfLivingExpenses,
-			showEmploymentIncomeShortcut: assetsList
-				.filter((asset) => asset.asset_type === 'person')
-				.some((person) =>
-					(cashflowsByAssetId[person.id] ?? []).some(
-						(cashflow) =>
-							cashflow.cashflow_type === 'income' &&
-							cashflow.category === 'employment_income'
-					)
-				),
+			showEmploymentIncomeShortcut: isPlannerDataReady
+				? assetsList
+						.filter((asset) => asset.asset_type === 'person')
+						.some((person) =>
+							(cashflowsByAssetId[person.id] ?? []).some(
+								(cashflow) =>
+									cashflow.cashflow_type === 'income' && cashflow.category === 'employment_income'
+							)
+						)
+				: false,
 			jumpToWhatIfEmploymentIncome,
 			jumpToWhatIfIncome,
 			jumpToWhatIfRetirementAge,
-			showInterestRateShortcut: accountsList.some(
-				(account) =>
-					account.account_type !== 'super_account' && account.account_type !== 'brokerage'
-			),
+			showInterestRateShortcut: isPlannerDataReady
+				? accountsList.some(
+						(account) =>
+							account.account_type !== 'super_account' && account.account_type !== 'brokerage'
+					)
+				: false,
 			jumpToWhatIfInterestRates,
-			showInvestmentPropertyShortcut: assetsList.some(
-				(asset) =>
-					asset.asset_type === 'property' &&
-					(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
-						'investment_property' &&
-					!(propertyDetails[asset.id]?.saleDate ?? '').trim()
-			),
+			showInvestmentPropertyShortcut: isPlannerDataReady
+				? assetsList.some(
+						(asset) =>
+							asset.asset_type === 'property' &&
+							(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
+								'investment_property' &&
+							!(propertyDetails[asset.id]?.saleDate ?? '').trim()
+					)
+				: false,
 			jumpToWhatIfInvestmentPropertySale,
-			showPrimaryResidenceShortcut: assetsList.some(
-				(asset) =>
-					asset.asset_type === 'property' &&
-					(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
-						'primary_residence' &&
-					!(propertyDetails[asset.id]?.saleDate ?? '').trim()
-			),
+			showPrimaryResidenceShortcut: isPlannerDataReady
+				? assetsList.some(
+						(asset) =>
+							asset.asset_type === 'property' &&
+							(propertyDetails[asset.id]?.propertyUse ?? asset.details?.propertyUse) ===
+								'primary_residence' &&
+							!(propertyDetails[asset.id]?.saleDate ?? '').trim()
+					)
+				: false,
 			jumpToWhatIfPrimaryResidenceSale,
 			stage2Reached,
 			stage2Passed,
@@ -2429,10 +2480,13 @@
 			stage3Assessment,
 			stage4Reached,
 			stage4Passed,
+			isPlannerComputing: stage2Passed && !isPlannerDataReady,
 			jumpToWhatIfReserves,
 			jumpToWhatIfCaps,
 			monthLabelFromDate,
-			projectionEvents: (projectionData.events ?? []).filter((event) => !isStage2RunOutEvent(event)),
+			projectionEvents: isPlannerDataReady
+				? (projectionData.events ?? []).filter((event) => !isStage2RunOutEvent(event))
+				: [],
 			isInitialProjectionLoading: $dashboardLoadState.isInitialProjectionLoading
 		}
 	});
@@ -2442,7 +2496,10 @@
 		if (isAssetPanelTab(requestedWhatIfTab)) {
 			assetPanelTab = requestedWhatIfTab;
 		}
-		void loadInitialDashboardSections();
+		deferPlannerWork();
+		void loadInitialDashboardSections({
+			includeProjection: !hasProjectionPayload(data.projection)
+		});
 	});
 
 	onDestroy(() => {
@@ -2504,10 +2561,7 @@
 				bind:isAddAssetMenuOpen={isWhatIfAddAssetMenuOpen}
 			/>
 		</div>
-		<PlannerPanel
-			{...dashboardSections.plannerPanelProps}
-			bind:plannerAdvancedOpenStage
-		/>
+		<PlannerPanel {...dashboardSections.plannerPanelProps} bind:plannerAdvancedOpenStage />
 	</div>
 </section>
 

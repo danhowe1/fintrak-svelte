@@ -1,6 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { Pool } from 'pg';
-import type { PoolClient } from 'pg';
+import type { PoolClient, QueryResultRow } from 'pg';
 import { z } from 'zod';
 import { parseYearMonthInput } from '$lib/yearMonth';
 import { planAssetDeletion } from '$lib/server/asset-deletion';
@@ -21,6 +21,12 @@ const userEmailSchema = z.string().trim().min(1).optional();
 const userNameSchema = z.string().trim().min(1).optional();
 
 let pool: Pool | undefined;
+
+const timedScenarioQuery = async <T extends QueryResultRow>(
+	_label: string,
+	query: string,
+	values: unknown[]
+) => getPool().query<T>(query, values);
 
 function getDatabaseUrl() {
 	const connectionString = env.SUPABASE_DEV_DATABASE_URL ?? env.SUPABASE_DB_URL ?? env.DATABASE_URL;
@@ -146,7 +152,8 @@ export type ScenarioListItem = ScenarioRecord & {
 };
 
 export async function getSingleScenarioForUser(userId: string) {
-	const result = await getPool().query<ScenarioSummary>(
+	const result = await timedScenarioQuery<ScenarioSummary>(
+		'getSingleScenarioForUser',
 		`
 			select s.id, s.name
 			from scenarios s
@@ -165,7 +172,8 @@ export async function getSingleScenarioForUser(userId: string) {
 }
 
 export async function getScenarioForUserById(userId: string, scenarioId: string) {
-	const result = await getPool().query<ScenarioRecord>(
+	const result = await timedScenarioQuery<ScenarioRecord>(
+		'getScenarioForUserById',
 		`
 			select s.id, s.name, s.created_at
 			from scenarios s
@@ -229,8 +237,23 @@ export type AssetListItem = {
 	}[];
 };
 
+export type ProjectionScenarioInputs = {
+	assets: AssetListItem[];
+	accounts: AccountListItem[];
+	assetAccounts: AssetAccountLink[];
+	cashflows: CashflowSummary[];
+	autoFundingRules: AutoFundingRule[];
+	accountBalanceTargets: AccountBalanceTarget[];
+	autoSweepRules: AutoSweepRule[];
+};
+
+export type ProjectionScenarioBundle = ProjectionScenarioInputs & {
+	scenario: ScenarioSummary | null;
+};
+
 export async function getAssetsForScenario(scenarioId: string) {
-	const result = await getPool().query<AssetListItem>(
+	const result = await timedScenarioQuery<AssetListItem>(
+		'getAssetsForScenario',
 		`
 			select
 				a.id,
@@ -278,7 +301,8 @@ export type AccountListItem = {
 };
 
 export async function getAccountsForScenario(scenarioId: string) {
-	const result = await getPool().query<AccountListItem>(
+	const result = await timedScenarioQuery<AccountListItem>(
+		'getAccountsForScenario',
 		`
 			select
 				a.id,
@@ -416,7 +440,7 @@ export async function updatePropertyDetails(
 			await clearPrimaryResidenceForOtherProperties(client, scenarioId, assetId);
 		}
 		await client.query(
-		`
+			`
 			update assets
 			set name = $3::text,
 				start_date = $4::int,
@@ -455,18 +479,18 @@ export async function updatePropertyDetails(
 			  and scenario_id = $1::uuid
 			  and asset_type = 'property'
 		`,
-		[
-			scenarioId,
-			assetId,
-			input.name,
-			normalizedStartDate,
-			input.marketValue,
-			input.marketGrowthRate,
-			normalizedSaleDate,
-			input.fixedSellingCosts,
-			input.variableSellingCosts,
-			propertyUse
-		]
+			[
+				scenarioId,
+				assetId,
+				input.name,
+				normalizedStartDate,
+				input.marketValue,
+				input.marketGrowthRate,
+				normalizedSaleDate,
+				input.fixedSellingCosts,
+				input.variableSellingCosts,
+				propertyUse
+			]
 		);
 		await client.query('commit');
 	} catch (error) {
@@ -710,7 +734,8 @@ export type AutoSweepRule = {
 };
 
 export async function getAutoFundingRulesForScenario(scenarioId: string) {
-	const result = await getPool().query<AutoFundingRule>(
+	const result = await timedScenarioQuery<AutoFundingRule>(
+		'getAutoFundingRulesForScenario',
 		`
 			select
 				id,
@@ -733,7 +758,8 @@ export async function getAutoFundingRulesForScenario(scenarioId: string) {
 }
 
 export async function getAccountBalanceTargetsForScenario(scenarioId: string) {
-	const result = await getPool().query<AccountBalanceTarget>(
+	const result = await timedScenarioQuery<AccountBalanceTarget>(
+		'getAccountBalanceTargetsForScenario',
 		`
 			select
 				id,
@@ -816,7 +842,8 @@ export async function deleteAccountBalanceTarget(scenarioId: string, accountId: 
 }
 
 export async function getAutoSweepRulesForScenario(scenarioId: string) {
-	const result = await getPool().query<AutoSweepRule>(
+	const result = await timedScenarioQuery<AutoSweepRule>(
+		'getAutoSweepRulesForScenario',
 		`
 			select
 				id,
@@ -1116,7 +1143,8 @@ export async function reorderAutoSweepRules(
 }
 
 export async function getAssetAccountsForScenario(scenarioId: string) {
-	const result = await getPool().query<AssetAccountLink>(
+	const result = await timedScenarioQuery<AssetAccountLink>(
+		'getAssetAccountsForScenario',
 		`
 			select id, asset_id, account_id, relationship_role
 			from asset_accounts
@@ -1395,7 +1423,8 @@ export type CashflowSummary = {
 };
 
 export async function getCashflowsForScenario(scenarioId: string) {
-	const result = await getPool().query<CashflowSummary>(
+	const result = await timedScenarioQuery<CashflowSummary>(
+		'getCashflowsForScenario',
 		`
 			select
 				c.id,
@@ -1431,6 +1460,201 @@ export async function getCashflowsForScenario(scenarioId: string) {
 	);
 
 	return result.rows;
+}
+
+export async function getProjectionBundleForUser(
+	userId: string,
+	scenarioId?: string | null
+): Promise<ProjectionScenarioBundle> {
+	const result = await timedScenarioQuery<
+		QueryResultRow & {
+			scenario: ScenarioSummary | null;
+			assets: AssetListItem[];
+			accounts: AccountListItem[];
+			asset_accounts: AssetAccountLink[];
+			cashflows: CashflowSummary[];
+			auto_funding_rules: AutoFundingRule[];
+			account_balance_targets: AccountBalanceTarget[];
+			auto_sweep_rules: AutoSweepRule[];
+		}
+	>(
+		'getProjectionBundleForUser',
+		`
+			with selected_scenario as (
+				select s.id, s.name, s.created_at
+				from scenarios s
+				left join scenario_members sm
+					on sm.scenario_id = s.id
+				   and sm.user_id = $1::text
+				where (sm.user_id is not null or s.created_by = $1::text)
+				  and ($2::uuid is null or s.id = $2::uuid)
+				order by
+					case when $2::uuid is null then 1 else 0 end,
+					s.created_at desc
+				limit 1
+			)
+			select
+				(select to_jsonb(scenario_row) from (select id, name from selected_scenario) as scenario_row) as scenario,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(asset_rows) order by asset_rows.created_at desc)
+						from (
+							select
+								a.id,
+								a.asset_type,
+								a.name,
+								a.start_date,
+								a.details,
+								a.property_id,
+								a.person_id,
+								a.created_at,
+								'[]'::jsonb as relationships
+							from assets a
+							join selected_scenario ss on ss.id = a.scenario_id
+						) as asset_rows
+					),
+					'[]'::jsonb
+				) as assets,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(account_rows) order by account_rows.created_at desc)
+						from (
+							select
+								a.id,
+								a.account_type,
+								a.name,
+								a.start_date,
+								a.opening_balance::double precision as opening_balance,
+								a.details,
+								a.created_at,
+								'[]'::jsonb as relationships
+							from accounts a
+							join selected_scenario ss on ss.id = a.scenario_id
+						) as account_rows
+					),
+					'[]'::jsonb
+				) as accounts,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(asset_account_rows))
+						from (
+							select aa.id, aa.asset_id, aa.account_id, aa.relationship_role
+							from asset_accounts aa
+							join selected_scenario ss on ss.id = aa.scenario_id
+							order by aa.id asc
+						) as asset_account_rows
+					),
+					'[]'::jsonb
+				) as asset_accounts,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(cashflow_rows) order by cashflow_rows.start_date asc, cashflow_rows.id asc)
+						from (
+							select
+								c.id,
+								c.cashflow_type,
+								c.category,
+								c.frequency,
+								c.amount::double precision as amount,
+								c.inflation_affected,
+								c.start_date,
+								c.end_date,
+								c.description,
+								saa.id as source_asset_account_id,
+								daa.id as destination_asset_account_id,
+								saa.account_id as source_account_id,
+								daa.account_id as destination_account_id,
+								sasset.id as source_asset_id,
+								dasset.id as destination_asset_id,
+								sasset.name as source_asset_name,
+								dasset.name as destination_asset_name,
+								sacc.name as source_account_name,
+								dacc.name as destination_account_name
+							from cashflows c
+							join selected_scenario ss on ss.id = c.scenario_id
+							left join asset_accounts saa on saa.id = c.source_asset_account_id
+							left join asset_accounts daa on daa.id = c.destination_asset_account_id
+							left join assets sasset on sasset.id = saa.asset_id
+							left join assets dasset on dasset.id = daa.asset_id
+							left join accounts sacc on sacc.id = saa.account_id
+							left join accounts dacc on dacc.id = daa.account_id
+						) as cashflow_rows
+					),
+					'[]'::jsonb
+				) as cashflows,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(auto_funding_rows) order by auto_funding_rows.target_account_id asc, auto_funding_rows.priority_order asc, auto_funding_rows.created_at asc)
+						from (
+							select
+								afr.id,
+								afr.scenario_id,
+								afr.source_account_id,
+								afr.target_account_id,
+								afr.priority_order,
+								afr.enabled,
+								afr.min_target_balance::double precision as min_target_balance,
+								afr.created_at,
+								afr.updated_at
+							from auto_funding_rules afr
+							join selected_scenario ss on ss.id = afr.scenario_id
+						) as auto_funding_rows
+					),
+					'[]'::jsonb
+				) as auto_funding_rules,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(account_balance_target_rows) order by account_balance_target_rows.created_at asc)
+						from (
+							select
+								abt.id,
+								abt.scenario_id,
+								abt.account_id,
+								abt.min_balance::double precision as min_balance,
+								abt.max_balance::double precision as max_balance,
+								abt.enabled,
+								abt.created_at,
+								abt.updated_at
+							from account_balance_targets abt
+							join selected_scenario ss on ss.id = abt.scenario_id
+						) as account_balance_target_rows
+					),
+					'[]'::jsonb
+				) as account_balance_targets,
+				coalesce(
+					(
+						select jsonb_agg(to_jsonb(auto_sweep_rows) order by auto_sweep_rows.source_account_id asc, auto_sweep_rows.priority_order asc, auto_sweep_rows.created_at asc)
+						from (
+							select
+								asr.id,
+								asr.scenario_id,
+								asr.source_account_id,
+								asr.destination_account_id,
+								asr.priority_order,
+								asr.enabled,
+								asr.created_at,
+								asr.updated_at
+							from auto_sweep_rules asr
+							join selected_scenario ss on ss.id = asr.scenario_id
+						) as auto_sweep_rows
+					),
+					'[]'::jsonb
+				) as auto_sweep_rules
+		`,
+		[userId, scenarioId ?? null]
+	);
+
+	const row = result.rows[0];
+	return {
+		scenario: row?.scenario ?? null,
+		assets: row?.assets ?? [],
+		accounts: row?.accounts ?? [],
+		assetAccounts: row?.asset_accounts ?? [],
+		cashflows: row?.cashflows ?? [],
+		autoFundingRules: row?.auto_funding_rules ?? [],
+		accountBalanceTargets: row?.account_balance_targets ?? [],
+		autoSweepRules: row?.auto_sweep_rules ?? []
+	};
 }
 
 export type CreateAssetInput = {

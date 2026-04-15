@@ -30,6 +30,7 @@
 	export let stage3Assessment: any;
 	export let stage4Reached: boolean;
 	export let stage4Passed: boolean;
+	export let isPlannerComputing: boolean;
 	export let jumpToWhatIfReserves: (
 		targetAccountId?: string,
 		focusTarget?: 'amount' | 'priority'
@@ -84,7 +85,7 @@
 					<li>
 						<button
 							type="button"
-							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 							onclick={jumpToWhatIfAddAsset}
 						>
@@ -94,7 +95,7 @@
 					<li>
 						<button
 							type="button"
-							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 							onclick={jumpToWhatIfLivingExpenses}
 						>
@@ -105,7 +106,7 @@
 						<li>
 							<button
 								type="button"
-								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 								onclick={jumpToWhatIfEmploymentIncome}
 							>
@@ -116,7 +117,7 @@
 					<li>
 						<button
 							type="button"
-							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 							onclick={jumpToWhatIfIncome}
 						>
@@ -126,7 +127,7 @@
 					<li>
 						<button
 							type="button"
-							class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+							class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 							onclick={jumpToWhatIfRetirementAge}
 						>
@@ -137,7 +138,7 @@
 						<li>
 							<button
 								type="button"
-								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 								onclick={jumpToWhatIfInterestRates}
 							>
@@ -149,7 +150,7 @@
 						<li>
 							<button
 								type="button"
-								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
 								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
 								onclick={jumpToWhatIfInvestmentPropertySale}
 							>
@@ -161,13 +162,13 @@
 						<li>
 							<button
 								type="button"
-								class="appearance-none cursor-pointer border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
-							style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
-							onclick={jumpToWhatIfPrimaryResidenceSale}
-						>
-							Sell your home.
-						</button>
-					</li>
+								class="cursor-pointer appearance-none border-0 bg-transparent p-0 text-left text-current hover:text-amber-950"
+								style="font: inherit; font-weight: 400; text-decoration: underline; text-decoration-color: rgb(251 191 36 / 0.9); text-underline-offset: 2px;"
+								onclick={jumpToWhatIfPrimaryResidenceSale}
+							>
+								Sell your home.
+							</button>
+						</li>
 					{/if}
 				</ul>
 				<div class="mt-2 text-xs">
@@ -249,7 +250,7 @@
 					plannerAdvancedOpenStage = 'stage3';
 				}
 			}}
-			class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage3Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage3Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
+			class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage3Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : isPlannerComputing ? 'border-slate-200 bg-slate-50 text-slate-600' : stage3Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
 		>
 			<div class="flex items-center gap-2">
 				<span class="font-semibold">Stage 3: Safety</span>
@@ -259,9 +260,9 @@
 				</InfoTooltip>
 			</div>
 			<span
-				class={`rounded-full px-2 py-0.5 font-semibold ${!stage3Reached ? 'bg-slate-100 text-slate-500' : stage3Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
+				class={`rounded-full px-2 py-0.5 font-semibold ${!stage3Reached ? 'bg-slate-100 text-slate-500' : isPlannerComputing ? 'bg-slate-100 text-slate-600' : stage3Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
 			>
-				{!stage3Reached ? '?' : stage3Passed ? '✓' : '!'}
+				{!stage3Reached ? '?' : isPlannerComputing ? '…' : stage3Passed ? '✓' : '!'}
 			</span>
 		</div>
 		{#if stage3Passed}
@@ -274,58 +275,60 @@
 				<div
 					class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
 				>
-						<div class="flex items-center gap-1">
-							<span class="font-semibold">Safety Buffer Score</span>
-							<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
-								Measures how many months you could cover essential costs from your total liquid
-								cash buffer. Current coverage is
-								{Math.floor(stage3Assessment.safetyMonths)} months.
-								<br /><br />
-								This is measured so you can see whether you have enough accessible cash to absorb
-								expenses and short-term shocks without needing to sell growth assets too soon.
-								<br /><br />
-								It is worked out by taking your total accessible cash and dividing it by your
-								average monthly essential costs. For example, if you have $60,000 in liquid cash and
-								essential costs are $10,000 a month, that gives 6 months of cover. The score then
-								rises as coverage improves, with stronger scores from 6 months and highest scores
-								at 12 months or more.
-							</InfoTooltip>
-						</div>
+					<div class="flex items-center gap-1">
+						<span class="font-semibold">Safety Buffer Score</span>
+						<InfoTooltip label="What is the Stage 3 safety buffer score?" theme="sky">
+							Measures how many months you could cover essential costs from your total liquid cash
+							buffer. Current coverage is
+							{Math.floor(stage3Assessment.safetyMonths)} months.
+							<br /><br />
+							This is measured so you can see whether you have enough accessible cash to absorb expenses
+							and short-term shocks without needing to sell growth assets too soon.
+							<br /><br />
+							It is worked out by taking your total accessible cash and dividing it by your average monthly
+							essential costs. For example, if you have $60,000 in liquid cash and essential costs are
+							$10,000 a month, that gives 6 months of cover. The score then rises as coverage improves,
+							with stronger scores from 6 months and highest scores at 12 months or more.
+						</InfoTooltip>
+					</div>
 					<span class="font-semibold">{stage3Assessment.safetyScore}/100</span>
 				</div>
 				<div
 					class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
 				>
-						<div class="flex items-center gap-1">
-							<span class="font-semibold">Resilience Score</span>
-							<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
-								Measures the largest drop in liquidity over any rolling 12-month window in your
-								projection.
-								{#if stage3Assessment.worstDrawdownPct > 0 &&
-									stage3Assessment.worstDrawdownStartDate &&
-									stage3Assessment.worstDrawdownEndDate}
-									Worst window:
-									{monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)} to
-									{monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)}, drawdown:
-									{stage3Assessment.worstDrawdownPct}%.
-								{:else}
-									No liquidity drawdown was detected in the projection.
-								{/if}
-								<br /><br />
-								This is measured so you can see how sharply cash availability may fall during
-								stress periods, even if you do not fully run out of money.
-								<br /><br />
-								It is worked out by scanning each 12-month period, finding the biggest percentage
-								fall in liquidity, and scoring that drop. A smaller drop gives a higher score. For
-								example, a 10% drop scores much better than a 40% drop, because the plan is staying
-								more stable through tough periods.
-							</InfoTooltip>
-						</div>
+					<div class="flex items-center gap-1">
+						<span class="font-semibold">Resilience Score</span>
+						<InfoTooltip label="What is the Stage 3 resilience score?" theme="sky">
+							Measures the largest drop in liquidity over any rolling 12-month window in your
+							projection.
+							{#if stage3Assessment.worstDrawdownPct > 0 && stage3Assessment.worstDrawdownStartDate && stage3Assessment.worstDrawdownEndDate}
+								Worst window:
+								{monthLabelFromDate(stage3Assessment.worstDrawdownStartDate)} to
+								{monthLabelFromDate(stage3Assessment.worstDrawdownEndDate)}, drawdown:
+								{stage3Assessment.worstDrawdownPct}%.
+							{:else}
+								No liquidity drawdown was detected in the projection.
+							{/if}
+							<br /><br />
+							This is measured so you can see how sharply cash availability may fall during stress periods,
+							even if you do not fully run out of money.
+							<br /><br />
+							It is worked out by scanning each 12-month period, finding the biggest percentage fall in
+							liquidity, and scoring that drop. A smaller drop gives a higher score. For example, a 10%
+							drop scores much better than a 40% drop, because the plan is staying more stable through
+							tough periods.
+						</InfoTooltip>
+					</div>
 					<span class="font-semibold">{stage3Assessment.resilienceScore}/100</span>
 				</div>
 			</div>
 		{/if}
-		{#if stage3Reached && !stage3Passed}
+		{#if stage3Reached && isPlannerComputing}
+			<StatusMessage tone="info" class="mt-3 border-slate-200 bg-slate-50 text-slate-700">
+				Calculating safety and growth scores...
+			</StatusMessage>
+		{/if}
+		{#if stage3Reached && !isPlannerComputing && !stage3Passed}
 			<div class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
 				<div class="font-semibold">Set Reserve Settings In What If</div>
 				<div class="mt-1 text-xs">
@@ -355,7 +358,7 @@
 					plannerAdvancedOpenStage = 'stage4';
 				}
 			}}
-			class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage4Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : stage4Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
+			class={`mt-3 flex items-center justify-between rounded-lg border px-3 py-2 text-sm ${!stage4Reached ? 'border-slate-200 bg-slate-50 text-slate-500' : isPlannerComputing ? 'border-slate-200 bg-slate-50 text-slate-600' : stage4Passed ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}
 		>
 			<div class="flex items-center gap-2">
 				<span class="font-semibold">Stage 4: Growth Efficiency</span>
@@ -365,9 +368,9 @@
 				</InfoTooltip>
 			</div>
 			<span
-				class={`rounded-full px-2 py-0.5 font-semibold ${!stage4Reached ? 'bg-slate-100 text-slate-500' : stage4Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
+				class={`rounded-full px-2 py-0.5 font-semibold ${!stage4Reached ? 'bg-slate-100 text-slate-500' : isPlannerComputing ? 'bg-slate-100 text-slate-600' : stage4Passed ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}
 			>
-				{!stage4Reached ? '?' : stage4Passed ? '✓' : '!'}
+				{!stage4Reached ? '?' : isPlannerComputing ? '…' : stage4Passed ? '✓' : '!'}
 			</span>
 		</div>
 		{#if stage4Passed}
@@ -382,51 +385,50 @@
 						<div
 							class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
 						>
-								<div class="flex items-center gap-1">
-									<span class="font-semibold">Growth Allocation Score</span>
-									<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
-										Measures how much of your current value is held in growth assets
-										(shares, super, investment properties) versus defensive cash. Current growth
-										allocation is {Math.round(stage3Assessment.growthAllocationPct)}%.
-										<br /><br />
-										This is measured so you can see whether excess cash is being put to work for
-										longer-term growth instead of sitting too heavily in defensive holdings.
-										<br /><br />
-										It is worked out by dividing growth assets by total growth plus defensive cash.
-										For example, if you have $300,000 in growth assets and $200,000 in cash, your
-										growth allocation is 60%. The score rises as more of the portfolio is allocated
-										to growth, with the strongest scores around 70% or higher.
-									</InfoTooltip>
-								</div>
+							<div class="flex items-center gap-1">
+								<span class="font-semibold">Growth Allocation Score</span>
+								<InfoTooltip label="What is the Stage 4 growth allocation score?" theme="sky">
+									Measures how much of your current value is held in growth assets (shares, super,
+									investment properties) versus defensive cash. Current growth allocation is {Math.round(
+										stage3Assessment.growthAllocationPct
+									)}%.
+									<br /><br />
+									This is measured so you can see whether excess cash is being put to work for longer-term
+									growth instead of sitting too heavily in defensive holdings.
+									<br /><br />
+									It is worked out by dividing growth assets by total growth plus defensive cash. For
+									example, if you have $300,000 in growth assets and $200,000 in cash, your growth allocation
+									is 60%. The score rises as more of the portfolio is allocated to growth, with the strongest
+									scores around 70% or higher.
+								</InfoTooltip>
+							</div>
 							<span class="font-semibold">{stage3Assessment.growthScore}/100</span>
 						</div>
-							<div
-								class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
-							>
-									<div class="flex items-center gap-1">
-										<span class="font-semibold">Horizon Fit Score</span>
-									<InfoTooltip label="What is the Stage 4 horizon fit score?" theme="sky">
-										Measures whether your current growth allocation suits your full scenario
-										projection horizon. Current full-scenario horizon is
-										{stage3Assessment.horizonMonths} months.
-										<br /><br />
-										This is measured so you can see whether your portfolio is positioned
-										appropriately for when the money is likely to be needed. Too much cash over a
-										long horizon can limit growth, while too much in growth assets when funds are
-										needed sooner can add risk.
-										<br /><br />
-										It is worked out by comparing your current growth allocation with a target for
-										the scenario horizon. Shorter horizons target less growth, longer horizons
-										target more. In this planner the target is 40% up to 5 years, 60% up to 10
-										years, and 75% beyond that. The closer your allocation is to the target, the
-										higher the score.
-									</InfoTooltip>
-									</div>
-								<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
+						<div
+							class="flex items-center justify-between gap-2 rounded border border-sky-200/70 bg-white/70 px-2 py-1"
+						>
+							<div class="flex items-center gap-1">
+								<span class="font-semibold">Horizon Fit Score</span>
+								<InfoTooltip label="What is the Stage 4 horizon fit score?" theme="sky">
+									Measures whether your current growth allocation suits your full scenario
+									projection horizon. Current full-scenario horizon is
+									{stage3Assessment.horizonMonths} months.
+									<br /><br />
+									This is measured so you can see whether your portfolio is positioned appropriately for
+									when the money is likely to be needed. Too much cash over a long horizon can limit growth,
+									while too much in growth assets when funds are needed sooner can add risk.
+									<br /><br />
+									It is worked out by comparing your current growth allocation with a target for the scenario
+									horizon. Shorter horizons target less growth, longer horizons target more. In this planner
+									the target is 40% up to 5 years, 60% up to 10 years, and 75% beyond that. The closer
+									your allocation is to the target, the higher the score.
+								</InfoTooltip>
 							</div>
+							<span class="font-semibold">{stage3Assessment.goalMatchScore}/100</span>
 						</div>
+					</div>
 				{/if}
-				{#if !stage4Passed}
+				{#if !isPlannerComputing && !stage4Passed}
 					<div
 						class="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
 					>
@@ -443,15 +445,16 @@
 							>
 								Caps
 							</a>
-							tab in the What if?... section to set cap amounts and funding destination
-							priorities.
+							tab in the What if?... section to set cap amounts and funding destination priorities.
 						</div>
 					</div>
 				{/if}
 			{/if}
 		{/if}
 		{#if stage2Passed && stage3Assessment}
-			<div class="mt-3 rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900">
+			<div
+				class="mt-3 rounded-lg border border-sky-300 bg-sky-50/80 px-3 py-2 text-sm text-sky-900"
+			>
 				<div class="flex items-center justify-between gap-2">
 					<div class="flex items-center gap-1">
 						<span class="font-semibold">Total Financial Health Score</span>
@@ -460,17 +463,17 @@
 							theme="sky"
 							align="right"
 						>
-							Measures your overall planner position by combining the safety buffer,
-							resilience, growth allocation and horizon fit scores. Current profile is
+							Measures your overall planner position by combining the safety buffer, resilience,
+							growth allocation and horizon fit scores. Current profile is
 							{stage3Assessment.profile}.
 							<br /><br />
-							This is measured so you can quickly see the overall shape of the plan rather
-							than needing to interpret each score separately.
+							This is measured so you can quickly see the overall shape of the plan rather than needing
+							to interpret each score separately.
 							<br /><br />
-							It is worked out as a weighted blend of the other planner scores: safety
-							buffer 35%, growth allocation 35%, resilience 20%, and horizon fit 10%.
-							The combined result is then grouped into a profile: Conservative for lower
-							scores, Balanced for mid-range scores, and Growth for higher scores.
+							It is worked out as a weighted blend of the other planner scores: safety buffer 35%, growth
+							allocation 35%, resilience 20%, and horizon fit 10%. The combined result is then grouped
+							into a profile: Conservative for lower scores, Balanced for mid-range scores, and Growth
+							for higher scores.
 						</InfoTooltip>
 					</div>
 					<span class="font-semibold">{stage3Assessment.totalScore}/100</span>

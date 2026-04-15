@@ -8,12 +8,12 @@ export type DashboardLoadState = {
 	whatIfLoadError: string | null;
 };
 
-export const createDashboardLoadStateStore = () => {
+export const createDashboardLoadStateStore = (initialState: Partial<DashboardLoadState> = {}) => {
 	const { subscribe, update } = writable<DashboardLoadState>({
-		isInitialProjectionLoading: true,
-		isInitialWhatIfLoading: true,
-		projectionError: null,
-		whatIfLoadError: null
+		isInitialProjectionLoading: initialState.isInitialProjectionLoading ?? true,
+		isInitialWhatIfLoading: initialState.isInitialWhatIfLoading ?? true,
+		projectionError: initialState.projectionError ?? null,
+		whatIfLoadError: initialState.whatIfLoadError ?? null
 	});
 
 	return {

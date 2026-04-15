@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	calculateStage3Assessment,
 	findStage2RunOutEvent,
-	getPlannerLiquiditySaleShortcut,
-	getStage2AccessibilityShortfall
+	getPlannerLiquiditySaleShortcut
 } from '../src/lib/dashboard/planner-logic';
 
 describe('dashboard planner logic helpers', () => {
@@ -37,8 +36,7 @@ describe('dashboard planner logic helpers', () => {
 			},
 			assets: [],
 			accounts: [{ id: 'cash-1', account_type: 'cash_account' }],
-			assetAccounts: [],
-			accountBalanceTargets: [{ account_id: 'cash-1', enabled: true, min_balance: 5000 }]
+			assetAccounts: []
 		});
 
 		expect(assessment).not.toBeNull();
@@ -78,8 +76,7 @@ describe('dashboard planner logic helpers', () => {
 				}
 			],
 			accounts: [{ id: 'cash-1', account_type: 'cash_account' }],
-			assetAccounts: [],
-			accountBalanceTargets: []
+			assetAccounts: []
 		});
 
 		expect(assessment?.growthAllocationPct).toBe(93.8);

@@ -4,6 +4,7 @@ import type {
 	PnlNode,
 	ProjectionBalanceSource,
 	ProjectionRange,
+	ProjectionView,
 	TransactionSortDirection,
 	TransactionSortKey
 } from '$lib/dashboard/types';
@@ -29,6 +30,7 @@ type DerivedInput = {
 	accountsList: AccountLike[];
 	projectionBalanceSource: ProjectionBalanceSource;
 	projectionRange: ProjectionRange;
+	projectionView: ProjectionView;
 	transactionSortKey: TransactionSortKey;
 	transactionSortDirection: TransactionSortDirection;
 	expandedPnlNodes: Set<string>;
@@ -149,6 +151,7 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 		accountsList,
 		projectionBalanceSource,
 		projectionRange,
+		projectionView,
 		transactionSortKey,
 		transactionSortDirection,
 		expandedPnlNodes,
@@ -156,11 +159,16 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 	} = input;
 
 	const projectionRangeEndDate = getRangeEndDate(projectionData.startDate, projectionRange);
+	const shouldBuildTransactionData =
+		projectionView === 'transactions' || projectionView === 'profit_loss';
+	const accountTypeById = new Map(
+		accountsList.map((account) => [account.id, account.account_type] as const)
+	);
 
 	const accountSeries = (projectionData.accounts ?? [])
 		.filter((series: any) => {
-			const account = accountsList.find((item) => item.id === series.accountId);
-			return account?.account_type !== 'brokerage' && account?.account_type !== 'super_account';
+			const accountType = accountTypeById.get(series.accountId);
+			return accountType !== 'brokerage' && accountType !== 'super_account';
 		})
 		.map(normalizeAccountSeries);
 	const assetSeries = (projectionData.assets ?? []).map(normalizeAssetSeries);
@@ -202,20 +210,18 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 						...series,
 						points: getAnnualPoints(clipSeriesPointsByRange(series.points, projectionRangeEndDate))
 					})),
-					transactions: clipTransactionsByRange(
-						projectionData.transactions ?? [],
-						projectionRangeEndDate
-					)
+					transactions: shouldBuildTransactionData
+						? clipTransactionsByRange(projectionData.transactions ?? [], projectionRangeEndDate)
+						: []
 				}
 			: {
 					series: activeSeries.map((series: any) => ({
 						...series,
 						points: clipSeriesPointsByRange(series.points, projectionRangeEndDate)
 					})),
-					transactions: clipTransactionsByRange(
-						projectionData.transactions ?? [],
-						projectionRangeEndDate
-					)
+					transactions: shouldBuildTransactionData
+						? clipTransactionsByRange(projectionData.transactions ?? [], projectionRangeEndDate)
+						: []
 				};
 
 	const seriesList = chartProjection.series ?? [];
@@ -270,6 +276,20 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 	})();
 
 	const transactionPivot = (() => {
+		if (projectionView !== 'transactions') {
+			return {
+				headers: [] as string[],
+				totalValues: [] as number[],
+				rows: [] as {
+					assetName: string;
+					accountName: string;
+					type: string;
+					category: string;
+					description: string;
+					values: number[];
+				}[]
+			};
+		}
 		const transactions = chartProjection.transactions ?? [];
 		const isAnnualRange = projectionRange === '10y' || projectionRange === 'all';
 		if (transactions.length === 0) {
@@ -369,6 +389,7 @@ export const buildDashboardProjectionDerived = (input: DerivedInput) => {
 	})();
 
 	const profitLossTree = (() => {
+		if (projectionView !== 'profit_loss') return [];
 		if (chartProjection.transactions.length === 0) return [];
 		const headers = chartAxisPoints.map((point: any) => point.monthLabel);
 		const indexByLabel = new Map<string, number>();

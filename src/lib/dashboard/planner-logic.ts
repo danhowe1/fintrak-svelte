@@ -14,49 +14,9 @@ export const isStage2RunOutEvent = (event: PlannerRunOutEvent | null | undefined
 	typeof event?.message === 'string' &&
 	event.message.includes('runs out of money.');
 
-export type PlannerStageState = {
-	stage1Passed: boolean;
-	stage2Reached: boolean;
-	stage2Passed: boolean;
-	stage3Reached: boolean;
-	stage3Passed: boolean;
-	stage4Reached: boolean;
-	stage4Passed: boolean;
-};
-
 export const findStage2RunOutEvent = (
 	events: PlannerRunOutEvent[] | null | undefined
 ): PlannerRunOutEvent | null => (events ?? []).find((event) => isStage2RunOutEvent(event)) ?? null;
-
-export const derivePlannerStageState = (
-	firstLiquidityDeficit: unknown | null,
-	stage2FirstRunOutEvent: PlannerRunOutEvent | null,
-	stage3Assessment: Stage3Assessment | null
-): PlannerStageState => {
-	const stage1Passed = !firstLiquidityDeficit;
-	const stage2Reached = stage1Passed;
-	const stage2Passed = stage2Reached && !stage2FirstRunOutEvent;
-	const stage3Reached = stage2Passed;
-	const stage3Passed =
-		stage3Reached &&
-		(stage3Assessment?.safetyScore ?? 0) >= 60 &&
-		(stage3Assessment?.resilienceScore ?? 0) >= 60;
-	const stage4Reached = stage3Passed;
-	const stage4Passed =
-		stage4Reached &&
-		(stage3Assessment?.growthScore ?? 0) >= 60 &&
-		(stage3Assessment?.goalMatchScore ?? 0) >= 60;
-
-	return {
-		stage1Passed,
-		stage2Reached,
-		stage2Passed,
-		stage3Reached,
-		stage3Passed,
-		stage4Reached,
-		stage4Passed
-	};
-};
 
 type ProjectionTransactionLike = {
 	cashflowType?: string | null;
@@ -99,12 +59,6 @@ type AssetAccountLinkLike = {
 	account_id: string;
 };
 
-type AccountBalanceTargetLike = {
-	account_id: string;
-	enabled?: boolean | null;
-	min_balance?: number | null;
-};
-
 type ScenarioAssetLike = {
 	id: string;
 	asset_type?: string | null;
@@ -117,10 +71,8 @@ export const calculateStage3Assessment = (input: {
 	assets: ScenarioAssetLike[];
 	accounts: AccountLike[];
 	assetAccounts: AssetAccountLinkLike[];
-	accountBalanceTargets: AccountBalanceTargetLike[];
 }): Stage3Assessment | null => {
-	const { stage3Reached, projectionData, assets, accounts, assetAccounts, accountBalanceTargets } =
-		input;
+	const { stage3Reached, projectionData, assets, accounts, assetAccounts } = input;
 	if (!stage3Reached) return null;
 
 	const startYearMonth = fromYearMonthInt(projectionData.startDate);
