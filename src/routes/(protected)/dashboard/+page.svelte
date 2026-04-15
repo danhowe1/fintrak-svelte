@@ -364,6 +364,7 @@
 	let isPlannerDeferredReady = false;
 	let dashboardSections: DashboardSectionsControllerState;
 	let dashboardMutations: ReturnType<typeof createDashboardMutationController>;
+	let previousAutoRunProjection = autoRunProjection;
 
 	$: cashflowFormErrors = $dashboardUiState.cashflowFormErrors;
 	$: activeCashflowForm = $dashboardUiState.activeCashflowForm;
@@ -1381,16 +1382,13 @@
 		await runInitialDashboardLoad({
 			loadWhatIf: loadWhatIfSection,
 			refreshProjection: options?.includeProjection
-				? () => refreshProjection({ force: true })
+				? () => loadProjectionSection()
 				: undefined,
 			setState: (updater) => dashboardLoadState.apply(updater)
 		});
 	};
 
-	const refreshProjection = async (options?: { includeCashflows?: boolean; force?: boolean }) => {
-		if (!autoRunProjection && !options?.force) {
-			return;
-		}
+	const loadProjectionSection = async (options?: { includeCashflows?: boolean }) => {
 		const requestId = ++refreshProjectionRequestId;
 		const payload = await fetchDashboardProjection(data.scenario.id, {
 			includeCashflows: options?.includeCashflows
@@ -1425,6 +1423,13 @@
 		setProjectionError(null);
 	};
 
+	const refreshProjection = async (options?: { includeCashflows?: boolean }) => {
+		if (!autoRunProjection) {
+			return;
+		}
+		await loadProjectionSection(options);
+	};
+
 	const updateProjectionRange = async (range: typeof projectionRange) => {
 		await withLock('projectionRange', async () => {
 			dashboardProjectionState.setProjectionRange(range);
@@ -1442,7 +1447,7 @@
 		await withLock(
 			'manualProjection',
 			async () => {
-				await refreshProjection({ includeCashflows: true, force: true });
+				await loadProjectionSection({ includeCashflows: true });
 			},
 			true
 		).catch((error) => {
@@ -1987,7 +1992,7 @@
 				formData.set('inflationRate', String(sessionRates.inflationRate));
 				formData.set('deltaInflation', '0');
 				await fetch('?/updateInflationRate', { method: 'POST', body: formData });
-				await refreshProjection({ force: true });
+				await refreshProjection();
 			},
 			true
 		).catch((error) => {
@@ -1996,6 +2001,18 @@
 			);
 		});
 	};
+
+	$: if (autoRunProjection !== previousAutoRunProjection) {
+		const nextAutoRunProjection = autoRunProjection;
+		previousAutoRunProjection = nextAutoRunProjection;
+		if (nextAutoRunProjection) {
+			void loadProjectionSection({ includeCashflows: true }).catch((error) => {
+				setProjectionError(
+					error instanceof Error ? error.message : 'Unable to refresh the projection.'
+				);
+			});
+		}
+	}
 
 	const queueInflationRateChange = (delta: number) => {
 		const current = Number.isFinite(sessionRates.inflationRate) ? sessionRates.inflationRate : 2;

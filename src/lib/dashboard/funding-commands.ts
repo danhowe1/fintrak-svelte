@@ -13,7 +13,7 @@ type PostAction = (
 	fallbackErrorMessage: string
 ) => Promise<ActionPayload>;
 
-type RefreshProjection = (options: { includeCashflows: boolean; force: boolean }) => Promise<void>;
+type RefreshProjection = (options: { includeCashflows: boolean }) => Promise<void>;
 
 type ReserveRuleLike = {
 	id: string;
@@ -82,7 +82,7 @@ export const upsertFundingTargetForAccountCommand = async <TTarget>(params: {
 				if (Array.isArray(payload?.accountBalanceTargets)) {
 					params.setAccountBalanceTargets(payload.accountBalanceTargets as TTarget[]);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			autoRunProjection
 		);
@@ -141,7 +141,7 @@ export const addReserveRuleForTargetCommand = async <TRule extends ReserveRuleLi
 				if (Array.isArray(payload?.autoFundingRules)) {
 					params.setAutoFundingRules(payload.autoFundingRules as TRule[]);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			autoRunProjection
 		);
@@ -179,7 +179,7 @@ export const removeReserveRuleCommand = async <TRule extends { id: string }>(par
 				if (Array.isArray(payload?.autoFundingRules)) {
 					params.setAutoFundingRules(payload.autoFundingRules as TRule[]);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			autoRunProjection
 		);
@@ -236,7 +236,7 @@ export const moveReserveRuleCommand = async <
 						})
 					);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			params.autoRunProjection
 		);
@@ -294,7 +294,7 @@ export const addSweepRuleForSourceCommand = async <TRule extends SweepRuleLike>(
 				if (Array.isArray(payload?.autoSweepRules)) {
 					params.setAutoSweepRules(payload.autoSweepRules as TRule[]);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			params.autoRunProjection
 		);
@@ -331,7 +331,7 @@ export const removeSweepRuleCommand = async <TRule extends { id: string }>(param
 				if (Array.isArray(payload?.autoSweepRules)) {
 					params.setAutoSweepRules(payload.autoSweepRules as TRule[]);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			params.autoRunProjection
 		);
@@ -381,7 +381,7 @@ export const moveSweepRuleCommand = async <
 				if (Array.isArray(payload?.autoSweepRules)) {
 					params.setAutoSweepRules(payload.autoSweepRules as TRule[]);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+					await params.refreshProjection({ includeCashflows: true });
 			},
 			params.autoRunProjection
 		);

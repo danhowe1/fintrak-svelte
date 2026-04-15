@@ -17,7 +17,6 @@ type WithLock = (
 
 type RefreshProjection = (options?: {
 	includeCashflows?: boolean;
-	force?: boolean;
 }) => Promise<void>;
 
 const parseCashflowsPayload = (payload: any): CashflowSummary[] | null => {
@@ -300,7 +299,7 @@ export const updateTransferInflationAffectedCommand = async (params: {
 					params.setCashflows(nextCashflows);
 					params.syncCashflowAmounts(nextCashflows);
 				}
-				await params.refreshProjection({ includeCashflows: true, force: true });
+				await params.refreshProjection({ includeCashflows: true });
 			},
 			params.autoRunProjection
 		);

@@ -28,6 +28,7 @@ describe('dashboard funding commands', () => {
 	it('adds reserve rule with optimistic update and final payload replacement', async () => {
 		const setAutoFundingRules = vi.fn();
 		const postAction = vi.fn(async () => ({ autoFundingRules: [{ id: 'final' }] }));
+		const refreshProjection = vi.fn(async () => {});
 		const error = await addReserveRuleForTargetCommand({
 			targetAccountId: 'cash-1',
 			selectedSourceAccountId: 'src-1',
@@ -37,7 +38,7 @@ describe('dashboard funding commands', () => {
 			withLock: vi.fn(async (_k, cb) => cb()),
 			postAction,
 			setAutoFundingRules,
-			refreshProjection: vi.fn(async () => {})
+			refreshProjection
 		});
 		expect(error).toBe('');
 		expect(setAutoFundingRules).toHaveBeenCalledTimes(2);
@@ -46,6 +47,7 @@ describe('dashboard funding commands', () => {
 			expect.any(FormData),
 			'Unable to add reserve funding rule.'
 		);
+		expect(refreshProjection).toHaveBeenCalledWith({ includeCashflows: true });
 	});
 
 	it('rolls back reserve delete on failure', async () => {

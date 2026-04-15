@@ -4,7 +4,8 @@ import {
 	createTransferCashflowCommand,
 	deleteCashflowCommand,
 	saveTransferEditDraftCommand,
-	updateCashflowAmountCommand
+	updateCashflowAmountCommand,
+	updateTransferInflationAffectedCommand
 } from '../src/lib/dashboard/cashflow-commands';
 
 describe('dashboard cashflow commands', () => {
@@ -160,5 +161,28 @@ describe('dashboard cashflow commands', () => {
 			syncCashflowAmounts: vi.fn()
 		});
 		expect(deleteErr).toBeNull();
+	});
+
+	it('refreshes projection without a force override when toggling transfer inflation', async () => {
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(async () => ({
+				ok: true,
+				json: async () => ({ cashflows: [{ id: 't1' }] })
+			}))
+		);
+		const refreshProjection = vi.fn(async () => {});
+		const error = await updateTransferInflationAffectedCommand({
+			cashflowId: 't1',
+			inflationAffected: true,
+			scenarioId: 'sc',
+			autoRunProjection: false,
+			withLock: vi.fn(async (_k, cb) => cb()),
+			refreshProjection,
+			setCashflows: vi.fn(),
+			syncCashflowAmounts: vi.fn()
+		});
+		expect(error).toBeNull();
+		expect(refreshProjection).toHaveBeenCalledWith({ includeCashflows: true });
 	});
 });

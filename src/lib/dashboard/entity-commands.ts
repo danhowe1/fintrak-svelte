@@ -8,7 +8,6 @@ type WithLock = (
 
 type RefreshProjection = (options?: {
 	includeCashflows?: boolean;
-	force?: boolean;
 }) => Promise<void>;
 type RefreshWhatIf = () => Promise<void>;
 

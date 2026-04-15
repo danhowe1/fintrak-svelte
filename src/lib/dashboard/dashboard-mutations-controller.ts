@@ -33,7 +33,6 @@ type WithLock = (key: string, run: () => Promise<void>, showSpinner?: boolean) =
 
 type RefreshProjection = (options?: {
 	includeCashflows?: boolean;
-	force?: boolean;
 }) => Promise<void>;
 
 type SetProjectionError = (message: string | null) => void;
