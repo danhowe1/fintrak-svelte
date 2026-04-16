@@ -16,6 +16,7 @@
 	export let isInitialWhatIfLoading: boolean;
 	export let whatIfLoadError: string | null;
 	export let hasPropertyAsset = false;
+	export let defaultCreateStartMonth = '';
 
 	export let assetsTabProps: ComponentProps<typeof AssetsTab>;
 	export let accountsTabProps: ComponentProps<typeof AccountsTab>;
@@ -30,6 +31,12 @@
 		{ value: 'reserves', label: 'Reserves' },
 		{ value: 'caps', label: 'Caps' }
 	];
+
+	const withDefaultStartMonth = (href: string) => {
+		if (!defaultCreateStartMonth) return href;
+		const params = new URLSearchParams({ defaultStartMonth: defaultCreateStartMonth });
+		return `${href}?${params.toString()}`;
+	};
 
 </script>
 
@@ -76,33 +83,33 @@
 				>
 					<div class="flex flex-col gap-2">
 						<PendingNavLink
-							href="/assets/person/create"
+							href={withDefaultStartMonth('/assets/person/create')}
 							class="app-btn-primary-xs justify-center"
 						>
 							Add person
 						</PendingNavLink>
 						<PendingNavLink
-							href="/assets/property/create"
+							href={withDefaultStartMonth('/assets/property/create')}
 							class="app-btn-primary-xs justify-center"
 						>
 							Add property
 						</PendingNavLink>
 							{#if hasPropertyAsset}
 								<PendingNavLink
-									href="/assets/mortgage/create"
+									href={withDefaultStartMonth('/assets/mortgage/create')}
 									class="app-btn-primary-xs justify-center"
 							>
 								Add mortgage
 							</PendingNavLink>
 						{/if}
 						<PendingNavLink
-							href="/assets/superannuation/create"
+							href={withDefaultStartMonth('/assets/superannuation/create')}
 							class="app-btn-primary-xs justify-center"
 						>
 							Add superannuation
 						</PendingNavLink>
 						<PendingNavLink
-							href="/assets/shares/create"
+							href={withDefaultStartMonth('/assets/shares/create')}
 							class="app-btn-primary-xs justify-center"
 						>
 							Add shares
@@ -111,7 +118,10 @@
 				</div>
 			</details>
 		{:else if assetPanelTab === 'accounts'}
-			<PendingNavLink href="/accounts/create" class="app-btn-primary-xs">
+			<PendingNavLink
+				href={withDefaultStartMonth('/accounts/create')}
+				class="app-btn-primary-xs"
+			>
 				Add account
 			</PendingNavLink>
 		{/if}

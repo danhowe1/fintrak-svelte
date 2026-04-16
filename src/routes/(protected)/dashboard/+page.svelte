@@ -182,6 +182,7 @@
 	let autoFundingRules: AutoFundingRuleItem[];
 	let accountBalanceTargets: AccountBalanceTargetItem[];
 	let autoSweepRules: AutoSweepRuleItem[];
+	let defaultCreateStartMonth = data.defaultCreateStartMonth ?? '';
 	$: assetsList = $dashboardWhatIfState.assetsList;
 	$: accountsList = $dashboardWhatIfState.accountsList;
 	$: assetAccountsList = $dashboardWhatIfState.assetAccountsList;
@@ -189,6 +190,13 @@
 	$: autoFundingRules = $dashboardWhatIfState.autoFundingRules;
 	$: accountBalanceTargets = $dashboardWhatIfState.accountBalanceTargets;
 	$: autoSweepRules = $dashboardWhatIfState.autoSweepRules;
+	$: defaultCreateStartMonth = (() => {
+		const startDates = [...assetsList, ...accountsList, ...cashflows]
+			.map((item) => item.start_date)
+			.filter((value): value is number => Number.isFinite(value));
+		if (startDates.length === 0) return data.defaultCreateStartMonth ?? '';
+		return formatYearMonthInput(Math.min(...startDates));
+	})();
 	let autoRunProjection = true;
 	let whatIfPanelElement: HTMLElement | null = null;
 	let isWhatIfAddAssetMenuOpen = false;
@@ -2373,6 +2381,7 @@
 			isInitialWhatIfLoading: $dashboardLoadState.isInitialWhatIfLoading,
 			whatIfLoadError: $dashboardLoadState.whatIfLoadError,
 			hasPropertyAsset: assetsList.some((asset) => asset.asset_type === 'property'),
+			defaultCreateStartMonth,
 			assetsTabProps: {
 				data: { assetsList, assetAccountsList, accountsList, requestDeleteAsset },
 				person: {

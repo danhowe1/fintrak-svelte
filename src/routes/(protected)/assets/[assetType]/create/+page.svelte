@@ -5,6 +5,7 @@
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import FormSection from '$lib/components/forms/FormSection.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import { getCurrentMonthYearInput } from '$lib/yearMonth';
 
 	let { form }: { form: ActionData } = $props();
 
@@ -27,6 +28,12 @@
 	});
 	const assetTypeTitle = $derived(selectedType.replace(/_/g, ' '));
 	const assetTypeLabel = $derived(selectedType.replace(/_/g, ' ').toUpperCase());
+	const fallbackStartMonth = getCurrentMonthYearInput();
+	const defaultStartMonth = $derived(
+		(form?.values?.startMonth as string | undefined) ??
+			$page.url.searchParams.get('defaultStartMonth') ??
+			fallbackStartMonth
+	);
 	let context = $state<AssetContext | null>(null);
 	let contextError = $state('');
 	let isContextLoading = $state(true);
@@ -37,14 +44,6 @@
 	let mortgagePaymentSourceChoice = $state('');
 	let mortgageOffsetChoice = $state('none');
 	let mortgageInterestOnly = $state(false);
-
-	const now = new Date();
-	const defaultMonth = (() => {
-		const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-		const year = firstOfMonth.getFullYear();
-		const month = String(firstOfMonth.getMonth() + 1).padStart(2, '0');
-		return `${month} ${year}`;
-	})();
 
 	const loadContext = async () => {
 		isContextLoading = true;
@@ -135,7 +134,7 @@
 					label="Start month"
 					name="startMonth"
 					inputmode="numeric"
-					value={form?.values?.startMonth ?? defaultMonth}
+					value={defaultStartMonth}
 					error={form?.errors?.startMonth?.[0]}
 					required
 				/>

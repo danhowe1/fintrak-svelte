@@ -39,7 +39,7 @@ import {
 	syncCurrentScenarioCookie
 } from '$lib/server/dashboard-context';
 import { buildDashboardProjectionResponse } from '$lib/server/dashboard-projection-response';
-import { parseYearMonthInput } from '$lib/yearMonth';
+import { formatYearMonthInput, parseYearMonthInput } from '$lib/yearMonth';
 
 const CASH_ACCOUNT_SELECTION_PREFIX = 'account:';
 
@@ -91,6 +91,14 @@ export const load: PageServerLoad = async (event) => {
 		inflationRate,
 		projectionRange
 	});
+	const createStartDates = [
+		...projectionBundle.assets,
+		...projectionBundle.accounts,
+		...projectionBundle.cashflows
+	]
+		.map((item) => item.start_date)
+		.filter((value): value is number => Number.isFinite(value));
+
 	return {
 		scenario,
 		cashflows: [] as CashflowSummary[],
@@ -100,6 +108,8 @@ export const load: PageServerLoad = async (event) => {
 		autoFundingRules: [] as AutoFundingRule[],
 		accountBalanceTargets: [] as AccountBalanceTarget[],
 		autoSweepRules: [] as AutoSweepRule[],
+		defaultCreateStartMonth:
+			createStartDates.length > 0 ? formatYearMonthInput(Math.min(...createStartDates)) : '',
 		projection: projectionResponse.projection,
 		projectionRange,
 		sessionRates: parentData.sessionRates

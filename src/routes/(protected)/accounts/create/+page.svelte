@@ -5,6 +5,7 @@
 	import FormField from '$lib/components/forms/FormField.svelte';
 	import FormSection from '$lib/components/forms/FormSection.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
+	import { getCurrentMonthYearInput } from '$lib/yearMonth';
 
 	let { form }: { form: ActionData } = $props();
 
@@ -17,6 +18,12 @@
 	const formValues = $derived((form?.values ?? {}) as Record<string, string>);
 	const selectedPersonIds = $derived(
 		Array.isArray(form?.values?.personIds) ? form?.values?.personIds : null
+	);
+	const fallbackStartMonth = getCurrentMonthYearInput();
+	const defaultStartMonth = $derived(
+		formValues.startDate ??
+			$page.url.searchParams.get('defaultStartMonth') ??
+			fallbackStartMonth
 	);
 
 	let accountTypeSelect: HTMLSelectElement | null = null;
@@ -100,7 +107,7 @@
 					label="Start date (MM YYYY)"
 					name="startDate"
 					inputmode="numeric"
-					value={formValues.startDate ?? ''}
+					value={defaultStartMonth}
 					error={formErrors.startDate?.[0]}
 					required
 				/>

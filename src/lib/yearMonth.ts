@@ -74,6 +74,12 @@ export const formatYearMonthInput = (value: unknown): string => {
 	return formatYearMonthLabel(normalized);
 };
 
+export const getCurrentMonthYearInput = (date = new Date()): string => {
+	const year = date.getFullYear();
+	const month = String(date.getMonth() + 1).padStart(2, '0');
+	return `${month} ${year}`;
+};
+
 export const addMonthsToYearMonth = (value: YearMonth, monthsToAdd: number): YearMonth => {
 	const total = value.year * 12 + (value.month - 1) + monthsToAdd;
 	const year = Math.floor(total / 12);
