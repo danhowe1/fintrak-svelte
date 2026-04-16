@@ -8,14 +8,9 @@ import {
 	type AutoFundingRule,
 	type AutoSweepRule,
 	type CashflowSummary,
-	getCashflowsForScenario,
-	getAccountsForScenario,
-	getAssetsForScenario,
-	getAssetAccountsForScenario,
 	createCashflow,
 	deleteCashflow,
 	updateCashflow,
-	getScenarioForUserById,
 	updateCashflowAmount,
 	updateCashflowInflationAffected,
 	updatePersonRetirementAge,
@@ -28,13 +23,10 @@ import {
 	updateSuperannuationDetails,
 	getOrCreateHeldInAssetAccount,
 	deleteAssetForScenario,
-	getAutoFundingRulesForScenario,
 	createAutoFundingRule,
 	deleteAutoFundingRule,
-	getAccountBalanceTargetsForScenario,
 	upsertAccountBalanceTarget,
 	deleteAccountBalanceTarget,
-	getAutoSweepRulesForScenario,
 	createAutoSweepRule,
 	deleteAutoSweepRule,
 	reorderAutoFundingRules,
@@ -167,18 +159,13 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid auto-funding rule input.' });
 		}
 
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-
-		const accounts = await getAccountsForScenario(scenarioId);
+		const { accounts, assetAccounts, assets } = projectionBundle;
 		const sourceAccount = accounts.find((account) => account.id === sourceAccountId);
 		const targetAccount = accounts.find((account) => account.id === targetAccountId);
-		const [assetAccounts, assets] = await Promise.all([
-			getAssetAccountsForScenario(scenarioId),
-			getAssetsForScenario(scenarioId)
-		]);
 		const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
 		const shareAssetByAccountId = new Map<string, string>();
 		for (const link of assetAccounts) {
@@ -221,15 +208,15 @@ export const actions: Actions = {
 		}
 
 		await createAutoFundingRule({
+			userId,
 			scenarioId,
 			sourceAccountId,
 			targetAccountId,
 			enabled: true,
 			minTargetBalance: 0
 		});
-
-		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
-		return { success: true, autoFundingRules };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, autoFundingRules: nextBundle.autoFundingRules };
 	},
 	deleteAutoFundingRule: async (event) => {
 		const userId = event.locals.appUserId;
@@ -242,13 +229,12 @@ export const actions: Actions = {
 		if (!scenarioId || !ruleId) {
 			return fail(400, { error: 'Invalid auto-funding rule input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const deleted = await deleteAutoFundingRule(userId, scenarioId, ruleId);
+		if (!deleted) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await deleteAutoFundingRule(scenarioId, ruleId);
-		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
-		return { success: true, autoFundingRules };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, autoFundingRules: nextBundle.autoFundingRules };
 	},
 	updateAccountBalanceTarget: async (event) => {
 		const userId = event.locals.appUserId;
@@ -273,23 +259,26 @@ export const actions: Actions = {
 		if (maxBalance !== null && maxBalance < minBalanceRaw) {
 			return fail(400, { error: 'Cap must be greater than or equal to reserve.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		const accounts = await getAccountsForScenario(scenarioId);
-		if (!accounts.some((account) => account.id === accountId)) {
+		if (!projectionBundle.accounts.some((account) => account.id === accountId)) {
 			return fail(400, { error: 'Account not found in this scenario.' });
 		}
-		await upsertAccountBalanceTarget({
+		const target = await upsertAccountBalanceTarget({
+			userId,
 			scenarioId,
 			accountId,
 			minBalance: Math.round(minBalanceRaw * 100) / 100,
 			maxBalance: maxBalance === null ? null : Math.round(maxBalance * 100) / 100,
 			enabled: true
 		});
-		const accountBalanceTargets = await getAccountBalanceTargetsForScenario(scenarioId);
-		return { success: true, accountBalanceTargets };
+		if (!target) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, accountBalanceTargets: nextBundle.accountBalanceTargets };
 	},
 	deleteAccountBalanceTarget: async (event) => {
 		const userId = event.locals.appUserId;
@@ -302,13 +291,12 @@ export const actions: Actions = {
 		if (!scenarioId || !accountId) {
 			return fail(400, { error: 'Invalid balance target input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const deleted = await deleteAccountBalanceTarget(userId, scenarioId, accountId);
+		if (!deleted) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await deleteAccountBalanceTarget(scenarioId, accountId);
-		const accountBalanceTargets = await getAccountBalanceTargetsForScenario(scenarioId);
-		return { success: true, accountBalanceTargets };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, accountBalanceTargets: nextBundle.accountBalanceTargets };
 	},
 	upsertAutoSweepRule: async (event) => {
 		const userId = event.locals.appUserId;
@@ -327,15 +315,11 @@ export const actions: Actions = {
 		) {
 			return fail(400, { error: 'Invalid auto-sweep rule input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		const [accounts, assetAccounts, assets] = await Promise.all([
-			getAccountsForScenario(scenarioId),
-			getAssetAccountsForScenario(scenarioId),
-			getAssetsForScenario(scenarioId)
-		]);
+		const { accounts, assetAccounts, assets } = projectionBundle;
 		const accountsById = new Map(accounts.map((account) => [account.id, account]));
 		const assetsById = new Map(assets.map((asset) => [asset.id, asset]));
 		const shareAssetByAccountId = new Map<string, string>();
@@ -374,13 +358,14 @@ export const actions: Actions = {
 			});
 		}
 		await createAutoSweepRule({
+			userId,
 			scenarioId,
 			sourceAccountId,
 			destinationAccountId,
 			enabled: true
 		});
-		const autoSweepRules = await getAutoSweepRulesForScenario(scenarioId);
-		return { success: true, autoSweepRules };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, autoSweepRules: nextBundle.autoSweepRules };
 	},
 	reorderAutoFundingRules: async (event) => {
 		const userId = event.locals.appUserId;
@@ -398,9 +383,18 @@ export const actions: Actions = {
 		if (!scenarioId || !targetAccountId || ruleIds.length === 0) {
 			return fail(400, { error: 'Invalid auto-funding reorder input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
+		}
+		const existingRuleIds = projectionBundle.autoFundingRules
+			.filter((rule) => rule.target_account_id === targetAccountId)
+			.map((rule) => rule.id);
+		if (
+			existingRuleIds.length !== ruleIds.length ||
+			existingRuleIds.some((id) => !ruleIds.includes(id))
+		) {
+			return fail(400, { error: 'Invalid rule ordering payload.' });
 		}
 		try {
 			await reorderAutoFundingRules(scenarioId, targetAccountId, ruleIds);
@@ -412,8 +406,8 @@ export const actions: Actions = {
 			const status = message === 'Invalid rule ordering payload.' ? 400 : 500;
 			return fail(status, { error: message });
 		}
-		const autoFundingRules = await getAutoFundingRulesForScenario(scenarioId);
-		return { success: true, autoFundingRules };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, autoFundingRules: nextBundle.autoFundingRules };
 	},
 	reorderAutoSweepRules: async (event) => {
 		const userId = event.locals.appUserId;
@@ -431,13 +425,22 @@ export const actions: Actions = {
 		if (!scenarioId || !sourceAccountId || ruleIds.length === 0) {
 			return fail(400, { error: 'Invalid auto-sweep reorder input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
+		const existingRuleIds = projectionBundle.autoSweepRules
+			.filter((rule) => rule.source_account_id === sourceAccountId)
+			.map((rule) => rule.id);
+		if (
+			existingRuleIds.length !== ruleIds.length ||
+			existingRuleIds.some((id) => !ruleIds.includes(id))
+		) {
+			return fail(400, { error: 'Invalid auto-sweep reorder input.' });
+		}
 		await reorderAutoSweepRules(scenarioId, sourceAccountId, ruleIds);
-		const autoSweepRules = await getAutoSweepRulesForScenario(scenarioId);
-		return { success: true, autoSweepRules };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, autoSweepRules: nextBundle.autoSweepRules };
 	},
 	deleteAutoSweepRule: async (event) => {
 		const userId = event.locals.appUserId;
@@ -450,13 +453,12 @@ export const actions: Actions = {
 		if (!scenarioId || !ruleId) {
 			return fail(400, { error: 'Invalid auto-sweep rule input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const deleted = await deleteAutoSweepRule(userId, scenarioId, ruleId);
+		if (!deleted) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await deleteAutoSweepRule(scenarioId, ruleId);
-		const autoSweepRules = await getAutoSweepRulesForScenario(scenarioId);
-		return { success: true, autoSweepRules };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, autoSweepRules: nextBundle.autoSweepRules };
 	},
 	updateRetirementAge: async (event) => {
 		const userId = event.locals.appUserId;
@@ -470,11 +472,10 @@ export const actions: Actions = {
 		if (!scenarioId || !assetId || !Number.isFinite(retirementAge)) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const updated = await updatePersonRetirementAge(userId, scenarioId, assetId, retirementAge);
+		if (!updated) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await updatePersonRetirementAge(scenarioId, assetId, retirementAge);
 		return { success: true };
 	},
 	updatePersonDetails: async (event) => {
@@ -493,11 +494,14 @@ export const actions: Actions = {
 		if (!scenarioId || !assetId || !name || startDate === null || dob === null) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const updated = await updatePersonDetails(userId, scenarioId, assetId, {
+			name,
+			startDate,
+			dob
+		});
+		if (!updated) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await updatePersonDetails(scenarioId, assetId, { name, startDate, dob });
 		return { success: true };
 	},
 	updateCashflowAmount: async (event) => {
@@ -512,11 +516,10 @@ export const actions: Actions = {
 		if (!scenarioId || !cashflowId || !Number.isFinite(amount)) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const updated = await updateCashflowAmount(userId, scenarioId, cashflowId, amount);
+		if (!updated) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await updateCashflowAmount(scenarioId, cashflowId, amount);
 		return { success: true };
 	},
 	updatePropertyDetails: async (event) => {
@@ -564,11 +567,7 @@ export const actions: Actions = {
 		) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
-			return fail(404, { error: 'Scenario not found.' });
-		}
-		await updatePropertyDetails(scenarioId, assetId, {
+		const updated = await updatePropertyDetails(userId, scenarioId, assetId, {
 			name,
 			startDate,
 			propertyUse,
@@ -578,6 +577,9 @@ export const actions: Actions = {
 			fixedSellingCosts,
 			variableSellingCosts
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 		return { success: true };
 	},
 	updateShareDetails: async (event) => {
@@ -616,17 +618,16 @@ export const actions: Actions = {
 		) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
-			return fail(404, { error: 'Scenario not found.' });
-		}
-		await updateShareDetails(scenarioId, assetId, {
+		const updated = await updateShareDetails(userId, scenarioId, assetId, {
 			name,
 			startDate,
 			capitalGrowthRate,
 			dividendYield,
 			dividendsTakenAsIncomeDate
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 		return { success: true };
 	},
 	updateAccountInterestRate: async (event) => {
@@ -644,11 +645,10 @@ export const actions: Actions = {
 		if (!scenarioId || !accountId || !Number.isFinite(interestRate)) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const updated = await updateAccountInterestRate(userId, scenarioId, accountId, interestRate);
+		if (!updated) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await updateAccountInterestRate(scenarioId, accountId, interestRate);
 		return { success: true };
 	},
 	updateAccountDetails: async (event) => {
@@ -675,15 +675,14 @@ export const actions: Actions = {
 		) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
-			return fail(404, { error: 'Scenario not found.' });
-		}
-		await updateAccountDetails(scenarioId, accountId, {
+		const updated = await updateAccountDetails(userId, scenarioId, accountId, {
 			name,
 			startDate,
 			openingBalance
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 		return { success: true };
 	},
 	updateMortgageDetails: async (event) => {
@@ -724,12 +723,7 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid input.' });
 		}
 
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
-			return fail(404, { error: 'Scenario not found.' });
-		}
-
-		await updateMortgageDetails(scenarioId, assetId, {
+		const updated = await updateMortgageDetails(userId, scenarioId, assetId, {
 			startDate,
 			name,
 			termYears,
@@ -737,6 +731,9 @@ export const actions: Actions = {
 			mortgageAccountName,
 			openingBalance
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 		return { success: true };
 	},
 	updateSuperannuationDetails: async (event) => {
@@ -768,15 +765,14 @@ export const actions: Actions = {
 		) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
-			return fail(404, { error: 'Scenario not found.' });
-		}
-		await updateSuperannuationDetails(scenarioId, assetId, {
+		const updated = await updateSuperannuationDetails(userId, scenarioId, assetId, {
 			preservationAge,
 			capitalGrowthRate,
 			managementFeeRate
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 		return { success: true };
 	},
 	deleteAsset: async (event) => {
@@ -790,12 +786,11 @@ export const actions: Actions = {
 		if (!scenarioId || !assetId) {
 			return fail(400, { error: 'Invalid asset deletion input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
-			return fail(404, { error: 'Scenario not found.' });
-		}
 		try {
-			await deleteAssetForScenario(scenarioId, assetId);
+			const deleted = await deleteAssetForScenario(userId, scenarioId, assetId);
+			if (!deleted) {
+				return fail(404, { error: 'Scenario not found.' });
+			}
 		} catch (error) {
 			return fail(400, {
 				error: error instanceof Error ? error.message : 'Unable to delete asset. Please try again.'
@@ -846,16 +841,11 @@ export const actions: Actions = {
 		}
 		const transferFrequency = frequency as 'monthly' | 'quarterly' | 'annually' | 'one_time';
 
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-
-		const [assetAccounts, accounts, assets] = await Promise.all([
-			getAssetAccountsForScenario(scenarioId),
-			getAccountsForScenario(scenarioId),
-			getAssetsForScenario(scenarioId)
-		]);
+		const { assetAccounts, accounts, assets } = projectionBundle;
 		const sourceLink =
 			assetAccounts.find(
 				(link) => link.account_id === sourceAccountId && link.relationship_role === 'held_in'
@@ -938,8 +928,8 @@ export const actions: Actions = {
 			return fail(500, { error: message });
 		}
 
-		const cashflows = await getCashflowsForScenario(scenarioId);
-		return { success: true, cashflows };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, cashflows: nextBundle.cashflows };
 	},
 	updateTransferInflationAffected: async (event) => {
 		const userId = event.locals.appUserId;
@@ -953,18 +943,26 @@ export const actions: Actions = {
 		if (!scenarioId || !cashflowId) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		const cashflows = await getCashflowsForScenario(scenarioId);
+		const cashflows = projectionBundle.cashflows;
 		const cashflow = cashflows.find((item) => item.id === cashflowId);
 		if (!cashflow || cashflow.cashflow_type !== 'transfer') {
 			return fail(400, { error: 'Transfer not found.' });
 		}
-		await updateCashflowInflationAffected(scenarioId, cashflowId, inflationAffected);
-		const nextCashflows = await getCashflowsForScenario(scenarioId);
-		return { success: true, cashflows: nextCashflows };
+		const updated = await updateCashflowInflationAffected(
+			userId,
+			scenarioId,
+			cashflowId,
+			inflationAffected
+		);
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, cashflows: nextBundle.cashflows };
 	},
 	updateTransferCashflow: async (event) => {
 		const userId = event.locals.appUserId;
@@ -1009,20 +1007,16 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid transfer input.' });
 		}
 
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		const cashflows = await getCashflowsForScenario(scenarioId);
+		const cashflows = projectionBundle.cashflows;
 		const transfer = cashflows.find((item) => item.id === cashflowId);
 		if (!transfer || transfer.cashflow_type !== 'transfer') {
 			return fail(400, { error: 'Transfer not found.' });
 		}
-		const [assetAccounts, accounts, assets] = await Promise.all([
-			getAssetAccountsForScenario(scenarioId),
-			getAccountsForScenario(scenarioId),
-			getAssetsForScenario(scenarioId)
-		]);
+		const { assetAccounts, accounts, assets } = projectionBundle;
 		const sourceLink =
 			assetAccounts.find(
 				(link) => link.account_id === sourceAccountId && link.relationship_role === 'held_in'
@@ -1073,7 +1067,8 @@ export const actions: Actions = {
 					? 'shares_sale'
 					: 'transfer';
 
-		await updateCashflow({
+		const updated = await updateCashflow({
+			userId,
 			scenarioId,
 			cashflowId,
 			type: 'transfer',
@@ -1092,9 +1087,12 @@ export const actions: Actions = {
 			destinationAssetAccountId: destinationLink.id,
 			description
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 
-		const nextCashflows = await getCashflowsForScenario(scenarioId);
-		return { success: true, cashflows: nextCashflows };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, cashflows: nextBundle.cashflows };
 	},
 	createCashflow: async (event) => {
 		const userId = event.locals.appUserId;
@@ -1145,16 +1143,11 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid input.' });
 		}
 
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-
-		const [assetAccounts, assets] = await Promise.all([
-			getAssetAccountsForScenario(scenarioId),
-			getAssetsForScenario(scenarioId)
-		]);
-		const accounts = await getAccountsForScenario(scenarioId);
+		const { assetAccounts, assets, accounts } = projectionBundle;
 		const asset = assets.find((item) => item.id === assetId);
 		if (!asset) {
 			return fail(404, { error: 'Asset not found.' });
@@ -1217,8 +1210,8 @@ export const actions: Actions = {
 			createdBy: userId
 		});
 
-		const cashflows = await getCashflowsForScenario(scenarioId);
-		return { success: true, cashflows };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, cashflows: nextBundle.cashflows };
 	},
 	deleteCashflow: async (event) => {
 		const userId = event.locals.appUserId;
@@ -1231,13 +1224,12 @@ export const actions: Actions = {
 		if (!scenarioId || !cashflowId) {
 			return fail(400, { error: 'Invalid input.' });
 		}
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const deleted = await deleteCashflow(userId, scenarioId, cashflowId);
+		if (!deleted) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-		await deleteCashflow(scenarioId, cashflowId);
-		const cashflows = await getCashflowsForScenario(scenarioId);
-		return { success: true, cashflows };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, cashflows: nextBundle.cashflows };
 	},
 	updateCashflow: async (event) => {
 		const userId = event.locals.appUserId;
@@ -1290,16 +1282,11 @@ export const actions: Actions = {
 			return fail(400, { error: 'Invalid input.' });
 		}
 
-		const scenario = await getScenarioForUserById(userId, scenarioId);
-		if (!scenario) {
+		const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+		if (!projectionBundle.scenario) {
 			return fail(404, { error: 'Scenario not found.' });
 		}
-
-		const [assetAccounts, assets] = await Promise.all([
-			getAssetAccountsForScenario(scenarioId),
-			getAssetsForScenario(scenarioId)
-		]);
-		const accounts = await getAccountsForScenario(scenarioId);
+		const { assetAccounts, assets, accounts } = projectionBundle;
 		const asset = assets.find((item) => item.id === assetId);
 		if (!asset) {
 			return fail(404, { error: 'Asset not found.' });
@@ -1347,7 +1334,8 @@ export const actions: Actions = {
 			}
 		}
 
-		await updateCashflow({
+		const updated = await updateCashflow({
+			userId,
 			scenarioId,
 			cashflowId,
 			type,
@@ -1361,8 +1349,11 @@ export const actions: Actions = {
 			destinationAssetAccountId: type === 'income' ? resolvedAssetAccountId : null,
 			description
 		});
+		if (!updated) {
+			return fail(404, { error: 'Scenario not found.' });
+		}
 
-		const cashflows = await getCashflowsForScenario(scenarioId);
-		return { success: true, cashflows };
+		const nextBundle = await getProjectionBundleForUser(userId, scenarioId);
+		return { success: true, cashflows: nextBundle.cashflows };
 	}
 };

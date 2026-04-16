@@ -1,50 +1,31 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import type { DashboardWhatIfResponse } from '$lib/dashboard/contracts';
-import {
-	getAccountsForScenario,
-	getAccountBalanceTargetsForScenario,
-	getAssetAccountsForScenario,
-	getAssetsForScenario,
-	getAutoFundingRulesForScenario,
-	getAutoSweepRulesForScenario,
-	getCashflowsForScenario
-} from '$lib/server/database';
-import { resolveDashboardScenario } from '$lib/server/dashboard-context';
+import { getProjectionBundleForUser } from '$lib/server/database';
 
 export const GET: RequestHandler = async (event) => {
-	const { scenario } = await resolveDashboardScenario(event);
+	const userId = event.locals.appUserId;
+	if (!userId) {
+		return json({ error: 'Unauthorized' }, { status: 401 });
+	}
+
+	const scenarioId =
+		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
+	const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);
+	const { scenario } = projectionBundle;
 
 	if (!scenario) {
 		return json({ error: 'Scenario not found' }, { status: 404 });
 	}
 
-	const [
-		accounts,
-		assets,
-		assetAccounts,
-		cashflows,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules
-	] = await Promise.all([
-		getAccountsForScenario(scenario.id),
-		getAssetsForScenario(scenario.id),
-		getAssetAccountsForScenario(scenario.id),
-		getCashflowsForScenario(scenario.id),
-		getAutoFundingRulesForScenario(scenario.id),
-		getAccountBalanceTargetsForScenario(scenario.id),
-		getAutoSweepRulesForScenario(scenario.id)
-	]);
-
 	const response: DashboardWhatIfResponse = {
-		accounts,
-		assets,
-		assetAccounts,
-		cashflows,
-		autoFundingRules,
-		accountBalanceTargets,
-		autoSweepRules
+		accounts: projectionBundle.accounts,
+		assets: projectionBundle.assets,
+		assetAccounts: projectionBundle.assetAccounts,
+		cashflows: projectionBundle.cashflows,
+		autoFundingRules: projectionBundle.autoFundingRules,
+		accountBalanceTargets: projectionBundle.accountBalanceTargets,
+		autoSweepRules: projectionBundle.autoSweepRules
 	};
 
 	return json(response);

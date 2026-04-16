@@ -51,6 +51,23 @@ function getPool() {
 type DbClient = Pool | PoolClient;
 const roundToOneDecimal = (value: number) => Math.round(value * 10) / 10;
 export type PropertyUse = 'primary_residence' | 'investment_property';
+const AUTHORIZED_SCENARIO_CTE = `
+	with authorized_scenario as (
+		select s.id
+		from scenarios s
+		left join scenario_members sm
+			on sm.scenario_id = s.id
+		   and sm.user_id = $1::text
+		where s.id = $2::uuid
+		  and (sm.user_id is not null or s.created_by = $1::text)
+		limit 1
+	)
+`;
+
+const runAuthorizedScenarioMutation = async (db: DbClient, query: string, values: unknown[]) => {
+	const result = await db.query(query, values);
+	return (result.rowCount ?? 0) > 0;
+};
 
 const normalizePropertyUse = (value: unknown): PropertyUse =>
 	value === 'primary_residence' ? 'primary_residence' : 'investment_property';
@@ -62,7 +79,7 @@ const clearPrimaryResidenceForOtherProperties = async (
 ) => {
 	await db.query(
 		`
-			update assets
+			update assets as a
 			set details = jsonb_set(
 				coalesce(details, '{}'::jsonb),
 				'{propertyUse}',
@@ -335,80 +352,101 @@ export async function getAccountsForScenario(scenarioId: string) {
 }
 
 export async function updatePersonRetirementAge(
+	userId: string,
 	scenarioId: string,
 	assetId: string,
 	retirementAge: number
 ) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
+			${AUTHORIZED_SCENARIO_CTE}
 			update assets
 			set details = jsonb_set(
 				coalesce(details, '{}'::jsonb),
 				'{retirementAge}',
-				to_jsonb($3::int),
+				to_jsonb($4::int),
 				true
 			)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
-			  and asset_type = 'person'
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
+			  and a.asset_type = 'person'
 		`,
-		[scenarioId, assetId, Math.round(retirementAge)]
+		[userId, scenarioId, assetId, Math.round(retirementAge)]
 	);
 }
 
 export async function updatePersonDetails(
+	userId: string,
 	scenarioId: string,
 	assetId: string,
 	input: { name: string; startDate: number; dob: number }
 ) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update assets
-			set name = $3::text,
-				start_date = $4::int,
+			${AUTHORIZED_SCENARIO_CTE}
+			update assets as a
+			set name = $4::text,
+				start_date = $5::int,
 				details = jsonb_set(
 					coalesce(details, '{}'::jsonb),
 					'{dob}',
-					to_jsonb($5::int),
+					to_jsonb($6::int),
 					true
 				)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
-			  and asset_type = 'person'
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
+			  and a.asset_type = 'person'
 		`,
-		[scenarioId, assetId, input.name, input.startDate, input.dob]
+		[userId, scenarioId, assetId, input.name, input.startDate, input.dob]
 	);
 }
 
-export async function updateCashflowAmount(scenarioId: string, cashflowId: string, amount: number) {
-	await getPool().query(
+export async function updateCashflowAmount(
+	userId: string,
+	scenarioId: string,
+	cashflowId: string,
+	amount: number
+) {
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update cashflows
-			set amount = $3::numeric
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			update cashflows as c
+			set amount = $4::numeric
+			from authorized_scenario
+			where c.id = $3::uuid
+			  and c.scenario_id = authorized_scenario.id
 		`,
-		[scenarioId, cashflowId, amount]
+		[userId, scenarioId, cashflowId, amount]
 	);
 }
 
 export async function updateCashflowInflationAffected(
+	userId: string,
 	scenarioId: string,
 	cashflowId: string,
 	inflationAffected: boolean
 ) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update cashflows
-			set inflation_affected = $3::boolean
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			update cashflows as c
+			set inflation_affected = $4::boolean
+			from authorized_scenario
+			where c.id = $3::uuid
+			  and c.scenario_id = authorized_scenario.id
 		`,
-		[scenarioId, cashflowId, inflationAffected]
+		[userId, scenarioId, cashflowId, inflationAffected]
 	);
 }
 
 export async function updatePropertyDetails(
+	userId: string,
 	scenarioId: string,
 	assetId: string,
 	input: {
@@ -436,14 +474,13 @@ export async function updatePropertyDetails(
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
-		if (propertyUse === 'primary_residence') {
-			await clearPrimaryResidenceForOtherProperties(client, scenarioId, assetId);
-		}
-		await client.query(
+		const updated = await runAuthorizedScenarioMutation(
+			client,
 			`
-			update assets
-			set name = $3::text,
-				start_date = $4::int,
+			${AUTHORIZED_SCENARIO_CTE}
+			update assets as a
+			set name = $4::text,
+				start_date = $5::int,
 				details = jsonb_set(
 					jsonb_set(
 						jsonb_set(
@@ -452,34 +489,36 @@ export async function updatePropertyDetails(
 									jsonb_set(
 										coalesce(details, '{}'::jsonb),
 										'{marketValue}',
-										to_jsonb($5::numeric),
+										to_jsonb($6::numeric),
 										true
 									),
 									'{marketGrowthRate}',
-									to_jsonb($6::numeric),
+									to_jsonb($7::numeric),
 									true
 								),
 								'{saleDate}',
-								case when $7::int is null then 'null'::jsonb else to_jsonb($7::int) end,
+								case when $8::int is null then 'null'::jsonb else to_jsonb($8::int) end,
 								true
 							),
 							'{fixedSellingCosts}',
-							to_jsonb($8::numeric),
+							to_jsonb($9::numeric),
 							true
 						),
 						'{variableSellingCosts}',
-						to_jsonb($9::numeric),
+						to_jsonb($10::numeric),
 						true
 					),
 					'{propertyUse}',
-					to_jsonb($10::text),
+					to_jsonb($11::text),
 					true
 				)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
-			  and asset_type = 'property'
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
+			  and a.asset_type = 'property'
 		`,
 			[
+				userId,
 				scenarioId,
 				assetId,
 				input.name,
@@ -492,7 +531,15 @@ export async function updatePropertyDetails(
 				propertyUse
 			]
 		);
+		if (!updated) {
+			await client.query('rollback');
+			return false;
+		}
+		if (propertyUse === 'primary_residence') {
+			await clearPrimaryResidenceForOtherProperties(client, scenarioId, assetId);
+		}
 		await client.query('commit');
+		return true;
 	} catch (error) {
 		await client.query('rollback');
 		throw error;
@@ -502,6 +549,7 @@ export async function updatePropertyDetails(
 }
 
 export async function updateShareDetails(
+	userId: string,
 	scenarioId: string,
 	assetId: string,
 	input: {
@@ -523,32 +571,36 @@ export async function updateShareDetails(
 		throw new Error('Invalid shares dividend income date');
 	}
 
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update assets
-			set name = $3::text,
-				start_date = $4::int,
+			${AUTHORIZED_SCENARIO_CTE}
+			update assets as a
+			set name = $4::text,
+				start_date = $5::int,
 				details = jsonb_set(
 					jsonb_set(
 						jsonb_set(
 							coalesce(details, '{}'::jsonb),
 							'{capitalGrowthRate}',
-							to_jsonb(round($5::numeric, 1)),
+							to_jsonb(round($6::numeric, 1)),
 							true
 						),
 						'{dividendYield}',
-						to_jsonb(round($6::numeric, 1)),
+						to_jsonb(round($7::numeric, 1)),
+							true
+						),
+						'{dividendsTakenAsIncomeDate}',
+						to_jsonb($8::int),
 						true
-					),
-					'{dividendsTakenAsIncomeDate}',
-					to_jsonb($7::int),
-					true
-				)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
-			  and asset_type = 'shares'
+					)
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
+			  and a.asset_type = 'shares'
 		`,
 		[
+			userId,
 			scenarioId,
 			assetId,
 			input.name,
@@ -561,27 +613,32 @@ export async function updateShareDetails(
 }
 
 export async function updateAccountInterestRate(
+	userId: string,
 	scenarioId: string,
 	accountId: string,
 	interestRate: number
 ) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update accounts
+			${AUTHORIZED_SCENARIO_CTE}
+			update accounts as a
 			set details = jsonb_set(
 				coalesce(details, '{}'::jsonb),
 				'{interestRate}',
-				to_jsonb(round($3::numeric, 2)),
+				to_jsonb(round($4::numeric, 2)),
 				true
 			)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
 		`,
-		[scenarioId, accountId, interestRate]
+		[userId, scenarioId, accountId, interestRate]
 	);
 }
 
 export async function updateAccountDetails(
+	userId: string,
 	scenarioId: string,
 	accountId: string,
 	input: {
@@ -590,20 +647,24 @@ export async function updateAccountDetails(
 		openingBalance: number;
 	}
 ) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update accounts
-			set name = $3::text,
-				start_date = $4::int,
-				opening_balance = round($5::numeric, 2)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			update accounts as a
+			set name = $4::text,
+				start_date = $5::int,
+				opening_balance = round($6::numeric, 2)
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
 		`,
-		[scenarioId, accountId, input.name, input.startDate, input.openingBalance]
+		[userId, scenarioId, accountId, input.name, input.startDate, input.openingBalance]
 	);
 }
 
 export async function updateMortgageDetails(
+	userId: string,
 	scenarioId: string,
 	assetId: string,
 	input: {
@@ -615,48 +676,74 @@ export async function updateMortgageDetails(
 		openingBalance: number;
 	}
 ) {
-	await getPool().query(
-		`
-			update assets
-			set name = $3::text,
-				start_date = $4::int,
+	const client = await getPool().connect();
+	try {
+		await client.query('begin');
+		const updatedAsset = await runAuthorizedScenarioMutation(
+			client,
+			`
+			${AUTHORIZED_SCENARIO_CTE}
+			update assets as a
+			set name = $4::text,
+				start_date = $5::int,
 				details = jsonb_set(
 					jsonb_set(
 						coalesce(details, '{}'::jsonb),
 						'{termYears}',
-						to_jsonb($5::int),
+						to_jsonb($6::int),
 						true
 					),
 					'{termMonths}',
-					to_jsonb($6::int),
+					to_jsonb($7::int),
 					true
 				)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
-			  and asset_type = 'mortgage'
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
+			  and a.asset_type = 'mortgage'
 		`,
-		[scenarioId, assetId, input.name, input.startDate, input.termYears, input.termMonths]
-	);
+			[userId, scenarioId, assetId, input.name, input.startDate, input.termYears, input.termMonths]
+		);
+		if (!updatedAsset) {
+			await client.query('rollback');
+			return false;
+		}
 
-	await getPool().query(
-		`
+		const updatedAccount = await runAuthorizedScenarioMutation(
+			client,
+			`
+			${AUTHORIZED_SCENARIO_CTE}
 			update accounts a
-			set name = $3::text,
-				start_date = $5::int,
-				opening_balance = $4::numeric
-			from asset_accounts aa
+			set name = $4::text,
+				start_date = $6::int,
+				opening_balance = $5::numeric
+			from asset_accounts aa, authorized_scenario
 			where aa.account_id = a.id
-			  and aa.scenario_id = $1::uuid
-			  and aa.asset_id = $2::uuid
+			  and aa.scenario_id = authorized_scenario.id
+			  and aa.asset_id = $3::uuid
 			  and aa.relationship_role = 'held_in'
-			  and a.scenario_id = $1::uuid
+			  and a.scenario_id = authorized_scenario.id
 			  and a.account_type = 'mortgage_account'
 		`,
-		[scenarioId, assetId, input.mortgageAccountName, input.openingBalance, input.startDate]
-	);
+			[userId, scenarioId, assetId, input.mortgageAccountName, input.openingBalance, input.startDate]
+		);
+		if (!updatedAccount) {
+			await client.query('rollback');
+			return false;
+		}
+
+		await client.query('commit');
+		return true;
+	} catch (error) {
+		await client.query('rollback');
+		throw error;
+	} finally {
+		client.release();
+	}
 }
 
 export async function updateSuperannuationDetails(
+	userId: string,
 	scenarioId: string,
 	assetId: string,
 	input: {
@@ -665,30 +752,40 @@ export async function updateSuperannuationDetails(
 		managementFeeRate: number;
 	}
 ) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update assets
+			${AUTHORIZED_SCENARIO_CTE}
+			update assets as a
 			set details = jsonb_set(
 				jsonb_set(
 					jsonb_set(
 						coalesce(details, '{}'::jsonb),
 						'{preservationAge}',
-						to_jsonb($3::numeric),
+						to_jsonb($4::numeric),
 						true
 					),
 					'{capitalGrowthRate}',
-					to_jsonb($4::numeric),
-					true
+					to_jsonb($5::numeric),
+						true
 				),
 				'{managementFeeRate}',
-				to_jsonb($5::numeric),
+				to_jsonb($6::numeric),
 				true
 			)
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
-			  and asset_type = 'superannuation'
+			from authorized_scenario
+			where a.id = $3::uuid
+			  and a.scenario_id = authorized_scenario.id
+			  and a.asset_type = 'superannuation'
 		`,
-		[scenarioId, assetId, input.preservationAge, input.capitalGrowthRate, input.managementFeeRate]
+		[
+			userId,
+			scenarioId,
+			assetId,
+			input.preservationAge,
+			input.capitalGrowthRate,
+			input.managementFeeRate
+		]
 	);
 }
 
@@ -781,6 +878,7 @@ export async function getAccountBalanceTargetsForScenario(scenarioId: string) {
 }
 
 export async function upsertAccountBalanceTarget(input: {
+	userId: string;
 	scenarioId: string;
 	accountId: string;
 	minBalance: number;
@@ -789,6 +887,7 @@ export async function upsertAccountBalanceTarget(input: {
 }) {
 	const result = await getPool().query<AccountBalanceTarget>(
 		`
+			${AUTHORIZED_SCENARIO_CTE}
 			insert into account_balance_targets (
 				scenario_id,
 				account_id,
@@ -796,12 +895,18 @@ export async function upsertAccountBalanceTarget(input: {
 				max_balance,
 				enabled
 			)
-			values (
-				$1::uuid,
-				$2::uuid,
-				$3::numeric,
+			select
+				authorized_scenario.id,
+				$3::uuid,
 				$4::numeric,
-				$5::boolean
+				$5::numeric,
+				$6::boolean
+			from authorized_scenario
+			where exists (
+				select 1
+				from accounts a
+				where a.scenario_id = authorized_scenario.id
+				  and a.id = $3::uuid
 			)
 			on conflict (scenario_id, account_id)
 			do update
@@ -819,6 +924,7 @@ export async function upsertAccountBalanceTarget(input: {
 				updated_at
 		`,
 		[
+			input.userId,
 			input.scenarioId,
 			input.accountId,
 			input.minBalance,
@@ -830,14 +936,21 @@ export async function upsertAccountBalanceTarget(input: {
 	return result.rows[0] ?? null;
 }
 
-export async function deleteAccountBalanceTarget(scenarioId: string, accountId: string) {
-	await getPool().query(
+export async function deleteAccountBalanceTarget(
+	userId: string,
+	scenarioId: string,
+	accountId: string
+) {
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			delete from account_balance_targets
-			where scenario_id = $1::uuid
-			  and account_id = $2::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			delete from account_balance_targets as abt
+			using authorized_scenario
+			where abt.scenario_id = authorized_scenario.id
+			  and abt.account_id = $3::uuid
 		`,
-		[scenarioId, accountId]
+		[userId, scenarioId, accountId]
 	);
 }
 
@@ -865,6 +978,7 @@ export async function getAutoSweepRulesForScenario(scenarioId: string) {
 }
 
 export async function createAutoFundingRule(input: {
+	userId: string;
 	scenarioId: string;
 	sourceAccountId: string;
 	targetAccountId: string;
@@ -872,23 +986,15 @@ export async function createAutoFundingRule(input: {
 	enabled?: boolean;
 	minTargetBalance?: number;
 }) {
-	const nextPriorityOrder =
-		input.priorityOrder ??
-		(
-			await getPool().query<{ max_priority_order: number | null }>(
-				`
-					select max(priority_order)::int as max_priority_order
-					from auto_funding_rules
-					where scenario_id = $1::uuid
-					  and target_account_id = $2::uuid
-				`,
-				[input.scenarioId, input.targetAccountId]
-			)
-		).rows[0]?.max_priority_order ??
-		0;
-
 	const result = await getPool().query<AutoFundingRule>(
 		`
+			${AUTHORIZED_SCENARIO_CTE},
+			next_priority as (
+				select coalesce(max(priority_order), 0)::int as max_priority_order
+				from auto_funding_rules
+				where scenario_id = $2::uuid
+				  and target_account_id = $4::uuid
+			)
 			insert into auto_funding_rules (
 				scenario_id,
 				source_account_id,
@@ -897,14 +1003,15 @@ export async function createAutoFundingRule(input: {
 				enabled,
 				min_target_balance
 			)
-			values (
-				$1::uuid,
-				$2::uuid,
+			select
+				authorized_scenario.id,
 				$3::uuid,
-				$4::int,
-				$5::boolean,
-				$6::numeric
-			)
+				$4::uuid,
+				coalesce($5::int, next_priority.max_priority_order + 1),
+				$6::boolean,
+				$7::numeric
+			from authorized_scenario
+			cross join next_priority
 			on conflict (scenario_id, target_account_id, source_account_id)
 			do update
 			set enabled = excluded.enabled,
@@ -921,10 +1028,11 @@ export async function createAutoFundingRule(input: {
 				updated_at
 		`,
 		[
+			input.userId,
 			input.scenarioId,
 			input.sourceAccountId,
 			input.targetAccountId,
-			nextPriorityOrder + (input.priorityOrder ? 0 : 1),
+			input.priorityOrder ?? null,
 			input.enabled ?? true,
 			input.minTargetBalance ?? 0
 		]
@@ -934,29 +1042,22 @@ export async function createAutoFundingRule(input: {
 }
 
 export async function createAutoSweepRule(input: {
+	userId: string;
 	scenarioId: string;
 	sourceAccountId: string;
 	destinationAccountId: string;
 	priorityOrder?: number;
 	enabled?: boolean;
 }) {
-	const nextPriorityOrder =
-		input.priorityOrder ??
-		(
-			await getPool().query<{ max_priority_order: number | null }>(
-				`
-					select max(priority_order)::int as max_priority_order
-					from auto_sweep_rules
-					where scenario_id = $1::uuid
-					  and source_account_id = $2::uuid
-				`,
-				[input.scenarioId, input.sourceAccountId]
-			)
-		).rows[0]?.max_priority_order ??
-		0;
-
 	const result = await getPool().query<AutoSweepRule>(
 		`
+			${AUTHORIZED_SCENARIO_CTE},
+			next_priority as (
+				select coalesce(max(priority_order), 0)::int as max_priority_order
+				from auto_sweep_rules
+				where scenario_id = $2::uuid
+				  and source_account_id = $3::uuid
+			)
 			insert into auto_sweep_rules (
 				scenario_id,
 				source_account_id,
@@ -964,13 +1065,14 @@ export async function createAutoSweepRule(input: {
 				priority_order,
 				enabled
 			)
-			values (
-				$1::uuid,
-				$2::uuid,
+			select
+				authorized_scenario.id,
 				$3::uuid,
-				$4::int,
-				$5::boolean
-			)
+				$4::uuid,
+				coalesce($5::int, next_priority.max_priority_order + 1),
+				$6::boolean
+			from authorized_scenario
+			cross join next_priority
 			on conflict (scenario_id, source_account_id, destination_account_id)
 			do update
 			set enabled = excluded.enabled
@@ -985,10 +1087,11 @@ export async function createAutoSweepRule(input: {
 				updated_at
 		`,
 		[
+			input.userId,
 			input.scenarioId,
 			input.sourceAccountId,
 			input.destinationAccountId,
-			nextPriorityOrder + (input.priorityOrder ? 0 : 1),
+			input.priorityOrder ?? null,
 			input.enabled ?? true
 		]
 	);
@@ -996,25 +1099,31 @@ export async function createAutoSweepRule(input: {
 	return result.rows[0] ?? null;
 }
 
-export async function deleteAutoFundingRule(scenarioId: string, ruleId: string) {
-	await getPool().query(
+export async function deleteAutoFundingRule(userId: string, scenarioId: string, ruleId: string) {
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			delete from auto_funding_rules
-			where scenario_id = $1::uuid
-			  and id = $2::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			delete from auto_funding_rules as afr
+			using authorized_scenario
+			where afr.scenario_id = authorized_scenario.id
+			  and afr.id = $3::uuid
 		`,
-		[scenarioId, ruleId]
+		[userId, scenarioId, ruleId]
 	);
 }
 
-export async function deleteAutoSweepRule(scenarioId: string, ruleId: string) {
-	await getPool().query(
+export async function deleteAutoSweepRule(userId: string, scenarioId: string, ruleId: string) {
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			delete from auto_sweep_rules
-			where scenario_id = $1::uuid
-			  and id = $2::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			delete from auto_sweep_rules as asr
+			using authorized_scenario
+			where asr.scenario_id = authorized_scenario.id
+			  and asr.id = $3::uuid
 		`,
-		[scenarioId, ruleId]
+		[userId, scenarioId, ruleId]
 	);
 }
 
@@ -1226,21 +1335,35 @@ export async function createCashflow(input: {
 	);
 }
 
-export async function deleteCashflow(scenarioId: string, cashflowId: string) {
-	await getPool().query(
+export async function deleteCashflow(userId: string, scenarioId: string, cashflowId: string) {
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			delete from cashflows
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			delete from cashflows as c
+			using authorized_scenario
+			where c.id = $3::uuid
+			  and c.scenario_id = authorized_scenario.id
 		`,
-		[scenarioId, cashflowId]
+		[userId, scenarioId, cashflowId]
 	);
 }
 
-export async function deleteAssetForScenario(scenarioId: string, assetId: string) {
+export async function deleteAssetForScenario(userId: string, scenarioId: string, assetId: string) {
 	const client = await getPool().connect();
 	try {
 		await client.query('begin');
+		const authorizedScenario = await client.query<{ id: string }>(
+			`
+				${AUTHORIZED_SCENARIO_CTE}
+				select id from authorized_scenario
+			`,
+			[userId, scenarioId]
+		);
+		if ((authorizedScenario.rowCount ?? 0) === 0) {
+			await client.query('rollback');
+			return false;
+		}
 
 		const assetsResult = await client.query<{
 			id: string;
@@ -1329,6 +1452,7 @@ export async function deleteAssetForScenario(scenarioId: string, assetId: string
 		);
 
 		await client.query('commit');
+		return true;
 	} catch (error) {
 		await client.query('rollback');
 		throw error;
@@ -1338,6 +1462,7 @@ export async function deleteAssetForScenario(scenarioId: string, assetId: string
 }
 
 export async function updateCashflow(input: {
+	userId: string;
 	scenarioId: string;
 	cashflowId: string;
 	type: 'expense' | 'income' | 'transfer';
@@ -1359,23 +1484,27 @@ export async function updateCashflow(input: {
 	destinationAssetAccountId?: string | null;
 	description: string;
 }) {
-	await getPool().query(
+	return runAuthorizedScenarioMutation(
+		getPool(),
 		`
-			update cashflows
-			set cashflow_type = $3::cashflow_type,
-				frequency = $4::cashflow_frequency,
-				category = $5::cashflow_category,
-				amount = $6::numeric,
-				inflation_affected = $7::boolean,
-				start_date = $8::int,
-				end_date = $9::int,
-				source_asset_account_id = $10::uuid,
-				destination_asset_account_id = $11::uuid,
-				description = $12::text
-			where id = $2::uuid
-			  and scenario_id = $1::uuid
+			${AUTHORIZED_SCENARIO_CTE}
+			update cashflows as c
+			set cashflow_type = $4::cashflow_type,
+				frequency = $5::cashflow_frequency,
+				category = $6::cashflow_category,
+				amount = $7::numeric,
+				inflation_affected = $8::boolean,
+				start_date = $9::int,
+				end_date = $10::int,
+				source_asset_account_id = $11::uuid,
+				destination_asset_account_id = $12::uuid,
+				description = $13::text
+			from authorized_scenario
+			where c.id = $3::uuid
+			  and c.scenario_id = authorized_scenario.id
 		`,
 		[
+			input.userId,
 			input.scenarioId,
 			input.cashflowId,
 			input.type,
@@ -1765,34 +1894,28 @@ export async function getOrCreateAssetAccount(
 		role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
 	}
 ) {
-	const existing = await client.query<{ id: string }>(
+	const result = await client.query<{ id: string }>(
 		`
-			select id
-			from asset_accounts
-			where scenario_id = $1::uuid
-			  and asset_id = $2::uuid
-			  and account_id = $3::uuid
-			  and relationship_role = $4::asset_account_role
+			with inserted as (
+				insert into asset_accounts (scenario_id, asset_id, account_id, relationship_role)
+				values ($1::uuid, $2::uuid, $3::uuid, $4::asset_account_role)
+				on conflict (scenario_id, asset_id, account_id, relationship_role) do nothing
+				returning id
+			)
+			select id from inserted
+			union all
+			select aa.id
+			from asset_accounts aa
+			where aa.scenario_id = $1::uuid
+			  and aa.asset_id = $2::uuid
+			  and aa.account_id = $3::uuid
+			  and aa.relationship_role = $4::asset_account_role
 			limit 1
 		`,
 		[input.scenarioId, input.assetId, input.accountId, input.role]
 	);
 
-	const existingId = existing.rows[0]?.id;
-	if (existingId) {
-		return existingId;
-	}
-
-	const inserted = await client.query<{ id: string }>(
-		`
-			insert into asset_accounts (scenario_id, asset_id, account_id, relationship_role)
-			values ($1::uuid, $2::uuid, $3::uuid, $4::asset_account_role)
-			returning id
-		`,
-		[input.scenarioId, input.assetId, input.accountId, input.role]
-	);
-
-	const assetAccountId = inserted.rows[0]?.id;
+	const assetAccountId = result.rows[0]?.id;
 	if (!assetAccountId) {
 		throw new Error('Asset account insert failed');
 	}

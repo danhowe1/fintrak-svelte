@@ -1,6 +1,6 @@
 import { json, redirect } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { deleteAssetForScenario, getScenarioForUserById } from '$lib/server/database';
+import { deleteAssetForScenario } from '$lib/server/database';
 
 export const POST: RequestHandler = async (event) => {
 	const userId = event.locals.appUserId;
@@ -17,13 +17,11 @@ export const POST: RequestHandler = async (event) => {
 		return json({ error: 'Invalid asset deletion input.' }, { status: 400 });
 	}
 
-	const scenario = await getScenarioForUserById(userId, scenarioId);
-	if (!scenario) {
-		return json({ error: 'Scenario not found.' }, { status: 404 });
-	}
-
 	try {
-		await deleteAssetForScenario(scenarioId, assetId);
+		const deleted = await deleteAssetForScenario(userId, scenarioId, assetId);
+		if (!deleted) {
+			return json({ error: 'Scenario not found.' }, { status: 404 });
+		}
 		return json({ success: true });
 	} catch (error) {
 		return json(
