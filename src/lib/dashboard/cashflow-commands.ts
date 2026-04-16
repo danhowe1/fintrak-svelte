@@ -175,9 +175,8 @@ export const updateAssetCashflowCommand = async (params: {
 				if (nextCashflows) {
 					params.setCashflows(nextCashflows);
 					params.syncCashflowAmounts(nextCashflows);
-				} else {
-					await params.refreshProjection({ includeCashflows: true });
 				}
+				await params.refreshProjection({ includeCashflows: true });
 				params.setFormError('');
 				if (params.closeFormOnSuccess ?? true) {
 					params.clearForm();
