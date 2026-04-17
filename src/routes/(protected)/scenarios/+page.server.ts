@@ -11,6 +11,11 @@ import { buildProjection } from '$lib/server/projection';
 import { parseProjectionRange } from '$lib/server/dashboard-context';
 import { z } from 'zod';
 
+const isScenarioNameConflict = (error: unknown) => {
+	const candidate = error as { code?: string; constraint?: string } | undefined;
+	return candidate?.code === '23505' && candidate?.constraint === 'scenarios_created_by_name_key';
+};
+
 const cloneScenarioSchema = z.object({
 	scenarioId: z.string().trim().min(1, 'Scenario id is required.'),
 	scenarioName: z.string().trim().min(1, 'Scenario name is required.')
@@ -79,7 +84,15 @@ export const actions: Actions = {
 			userId,
 			parsed.data.scenarioId,
 			parsed.data.scenarioName
-		);
+		).catch((error) => {
+			if (isScenarioNameConflict(error)) {
+				return 'duplicate';
+			}
+			throw error;
+		});
+		if (renamedScenario === 'duplicate') {
+			return fail(400, { error: 'You already have a scenario with that name.' });
+		}
 		if (!renamedScenario) {
 			return fail(403, { error: 'Only the scenario owner can rename this scenario.' });
 		}
@@ -110,6 +123,9 @@ export const actions: Actions = {
 				scenarioName: parsed.data.scenarioName
 			});
 		} catch (error) {
+			if (isScenarioNameConflict(error)) {
+				return fail(400, { error: 'You already have a scenario with that name.' });
+			}
 			return fail(400, {
 				error: error instanceof Error ? error.message : 'Unable to clone scenario.'
 			});

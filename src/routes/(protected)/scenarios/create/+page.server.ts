@@ -4,6 +4,11 @@ import { z } from 'zod';
 import { createScenarioWithPerson } from '$lib/server/database';
 import { parseYearMonthInput } from '$lib/yearMonth';
 
+const isScenarioNameConflict = (error: unknown) => {
+	const candidate = error as { code?: string; constraint?: string } | undefined;
+	return candidate?.code === '23505' && candidate?.constraint === 'scenarios_created_by_name_key';
+};
+
 const decimalUpToTwoPlacesSchema = z
 	.string()
 	.trim()
@@ -110,19 +115,41 @@ export const actions: Actions = {
 			return parsedValue;
 		};
 
-		const scenarioId = await createScenarioWithPerson({
-			userId,
-			scenarioName,
-			startDate: normalizeMonth(personStartDate),
-			personName,
-			personDob: normalizeMonth(personDob),
-			retirementAge,
-			monthlyNetIncome,
-			monthlyEssentialExpenses,
-			accountName,
-			accountInterestRate,
-			openingBalance
-		});
+		let scenarioId: string;
+		try {
+			scenarioId = await createScenarioWithPerson({
+				userId,
+				scenarioName,
+				startDate: normalizeMonth(personStartDate),
+				personName,
+				personDob: normalizeMonth(personDob),
+				retirementAge,
+				monthlyNetIncome,
+				monthlyEssentialExpenses,
+				accountName,
+				accountInterestRate,
+				openingBalance
+			});
+		} catch (error) {
+			if (isScenarioNameConflict(error)) {
+				return fail(400, {
+					errors: {
+						scenarioName: ['You already have a scenario with that name.'],
+						personStartDate: undefined,
+						personName: undefined,
+						personDob: undefined,
+						retirementAge: undefined,
+						monthlyNetIncome: undefined,
+						monthlyEssentialExpenses: undefined,
+						accountName: undefined,
+						accountInterestRate: undefined,
+						openingBalance: undefined
+					},
+					values: payload
+				});
+			}
+			throw error;
+		}
 
 		event.cookies.set('currentScenarioId', scenarioId, {
 			path: '/',
