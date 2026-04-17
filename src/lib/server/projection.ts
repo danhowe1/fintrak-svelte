@@ -406,6 +406,11 @@ export const buildProjection = (input: {
 	const cashAccountIds = input.accounts
 		.filter((account) => account.account_type === 'cash_account')
 		.map((account) => account.id);
+	const offsetAccountIds = new Set(
+		input.assetAccounts
+			.filter((link) => link.relationship_role === 'offsets')
+			.map((link) => link.account_id)
+	);
 	const insolventEventAccountIds = new Set<string>();
 	const blockedTransferSourceAccountIds = new Set<string>();
 	const blockedAutoFundingTargetIds = new Set<string>();
@@ -1651,10 +1656,27 @@ export const buildProjection = (input: {
 						minTargetBalance > 0
 							? `reserve target ${formatEventCurrency(minTargetBalance)} was breached`
 							: 'balance fell below $0';
+					const useStartedTransferringMessage =
+						sourceAccount.type === 'cash_account' || offsetAccountIds.has(rule.sourceAccountId);
+					const shareAssetName =
+						sourceAccount.type === 'brokerage'
+							? (shareStates.get(brokerageShareByAccountId.get(rule.sourceAccountId) ?? '')?.assetName ??
+								null)
+							: null;
+					const superAssetName =
+						sourceAccount.type === 'super_account'
+							? (superStates.get(superByAccountId.get(rule.sourceAccountId) ?? '')?.assetName ?? null)
+							: null;
+					const useStartedSellingMessage =
+						sourceAccount.type === 'brokerage' || sourceAccount.type === 'super_account';
 					events.push({
 						tone: 'positive',
 						monthLabel,
-						message: `Auto-funding applied: ${formatEventCurrency(transferAmount)} moved from ${sourceAccount.name} to ${targetAccount.name} because ${reserveReason}.`
+						message: useStartedTransferringMessage
+							? `Auto-funding applied: Started transferring from ${sourceAccount.name} to ${targetAccount.name} because ${reserveReason}.`
+							: useStartedSellingMessage
+								? `Auto-funding applied: Started selling from ${shareAssetName ?? superAssetName ?? sourceAccount.name} to fund ${targetAccount.name} because ${reserveReason}.`
+								: `Auto-funding applied: ${formatEventCurrency(transferAmount)} moved from ${sourceAccount.name} to ${targetAccount.name} because ${reserveReason}.`
 					});
 					recordedAutoFundingExecutionRuleIds.add(rule.id);
 				}
