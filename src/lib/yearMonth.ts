@@ -91,3 +91,12 @@ export const monthsBetweenYearMonths = (from: YearMonth, to: YearMonth) =>
 	(to.year - from.year) * 12 + (to.month - from.month);
 
 export const yearMonthIndex = (value: YearMonth) => value.year * 12 + (value.month - 1);
+
+export const isValidYearMonthInput = (value: string): boolean =>
+	parseYearMonthInput(value) !== null;
+
+export const requireYearMonthInput = (value: string): number => {
+	const parsed = parseYearMonthInput(value);
+	if (parsed === null) throw new Error(`Invalid month format: ${value}`);
+	return parsed;
+};

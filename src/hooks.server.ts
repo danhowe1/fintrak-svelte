@@ -30,9 +30,7 @@ const authorizationHandle: Handle = async ({ event, resolve }) => {
 		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
 	}
 
-	if (!event.locals.appUserId) {
-		event.locals.appUserId = await resolveAuthenticatedUserId(session);
-	}
+	event.locals.appUserId ??= await resolveAuthenticatedUserId(session);
 
 	return resolve(event);
 };

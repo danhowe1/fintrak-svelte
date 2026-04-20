@@ -1,13 +1,9 @@
-import { json, redirect } from '@sveltejs/kit';
+import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { deleteAssetForScenario } from '$lib/server/database';
 
 export const POST: RequestHandler = async (event) => {
 	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(event.url.pathname);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
 
 	const formData = await event.request.formData();
 	const scenarioId = String(formData.get('scenarioId') ?? '');

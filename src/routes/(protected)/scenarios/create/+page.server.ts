@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { z } from 'zod';
 import { createScenarioWithPerson } from '$lib/server/database';
-import { parseYearMonthInput } from '$lib/yearMonth';
+import { requireYearMonthInput } from '$lib/yearMonth';
 
 const isScenarioNameConflict = (error: unknown) => {
 	const candidate = error as { code?: string; constraint?: string } | undefined;
@@ -69,10 +69,6 @@ export const load: PageServerLoad = async (event) => {
 export const actions: Actions = {
 	default: async (event) => {
 		const userId = event.locals.appUserId;
-		if (!userId) {
-			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-		}
 
 		const formData = await event.request.formData();
 		const payload = {
@@ -107,22 +103,15 @@ export const actions: Actions = {
 			openingBalance
 		} = parsed.data;
 
-		const normalizeMonth = (value: string) => {
-			const parsedValue = parseYearMonthInput(value);
-			if (parsedValue === null) {
-				throw new Error('Invalid month format');
-			}
-			return parsedValue;
-		};
 
 		let scenarioId: string;
 		try {
 			scenarioId = await createScenarioWithPerson({
 				userId,
 				scenarioName,
-				startDate: normalizeMonth(personStartDate),
+				startDate: requireYearMonthInput(personStartDate),
 				personName,
-				personDob: normalizeMonth(personDob),
+				personDob: requireYearMonthInput(personDob),
 				retirementAge,
 				monthlyNetIncome,
 				monthlyEssentialExpenses,

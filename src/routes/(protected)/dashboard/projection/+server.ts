@@ -6,9 +6,6 @@ import { buildDashboardProjectionResponse } from '$lib/server/dashboard-projecti
 
 export const GET: RequestHandler = async (event) => {
 	const userId = event.locals.appUserId;
-	if (!userId) {
-		return json({ error: 'Unauthorized' }, { status: 401 });
-	}
 	const scenarioId =
 		event.url.searchParams.get('scenarioId') ?? event.cookies.get('currentScenarioId');
 	const projectionBundle = await getProjectionBundleForUser(userId, scenarioId);

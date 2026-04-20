@@ -14,10 +14,6 @@ export const load: PageServerLoad = async (event) => {
 	}
 
 	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
 	const scenario = await getSingleScenarioForUser(userId);
 
 	if (scenario) {

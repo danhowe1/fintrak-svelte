@@ -1,4 +1,3 @@
-import { redirect } from '@sveltejs/kit';
 import type { RequestEvent } from '@sveltejs/kit';
 
 export type ProjectionRangeValue = '1y' | '5y' | '10y' | 'all';
@@ -13,15 +12,6 @@ export const parseProjectionRange = (value: string | undefined | null): Projecti
 export const parseRateCookie = (value: string | undefined, fallback: number) => {
 	const parsed = Number(value);
 	return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const resolveAuthenticatedUserId = (event: RequestEvent) => {
-	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
-	return userId;
 };
 
 export const syncCurrentScenarioCookie = (

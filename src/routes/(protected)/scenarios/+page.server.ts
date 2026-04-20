@@ -29,10 +29,6 @@ const renameScenarioSchema = z.object({
 export const load: PageServerLoad = async (event) => {
 	const parentData = await event.parent();
 	const userId = event.locals.appUserId;
-	if (!userId) {
-		const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-		throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-	}
 	const projectionRange = parseProjectionRange(
 		event.url.searchParams.get('projectionRange') ?? event.cookies.get('projectionRange')
 	);
@@ -65,10 +61,6 @@ export const load: PageServerLoad = async (event) => {
 export const actions: Actions = {
 	rename: async (event) => {
 		const userId = event.locals.appUserId;
-		if (!userId) {
-			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-		}
 
 		const formData = await event.request.formData();
 		const parsed = renameScenarioSchema.safeParse({
@@ -101,10 +93,6 @@ export const actions: Actions = {
 	},
 	clone: async (event) => {
 		const userId = event.locals.appUserId;
-		if (!userId) {
-			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-		}
 
 		const formData = await event.request.formData();
 		const parsed = cloneScenarioSchema.safeParse({
@@ -135,10 +123,6 @@ export const actions: Actions = {
 	},
 	delete: async (event) => {
 		const userId = event.locals.appUserId;
-		if (!userId) {
-			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-		}
 
 		const formData = await event.request.formData();
 		const scenarioId = formData.get('scenarioId');

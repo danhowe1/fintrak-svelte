@@ -2,7 +2,6 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions } from './$types';
 import { z } from 'zod';
 import {
-	createAsset,
 	createPersonAssetWithCashflows,
 	createPropertyAssetWithExpense,
 	createMortgageAssetWithAccounts,
@@ -12,651 +11,482 @@ import {
 	getAssetsForScenario,
 	getScenarioForUserById
 } from '$lib/server/database';
-import { parseYearMonthInput } from '$lib/yearMonth';
+import { requireYearMonthInput } from '$lib/yearMonth';
+
+// --- primitive schemas ---
+
+const monthPattern = /^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/;
+const currencyPattern = /^-?\d+(\.\d{1,2})?$/;
+const dec2Pattern = /^-?\d+(\.\d{1,2})?$/;
+const dec1Pattern = /^-?\d+(\.\d)?$/;
 
 const monthSchema = z
 	.string()
 	.trim()
-	.regex(/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/, { message: 'Month is required' });
+	.regex(monthPattern, { message: 'Month is required' });
 
 const currencySchema = z
 	.string()
 	.trim()
-	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a valid amount' })
-	.transform((value) => Number(value));
+	.regex(currencyPattern, { message: 'Must be a valid amount' })
+	.transform(Number);
 
-const decimalUpToTwoPlacesSchema = z
+const dec2Schema = z
 	.string()
 	.trim()
-	.regex(/^-?\d+(\.\d{1,2})?$/, { message: 'Must be a number with up to 2 decimal places' })
-	.transform((value) => Number(value));
+	.regex(dec2Pattern, { message: 'Must be a number with up to 2 decimal places' })
+	.transform(Number);
 
-const decimalUpToOnePlaceSchema = z
+const dec1Schema = z
 	.string()
 	.trim()
-	.regex(/^-?\d+(\.\d)?$/, { message: 'Must be a number with up to 1 decimal place' })
-	.transform((value) => Number(value));
+	.regex(dec1Pattern, { message: 'Must be a number with up to 1 decimal place' })
+	.transform(Number);
 
 const roundToTwo = (value: number) => Number(value.toFixed(2));
-
 const uuidSchema = z.string().uuid();
 const assetTypeSchema = z.enum(['person', 'property', 'mortgage', 'superannuation', 'shares']);
 const propertyUseSchema = z.enum(['primary_residence', 'investment_property']);
 
-const createAssetSchema = z
+// --- shared account-choice helpers ---
+
+function validateNewAccount(
+	name: string | undefined,
+	rate: string | undefined,
+	balance: string | undefined,
+	ctx: z.RefinementCtx,
+	paths: { name: string; rate: string; balance: string },
+	label: string
+) {
+	if (!name) {
+		ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${label} account name is required`, path: [paths.name] });
+	}
+	if (!rate || !dec2Pattern.test(rate)) {
+		ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${label} account interest rate is required`, path: [paths.rate] });
+	}
+	if (!balance || !dec2Pattern.test(balance)) {
+		ctx.addIssue({ code: z.ZodIssueCode.custom, message: `${label} account opening balance is required`, path: [paths.balance] });
+	}
+}
+
+function resolveAccountInput(
+	choice: string,
+	name: string | undefined,
+	rate: string | undefined,
+	balance: string | undefined,
+	defaultName: string
+) {
+	if (choice === 'new') {
+		return {
+			type: 'new' as const,
+			name: name || defaultName,
+			interestRate: roundToTwo(dec2Schema.parse(rate ?? '0')),
+			openingBalance: currencySchema.parse(balance ?? '0')
+		};
+	}
+	return { type: 'existing' as const, accountId: choice };
+}
+
+// --- per-type schemas ---
+
+const personSchema = z
 	.object({
-		assetType: assetTypeSchema,
 		name: z.string().trim().min(1, 'Asset name is required'),
 		startMonth: monthSchema,
-		personDob: z.string().trim().optional(),
-		retirementAge: z.string().trim().optional(),
-		propertyUse: z.string().trim().optional(),
-		propertyMarketValue: z.string().trim().optional(),
-		propertySaleDate: z.string().trim().optional(),
-		propertyMarketGrowthRate: z.string().trim().optional(),
-		propertyFixedSellingCosts: z.string().trim().optional(),
-		propertyVariableSellingCosts: z.string().trim().optional(),
-		propertyOwnershipExpense: z.string().trim().optional(),
-		shareCapitalGrowthRate: z.string().trim().optional(),
-		shareDividendYield: z.string().trim().optional(),
-		shareDividendsTakenAsIncomeDate: z.string().trim().optional(),
-		shareBrokerageAccountOpeningBalance: z.string().trim().optional(),
-		sharePaysIntoAccountId: z.string().trim().optional(),
-		superPersonId: z.string().trim().optional(),
-		superPreservationAge: z.string().trim().optional(),
-		superCapitalGrowthRate: z.string().trim().optional(),
-		superManagementFeeRate: z.string().trim().optional(),
-		superOpeningBalance: z.string().trim().optional(),
-		superPaysIntoAccountId: z.string().trim().optional(),
-		mortgagePropertyId: z.string().trim().optional(),
-		mortgageTermYears: z.string().trim().optional(),
-		mortgageTermMonths: z.string().trim().optional(),
-		mortgageInterestOnly: z.string().trim().optional(),
-		mortgageInterestOnlyEnd: z.string().trim().optional(),
-		mortgageAccountName: z.string().trim().optional(),
-		mortgageAccountInterestRate: z.string().trim().optional(),
-		mortgageAccountOpeningBalance: z.string().trim().optional(),
-		mortgagePaymentSourceChoice: z.string().trim().optional(),
-		mortgagePaymentSourceName: z.string().trim().optional(),
-		mortgagePaymentSourceInterestRate: z.string().trim().optional(),
-		mortgagePaymentSourceOpeningBalance: z.string().trim().optional(),
-		mortgageOffsetChoice: z.string().trim().optional(),
-		mortgageOffsetName: z.string().trim().optional(),
-		mortgageOffsetInterestRate: z.string().trim().optional(),
-		mortgageOffsetOpeningBalance: z.string().trim().optional(),
-		employmentIncome: z.string().trim().optional(),
-		essentialExpenses: z.string().trim().optional(),
-		incomeAccountChoice: z.string().trim().optional(),
-		expenseAccountChoice: z.string().trim().optional(),
-		useSameAccount: z.string().trim().optional(),
+		personDob: z.string().trim(),
+		retirementAge: z.string().trim(),
+		employmentIncome: z.string().trim(),
+		essentialExpenses: z.string().trim(),
+		useSameAccount: z.string().trim(),
+		expenseAccountChoice: z.string().trim(),
+		expenseAccountName: z.string().trim().optional(),
+		expenseAccountInterestRate: z.string().trim().optional(),
+		expenseAccountOpeningBalance: z.string().trim().optional(),
+		incomeAccountChoice: z.string().trim(),
 		incomeAccountName: z.string().trim().optional(),
 		incomeAccountInterestRate: z.string().trim().optional(),
-		incomeAccountOpeningBalance: z.string().trim().optional(),
+		incomeAccountOpeningBalance: z.string().trim().optional()
+	})
+	.superRefine((data, ctx) => {
+		if (!monthPattern.test(data.personDob)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Date of birth month is required', path: ['personDob'] });
+		}
+		if (!/^\d+$/.test(data.retirementAge)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Retirement age must be a whole number', path: ['retirementAge'] });
+		}
+		if (data.employmentIncome && !currencyPattern.test(data.employmentIncome)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Employment income must be a valid amount', path: ['employmentIncome'] });
+		}
+		if (!data.essentialExpenses || !currencyPattern.test(data.essentialExpenses)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Essential living expenses are required', path: ['essentialExpenses'] });
+		}
+		if (!data.expenseAccountChoice) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select an expenses account option', path: ['expenseAccountChoice'] });
+		} else if (data.expenseAccountChoice === 'new') {
+			validateNewAccount(data.expenseAccountName, data.expenseAccountInterestRate, data.expenseAccountOpeningBalance, ctx, { name: 'expenseAccountName', rate: 'expenseAccountInterestRate', balance: 'expenseAccountOpeningBalance' }, 'Expense');
+		} else if (!uuidSchema.safeParse(data.expenseAccountChoice).success) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expense account selection is invalid', path: ['expenseAccountChoice'] });
+		}
+		if (data.useSameAccount !== 'on') {
+			if (!data.incomeAccountChoice) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select an income account option', path: ['incomeAccountChoice'] });
+			} else if (data.incomeAccountChoice === 'new') {
+				validateNewAccount(data.incomeAccountName, data.incomeAccountInterestRate, data.incomeAccountOpeningBalance, ctx, { name: 'incomeAccountName', rate: 'incomeAccountInterestRate', balance: 'incomeAccountOpeningBalance' }, 'Income');
+			} else if (!uuidSchema.safeParse(data.incomeAccountChoice).success) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Income account selection is invalid', path: ['incomeAccountChoice'] });
+			}
+		}
+	});
+
+const propertySchema = z
+	.object({
+		name: z.string().trim().min(1, 'Asset name is required'),
+		startMonth: monthSchema,
+		propertyUse: z.string().trim(),
+		propertyMarketValue: z.string().trim(),
+		propertySaleDate: z.string().trim(),
+		propertyMarketGrowthRate: z.string().trim(),
+		propertyFixedSellingCosts: z.string().trim(),
+		propertyVariableSellingCosts: z.string().trim(),
+		propertyOwnershipExpense: z.string().trim(),
+		expenseAccountChoice: z.string().trim(),
 		expenseAccountName: z.string().trim().optional(),
 		expenseAccountInterestRate: z.string().trim().optional(),
 		expenseAccountOpeningBalance: z.string().trim().optional()
 	})
 	.superRefine((data, ctx) => {
-		if (data.assetType === 'person') {
-			const useSame = data.useSameAccount === 'on';
-			if (!data.personDob || !/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.personDob)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Date of birth month is required',
-					path: ['personDob']
-				});
-			}
-			if (!data.retirementAge || !/^\d+$/.test(data.retirementAge)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Retirement age must be a whole number',
-					path: ['retirementAge']
-				});
-			}
+		if (data.propertyUse && !propertyUseSchema.safeParse(data.propertyUse).success) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Property type is invalid', path: ['propertyUse'] });
+		}
+		if (!data.propertyMarketValue || !currencyPattern.test(data.propertyMarketValue)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Market value is required', path: ['propertyMarketValue'] });
+		}
+		if (data.propertySaleDate && !monthPattern.test(data.propertySaleDate)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Sale date must be MM YYYY', path: ['propertySaleDate'] });
+		}
+		if (!data.propertyMarketGrowthRate || !dec2Pattern.test(data.propertyMarketGrowthRate)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Market growth rate is required', path: ['propertyMarketGrowthRate'] });
+		}
+		if (!data.propertyFixedSellingCosts || !currencyPattern.test(data.propertyFixedSellingCosts)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Fixed selling costs are required', path: ['propertyFixedSellingCosts'] });
+		}
+		if (!data.propertyVariableSellingCosts || !currencyPattern.test(data.propertyVariableSellingCosts)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Variable selling costs are required', path: ['propertyVariableSellingCosts'] });
+		}
+		if (!data.propertyOwnershipExpense || !currencyPattern.test(data.propertyOwnershipExpense)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Ownership expense is required', path: ['propertyOwnershipExpense'] });
+		}
+		if (!data.expenseAccountChoice) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select an expenses account option', path: ['expenseAccountChoice'] });
+		} else if (data.expenseAccountChoice === 'new') {
+			validateNewAccount(data.expenseAccountName, data.expenseAccountInterestRate, data.expenseAccountOpeningBalance, ctx, { name: 'expenseAccountName', rate: 'expenseAccountInterestRate', balance: 'expenseAccountOpeningBalance' }, 'Expense');
+		} else if (!uuidSchema.safeParse(data.expenseAccountChoice).success) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Expense account selection is invalid', path: ['expenseAccountChoice'] });
+		}
+	});
 
-			if (data.employmentIncome && !/^-?\d+(\.\d{1,2})?$/.test(data.employmentIncome)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Employment income must be a valid amount',
-					path: ['employmentIncome']
-				});
-			}
-
-			if (!data.essentialExpenses || !/^-?\d+(\.\d{1,2})?$/.test(data.essentialExpenses)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Essential living expenses are required',
-					path: ['essentialExpenses']
-				});
-			}
-
-			if (!data.expenseAccountChoice) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select an expenses account option',
-					path: ['expenseAccountChoice']
-				});
-			}
-
-			if (!useSame && !data.incomeAccountChoice) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select an income account option',
-					path: ['incomeAccountChoice']
-				});
-			}
-
-			if (data.expenseAccountChoice === 'new') {
-				if (!data.expenseAccountName) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account name is required',
-						path: ['expenseAccountName']
-					});
-				}
-				if (
-					!data.expenseAccountInterestRate ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountInterestRate)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account interest rate is required',
-						path: ['expenseAccountInterestRate']
-					});
-				}
-				if (
-					!data.expenseAccountOpeningBalance ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountOpeningBalance)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account opening balance is required',
-						path: ['expenseAccountOpeningBalance']
-					});
-				}
-			} else if (data.expenseAccountChoice && data.expenseAccountChoice !== 'new') {
-				const parsed = uuidSchema.safeParse(data.expenseAccountChoice);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account selection is invalid',
-						path: ['expenseAccountChoice']
-					});
-				}
-			}
-
-			if (!useSame && data.incomeAccountChoice === 'new') {
-				if (!data.incomeAccountName) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account name is required',
-						path: ['incomeAccountName']
-					});
-				}
-				if (
-					!data.incomeAccountInterestRate ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountInterestRate)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account interest rate is required',
-						path: ['incomeAccountInterestRate']
-					});
-				}
-				if (
-					!data.incomeAccountOpeningBalance ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.incomeAccountOpeningBalance)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account opening balance is required',
-						path: ['incomeAccountOpeningBalance']
-					});
-				}
-			} else if (!useSame && data.incomeAccountChoice && data.incomeAccountChoice !== 'new') {
-				const parsed = uuidSchema.safeParse(data.incomeAccountChoice);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Income account selection is invalid',
-						path: ['incomeAccountChoice']
-					});
-				}
+const mortgageSchema = z
+	.object({
+		name: z.string().trim().min(1, 'Asset name is required'),
+		startMonth: monthSchema,
+		mortgagePropertyId: z.string().trim(),
+		mortgageTermYears: z.string().trim(),
+		mortgageTermMonths: z.string().trim(),
+		mortgageInterestOnly: z.string().trim(),
+		mortgageInterestOnlyEnd: z.string().trim(),
+		mortgageAccountName: z.string().trim(),
+		mortgageAccountInterestRate: z.string().trim(),
+		mortgageAccountOpeningBalance: z.string().trim(),
+		mortgagePaymentSourceChoice: z.string().trim(),
+		mortgagePaymentSourceName: z.string().trim().optional(),
+		mortgagePaymentSourceInterestRate: z.string().trim().optional(),
+		mortgagePaymentSourceOpeningBalance: z.string().trim().optional(),
+		mortgageOffsetChoice: z.string().trim(),
+		mortgageOffsetName: z.string().trim().optional(),
+		mortgageOffsetInterestRate: z.string().trim().optional(),
+		mortgageOffsetOpeningBalance: z.string().trim().optional()
+	})
+	.superRefine((data, ctx) => {
+		if (!data.mortgagePropertyId) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select a property to secure this mortgage', path: ['mortgagePropertyId'] });
+		} else if (!uuidSchema.safeParse(data.mortgagePropertyId).success) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Property selection is invalid', path: ['mortgagePropertyId'] });
+		}
+		if (!data.mortgageTermYears || !/^\d+$/.test(data.mortgageTermYears)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Term remaining (years) is required', path: ['mortgageTermYears'] });
+		}
+		if (!data.mortgageTermMonths || !/^\d+$/.test(data.mortgageTermMonths)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Term remaining (months) is required', path: ['mortgageTermMonths'] });
+		} else {
+			const months = Number(data.mortgageTermMonths);
+			if (months < 0 || months > 11) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Months must be between 0 and 11', path: ['mortgageTermMonths'] });
 			}
 		}
-
-		if (data.assetType === 'property') {
-			if (data.propertyUse && !propertyUseSchema.safeParse(data.propertyUse).success) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Property type is invalid',
-					path: ['propertyUse']
-				});
-			}
-			if (!data.propertyMarketValue || !/^-?\d+(\.\d{1,2})?$/.test(data.propertyMarketValue)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Market value is required',
-					path: ['propertyMarketValue']
-				});
-			}
-			if (
-				data.propertySaleDate &&
-				!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.propertySaleDate)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Sale date must be MM YYYY',
-					path: ['propertySaleDate']
-				});
-			}
-			if (
-				!data.propertyMarketGrowthRate ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyMarketGrowthRate)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Market growth rate is required',
-					path: ['propertyMarketGrowthRate']
-				});
-			}
-			if (
-				!data.propertyFixedSellingCosts ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyFixedSellingCosts)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Fixed selling costs are required',
-					path: ['propertyFixedSellingCosts']
-				});
-			}
-			if (
-				!data.propertyVariableSellingCosts ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyVariableSellingCosts)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Variable selling costs are required',
-					path: ['propertyVariableSellingCosts']
-				});
-			}
-			if (
-				!data.propertyOwnershipExpense ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.propertyOwnershipExpense)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Ownership expense is required',
-					path: ['propertyOwnershipExpense']
-				});
-			}
-			if (!data.expenseAccountChoice) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select an expenses account option',
-					path: ['expenseAccountChoice']
-				});
-			} else if (data.expenseAccountChoice === 'new') {
-				if (!data.expenseAccountName) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account name is required',
-						path: ['expenseAccountName']
-					});
-				}
-				if (
-					!data.expenseAccountInterestRate ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountInterestRate)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account interest rate is required',
-						path: ['expenseAccountInterestRate']
-					});
-				}
-				if (
-					!data.expenseAccountOpeningBalance ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.expenseAccountOpeningBalance)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account opening balance is required',
-						path: ['expenseAccountOpeningBalance']
-					});
-				}
-			} else {
-				const parsed = uuidSchema.safeParse(data.expenseAccountChoice);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Expense account selection is invalid',
-						path: ['expenseAccountChoice']
-					});
-				}
-			}
+		if (data.mortgageInterestOnly === 'on' && !monthPattern.test(data.mortgageInterestOnlyEnd)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Interest-only end month is required', path: ['mortgageInterestOnlyEnd'] });
 		}
-
-		if (data.assetType === 'mortgage') {
-			if (!data.mortgagePropertyId) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select a property to secure this mortgage',
-					path: ['mortgagePropertyId']
-				});
-			} else {
-				const parsed = uuidSchema.safeParse(data.mortgagePropertyId);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Property selection is invalid',
-						path: ['mortgagePropertyId']
-					});
-				}
-			}
-
-			if (!data.mortgageTermYears || !/^\d+$/.test(data.mortgageTermYears)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Term remaining (years) is required',
-					path: ['mortgageTermYears']
-				});
-			}
-
-			if (
-				data.mortgageTermMonths === undefined ||
-				data.mortgageTermMonths === '' ||
-				!/^\d+$/.test(data.mortgageTermMonths)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Term remaining (months) is required',
-					path: ['mortgageTermMonths']
-				});
-			}
-
-			const monthsValue = Number(data.mortgageTermMonths ?? 0);
-			if (Number.isNaN(monthsValue) || monthsValue < 0 || monthsValue > 11) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Months must be between 0 and 11',
-					path: ['mortgageTermMonths']
-				});
-			}
-
-			if (data.mortgageInterestOnly === 'on') {
-				if (
-					!data.mortgageInterestOnlyEnd ||
-					!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.mortgageInterestOnlyEnd)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Interest-only end month is required',
-						path: ['mortgageInterestOnlyEnd']
-					});
-				}
-			}
-
-			if (!data.mortgageAccountName) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Mortgage account name is required',
-					path: ['mortgageAccountName']
-				});
-			}
-			if (
-				!data.mortgageAccountInterestRate ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageAccountInterestRate)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Mortgage account interest rate is required',
-					path: ['mortgageAccountInterestRate']
-				});
-			}
-			if (
-				!data.mortgageAccountOpeningBalance ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageAccountOpeningBalance)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Mortgage account opening balance is required',
-					path: ['mortgageAccountOpeningBalance']
-				});
-			}
-
-			if (!data.mortgagePaymentSourceChoice) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select a payment source account',
-					path: ['mortgagePaymentSourceChoice']
-				});
-			} else if (data.mortgagePaymentSourceChoice === 'new') {
-				if (!data.mortgagePaymentSourceName) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Payment source account name is required',
-						path: ['mortgagePaymentSourceName']
-					});
-				}
-				if (
-					!data.mortgagePaymentSourceInterestRate ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.mortgagePaymentSourceInterestRate)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Payment source account interest rate is required',
-						path: ['mortgagePaymentSourceInterestRate']
-					});
-				}
-				if (
-					!data.mortgagePaymentSourceOpeningBalance ||
-					!/^-?\d+(\.\d{1,2})?$/.test(data.mortgagePaymentSourceOpeningBalance)
-				) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Payment source account opening balance is required',
-						path: ['mortgagePaymentSourceOpeningBalance']
-					});
-				}
-			} else {
-				const parsed = uuidSchema.safeParse(data.mortgagePaymentSourceChoice);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Payment source account selection is invalid',
-						path: ['mortgagePaymentSourceChoice']
-					});
-				}
-			}
-
-			if (
-				data.mortgageOffsetChoice &&
-				data.mortgageOffsetChoice !== 'none' &&
-				data.mortgageOffsetChoice !== 'same_as_payment_source'
-			) {
-				if (data.mortgageOffsetChoice === 'new') {
-					if (!data.mortgageOffsetName) {
-						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
-							message: 'Offset account name is required',
-							path: ['mortgageOffsetName']
-						});
-					}
-					if (
-						!data.mortgageOffsetInterestRate ||
-						!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageOffsetInterestRate)
-					) {
-						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
-							message: 'Offset account interest rate is required',
-							path: ['mortgageOffsetInterestRate']
-						});
-					}
-					if (
-						!data.mortgageOffsetOpeningBalance ||
-						!/^-?\d+(\.\d{1,2})?$/.test(data.mortgageOffsetOpeningBalance)
-					) {
-						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
-							message: 'Offset account opening balance is required',
-							path: ['mortgageOffsetOpeningBalance']
-						});
-					}
-				} else {
-					const parsed = uuidSchema.safeParse(data.mortgageOffsetChoice);
-					if (!parsed.success) {
-						ctx.addIssue({
-							code: z.ZodIssueCode.custom,
-							message: 'Offset account selection is invalid',
-							path: ['mortgageOffsetChoice']
-						});
-					}
-				}
-			}
+		if (!data.mortgageAccountName) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Mortgage account name is required', path: ['mortgageAccountName'] });
 		}
-
-		if (data.assetType === 'shares') {
-			if (!data.shareCapitalGrowthRate || !/^-?\d+(\.\d)?$/.test(data.shareCapitalGrowthRate)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Capital growth rate is required',
-					path: ['shareCapitalGrowthRate']
-				});
-			}
-			if (!data.shareDividendYield || !/^-?\d+(\.\d)?$/.test(data.shareDividendYield)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Dividend yield is required',
-					path: ['shareDividendYield']
-				});
-			}
-			if (
-				!data.shareDividendsTakenAsIncomeDate ||
-				!/^(0[1-9]|1[0-2])(\s|\/|-)?\d{4}$/.test(data.shareDividendsTakenAsIncomeDate)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Dividend income date must be MM YYYY',
-					path: ['shareDividendsTakenAsIncomeDate']
-				});
-			}
-			if (
-				data.shareBrokerageAccountOpeningBalance === undefined ||
-				data.shareBrokerageAccountOpeningBalance === '' ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.shareBrokerageAccountOpeningBalance)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Brokerage opening balance is required',
-					path: ['shareBrokerageAccountOpeningBalance']
-				});
-			}
-			if (!data.sharePaysIntoAccountId) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select a pays into cash account',
-					path: ['sharePaysIntoAccountId']
-				});
-			} else {
-				const parsed = uuidSchema.safeParse(data.sharePaysIntoAccountId);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Pays into account selection is invalid',
-						path: ['sharePaysIntoAccountId']
-					});
-				}
-			}
+		if (!data.mortgageAccountInterestRate || !dec2Pattern.test(data.mortgageAccountInterestRate)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Mortgage account interest rate is required', path: ['mortgageAccountInterestRate'] });
 		}
-		if (data.assetType === 'superannuation') {
-			if (!data.superPersonId) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select a person asset',
-					path: ['superPersonId']
-				});
-			} else {
-				const parsed = uuidSchema.safeParse(data.superPersonId);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Person selection is invalid',
-						path: ['superPersonId']
-					});
-				}
-			}
-			if (!data.superPreservationAge || !/^\d+$/.test(data.superPreservationAge)) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Preservation age must be a whole number',
-					path: ['superPreservationAge']
-				});
-			}
-			if (
-				!data.superCapitalGrowthRate ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.superCapitalGrowthRate)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Capital growth rate is required',
-					path: ['superCapitalGrowthRate']
-				});
-			}
-			if (
-				!data.superManagementFeeRate ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.superManagementFeeRate)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Management fee rate is required',
-					path: ['superManagementFeeRate']
-				});
-			}
-			if (
-				data.superOpeningBalance === undefined ||
-				data.superOpeningBalance === '' ||
-				!/^-?\d+(\.\d{1,2})?$/.test(data.superOpeningBalance)
-			) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Super opening balance is required',
-					path: ['superOpeningBalance']
-				});
-			}
-			if (!data.superPaysIntoAccountId) {
-				ctx.addIssue({
-					code: z.ZodIssueCode.custom,
-					message: 'Select a pays into cash account',
-					path: ['superPaysIntoAccountId']
-				});
-			} else {
-				const parsed = uuidSchema.safeParse(data.superPaysIntoAccountId);
-				if (!parsed.success) {
-					ctx.addIssue({
-						code: z.ZodIssueCode.custom,
-						message: 'Pays into account selection is invalid',
-						path: ['superPaysIntoAccountId']
-					});
-				}
+		if (!data.mortgageAccountOpeningBalance || !currencyPattern.test(data.mortgageAccountOpeningBalance)) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Mortgage account opening balance is required', path: ['mortgageAccountOpeningBalance'] });
+		}
+		if (!data.mortgagePaymentSourceChoice) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Select a payment source account', path: ['mortgagePaymentSourceChoice'] });
+		} else if (data.mortgagePaymentSourceChoice === 'new') {
+			validateNewAccount(data.mortgagePaymentSourceName, data.mortgagePaymentSourceInterestRate, data.mortgagePaymentSourceOpeningBalance, ctx, { name: 'mortgagePaymentSourceName', rate: 'mortgagePaymentSourceInterestRate', balance: 'mortgagePaymentSourceOpeningBalance' }, 'Payment source');
+		} else if (!uuidSchema.safeParse(data.mortgagePaymentSourceChoice).success) {
+			ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Payment source account selection is invalid', path: ['mortgagePaymentSourceChoice'] });
+		}
+		const offset = data.mortgageOffsetChoice;
+		if (offset && offset !== 'none' && offset !== 'same_as_payment_source') {
+			if (offset === 'new') {
+				validateNewAccount(data.mortgageOffsetName, data.mortgageOffsetInterestRate, data.mortgageOffsetOpeningBalance, ctx, { name: 'mortgageOffsetName', rate: 'mortgageOffsetInterestRate', balance: 'mortgageOffsetOpeningBalance' }, 'Offset');
+			} else if (!uuidSchema.safeParse(offset).success) {
+				ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Offset account selection is invalid', path: ['mortgageOffsetChoice'] });
 			}
 		}
 	});
 
-const normalizeMonth = (value: string) => {
-	const parsedValue = parseYearMonthInput(value);
-	if (parsedValue === null) {
-		throw new Error('Invalid month format');
+const sharesSchema = z
+	.object({
+		name: z.string().trim().min(1, 'Asset name is required'),
+		startMonth: monthSchema,
+		shareCapitalGrowthRate: z.string().trim().regex(dec1Pattern, { message: 'Capital growth rate is required' }),
+		shareDividendYield: z.string().trim().regex(dec1Pattern, { message: 'Dividend yield is required' }),
+		shareDividendsTakenAsIncomeDate: z
+			.string()
+			.trim()
+			.regex(monthPattern, { message: 'Dividend income date must be MM YYYY' }),
+		shareBrokerageAccountOpeningBalance: z
+			.string()
+			.trim()
+			.regex(currencyPattern, { message: 'Brokerage opening balance is required' }),
+		sharePaysIntoAccountId: z
+			.string()
+			.trim()
+			.min(1, 'Select a pays into cash account')
+			.refine((v) => uuidSchema.safeParse(v).success, { message: 'Pays into account selection is invalid' })
+	});
+
+const superannuationSchema = z
+	.object({
+		name: z.string().trim().min(1, 'Asset name is required'),
+		startMonth: monthSchema,
+		superPersonId: z
+			.string()
+			.trim()
+			.min(1, 'Select a person asset')
+			.refine((v) => uuidSchema.safeParse(v).success, { message: 'Person selection is invalid' }),
+		superPreservationAge: z
+			.string()
+			.trim()
+			.regex(/^\d+$/, { message: 'Preservation age must be a whole number' }),
+		superCapitalGrowthRate: z
+			.string()
+			.trim()
+			.regex(dec2Pattern, { message: 'Capital growth rate is required' }),
+		superManagementFeeRate: z
+			.string()
+			.trim()
+			.regex(dec2Pattern, { message: 'Management fee rate is required' }),
+		superOpeningBalance: z
+			.string()
+			.trim()
+			.regex(currencyPattern, { message: 'Super opening balance is required' }),
+		superPaysIntoAccountId: z
+			.string()
+			.trim()
+			.min(1, 'Select a pays into cash account')
+			.refine((v) => uuidSchema.safeParse(v).success, { message: 'Pays into account selection is invalid' })
+	});
+
+// --- per-type create handlers ---
+
+async function handlePerson(
+	data: z.infer<typeof personSchema>,
+	scenarioId: string,
+	userId: string
+) {
+	const expenseAccount = resolveAccountInput(
+		data.expenseAccountChoice,
+		data.expenseAccountName,
+		data.expenseAccountInterestRate,
+		data.expenseAccountOpeningBalance,
+		'Expense account'
+	);
+	const incomeAccount =
+		data.useSameAccount === 'on'
+			? expenseAccount
+			: resolveAccountInput(
+					data.incomeAccountChoice,
+					data.incomeAccountName,
+					data.incomeAccountInterestRate,
+					data.incomeAccountOpeningBalance,
+					'Income account'
+				);
+	await createPersonAssetWithCashflows({
+		scenarioId,
+		userId,
+		name: data.name,
+		dob: requireYearMonthInput(data.personDob),
+		retirementAge: Number(data.retirementAge),
+		startDate: requireYearMonthInput(data.startMonth),
+		employmentIncome: data.employmentIncome ? currencySchema.parse(data.employmentIncome) : 0,
+		essentialExpenses: currencySchema.parse(data.essentialExpenses),
+		expenseAccount,
+		incomeAccount
+	});
+}
+
+async function handleProperty(
+	data: z.infer<typeof propertySchema>,
+	scenarioId: string,
+	userId: string,
+	hasPrimaryResidence: boolean
+) {
+	const resolvedPropertyUse = propertyUseSchema.safeParse(data.propertyUse).success
+		? (data.propertyUse as 'primary_residence' | 'investment_property')
+		: hasPrimaryResidence
+			? 'investment_property'
+			: 'primary_residence';
+	await createPropertyAssetWithExpense({
+		scenarioId,
+		userId,
+		name: data.name,
+		startDate: requireYearMonthInput(data.startMonth),
+		propertyUse: resolvedPropertyUse,
+		marketValue: currencySchema.parse(data.propertyMarketValue),
+		marketGrowthRate: dec1Schema.parse(data.propertyMarketGrowthRate),
+		fixedSellingCosts: currencySchema.parse(data.propertyFixedSellingCosts),
+		variableSellingCosts: dec2Schema.parse(data.propertyVariableSellingCosts),
+		saleDate: data.propertySaleDate ? requireYearMonthInput(data.propertySaleDate) : undefined,
+		ownershipExpense: currencySchema.parse(data.propertyOwnershipExpense),
+		expenseAccount: resolveAccountInput(
+			data.expenseAccountChoice,
+			data.expenseAccountName,
+			data.expenseAccountInterestRate,
+			data.expenseAccountOpeningBalance,
+			'Expenses account'
+		)
+	});
+}
+
+async function handleMortgage(
+	data: z.infer<typeof mortgageSchema>,
+	scenarioId: string,
+	userId: string
+) {
+	const details: Record<string, unknown> = {
+		termYears: Number(data.mortgageTermYears),
+		termMonths: Number(data.mortgageTermMonths),
+		interestOnly: data.mortgageInterestOnly === 'on'
+	};
+	if (data.mortgageInterestOnly === 'on') {
+		details.interestOnlyEnd = requireYearMonthInput(data.mortgageInterestOnlyEnd);
 	}
-	return parsedValue;
-};
+	const offset = data.mortgageOffsetChoice;
+	await createMortgageAssetWithAccounts({
+		scenarioId,
+		userId,
+		name: data.name,
+		startDate: requireYearMonthInput(data.startMonth),
+		propertyId: data.mortgagePropertyId,
+		details,
+		mortgageAccount: {
+			name: data.mortgageAccountName || 'Mortgage account',
+			interestRate: roundToTwo(dec2Schema.parse(data.mortgageAccountInterestRate)),
+			openingBalance: currencySchema.parse(data.mortgageAccountOpeningBalance)
+		},
+		paymentSourceAccount: resolveAccountInput(
+			data.mortgagePaymentSourceChoice,
+			data.mortgagePaymentSourceName,
+			data.mortgagePaymentSourceInterestRate,
+			data.mortgagePaymentSourceOpeningBalance,
+			'Payment source account'
+		),
+		offsetAccount:
+			offset === 'none'
+				? { type: 'none' }
+				: offset === 'same_as_payment_source'
+					? { type: 'same_as_payment_source' }
+					: resolveAccountInput(
+							offset,
+							data.mortgageOffsetName,
+							data.mortgageOffsetInterestRate,
+							data.mortgageOffsetOpeningBalance,
+							'Offset account'
+						)
+	});
+}
+
+async function handleShares(
+	data: z.infer<typeof sharesSchema>,
+	scenarioId: string,
+	rawValues: Record<string, string>
+) {
+	const cashAccountIds = new Set(
+		(await getAccountsForScenario(scenarioId))
+			.filter((account) => account.account_type === 'cash_account')
+			.map((account) => account.id)
+	);
+	if (!cashAccountIds.has(data.sharePaysIntoAccountId)) {
+		return fail(400, { errors: { sharePaysIntoAccountId: ['Select a valid cash account'] }, values: rawValues });
+	}
+	await createShareAssetWithBrokerage({
+		scenarioId,
+		name: data.name,
+		startDate: requireYearMonthInput(data.startMonth),
+		capitalGrowthRate: dec1Schema.parse(data.shareCapitalGrowthRate),
+		dividendYield: dec1Schema.parse(data.shareDividendYield),
+		dividendsTakenAsIncomeDate: requireYearMonthInput(data.shareDividendsTakenAsIncomeDate),
+		brokerageOpeningBalance: currencySchema.parse(data.shareBrokerageAccountOpeningBalance),
+		paysIntoAccountId: data.sharePaysIntoAccountId
+	});
+}
+
+async function handleSuperannuation(
+	data: z.infer<typeof superannuationSchema>,
+	scenarioId: string,
+	rawValues: Record<string, string>
+) {
+	const [personAssets, accounts] = await Promise.all([
+		getAssetsForScenario(scenarioId),
+		getAccountsForScenario(scenarioId)
+	]);
+	if (!personAssets.some((a) => a.asset_type === 'person' && a.id === data.superPersonId)) {
+		return fail(400, { errors: { superPersonId: ['Select a valid person asset'] }, values: rawValues });
+	}
+	const cashAccountIds = new Set(
+		accounts
+			.filter((account) => account.account_type === 'cash_account')
+			.map((account) => account.id)
+	);
+	if (!cashAccountIds.has(data.superPaysIntoAccountId)) {
+		return fail(400, { errors: { superPaysIntoAccountId: ['Select a valid cash account'] }, values: rawValues });
+	}
+	await createSuperannuationAssetWithAccount({
+		scenarioId,
+		name: data.name,
+		startDate: requireYearMonthInput(data.startMonth),
+		personId: data.superPersonId,
+		paysIntoAccountId: data.superPaysIntoAccountId,
+		preservationAge: Number(data.superPreservationAge),
+		capitalGrowthRate: dec2Schema.parse(data.superCapitalGrowthRate),
+		managementFeeRate: dec2Schema.parse(data.superManagementFeeRate),
+		openingBalance: currencySchema.parse(data.superOpeningBalance)
+	});
+}
+
+// --- action ---
 
 export const actions: Actions = {
 	default: async (event) => {
 		const userId = event.locals.appUserId;
-		if (!userId) {
-			const callbackUrl = encodeURIComponent(`${event.url.pathname}${event.url.search}`);
-			throw redirect(303, `/login?callbackUrl=${callbackUrl}`);
-		}
 
 		const scenarioId = event.cookies.get('currentScenarioId');
 		if (!scenarioId) {
@@ -672,335 +502,113 @@ export const actions: Actions = {
 		if (!assetType.success) {
 			throw redirect(303, '/dashboard');
 		}
-		const properties = (await getAssetsForScenario(scenario.id)).filter(
-			(asset) => asset.asset_type === 'property'
-		);
 
 		const formData = await event.request.formData();
-		const payload = {
-			assetType: assetType.data,
-			name: formData.get('name'),
-			startMonth: formData.get('startMonth'),
-			personDob: formData.get('personDob') ?? '',
-			retirementAge: formData.get('retirementAge') ?? '',
-			propertyUse: formData.get('propertyUse') ?? '',
-			propertyMarketValue: formData.get('propertyMarketValue') ?? '',
-			propertySaleDate: formData.get('propertySaleDate') ?? '',
-			propertyMarketGrowthRate: formData.get('propertyMarketGrowthRate') ?? '5',
-			propertyFixedSellingCosts: formData.get('propertyFixedSellingCosts') ?? '10000',
-			propertyVariableSellingCosts: formData.get('propertyVariableSellingCosts') ?? '1.65',
-			propertyOwnershipExpense: formData.get('propertyOwnershipExpense') ?? '',
-			shareCapitalGrowthRate: formData.get('shareCapitalGrowthRate') ?? '',
-			shareDividendYield: formData.get('shareDividendYield') ?? '',
-			shareDividendsTakenAsIncomeDate: formData.get('shareDividendsTakenAsIncomeDate') ?? '',
-			shareBrokerageAccountOpeningBalance:
-				formData.get('shareBrokerageAccountOpeningBalance') ?? '',
-			sharePaysIntoAccountId: formData.get('sharePaysIntoAccountId') ?? '',
-			superPersonId: formData.get('superPersonId') ?? '',
-			superPreservationAge: formData.get('superPreservationAge') ?? '',
-			superCapitalGrowthRate: formData.get('superCapitalGrowthRate') ?? '',
-			superManagementFeeRate: formData.get('superManagementFeeRate') ?? '',
-			superOpeningBalance: formData.get('superOpeningBalance') ?? '',
-			superPaysIntoAccountId: formData.get('superPaysIntoAccountId') ?? '',
-			mortgagePropertyId: formData.get('mortgagePropertyId') ?? '',
-			mortgageTermYears: formData.get('mortgageTermYears') ?? '',
-			mortgageTermMonths: formData.get('mortgageTermMonths') ?? '',
-			mortgageInterestOnly: formData.get('mortgageInterestOnly') ?? '',
-			mortgageInterestOnlyEnd: formData.get('mortgageInterestOnlyEnd') ?? '',
-			mortgageAccountName: formData.get('mortgageAccountName') ?? '',
-			mortgageAccountInterestRate: formData.get('mortgageAccountInterestRate') ?? '',
-			mortgageAccountOpeningBalance: formData.get('mortgageAccountOpeningBalance') ?? '',
-			mortgagePaymentSourceChoice: formData.get('mortgagePaymentSourceChoice') ?? '',
-			mortgagePaymentSourceName: formData.get('mortgagePaymentSourceName') ?? '',
-			mortgagePaymentSourceInterestRate: formData.get('mortgagePaymentSourceInterestRate') ?? '',
-			mortgagePaymentSourceOpeningBalance:
-				formData.get('mortgagePaymentSourceOpeningBalance') ?? '',
-			mortgageOffsetChoice: formData.get('mortgageOffsetChoice') ?? 'none',
-			mortgageOffsetName: formData.get('mortgageOffsetName') ?? '',
-			mortgageOffsetInterestRate: formData.get('mortgageOffsetInterestRate') ?? '',
-			mortgageOffsetOpeningBalance: formData.get('mortgageOffsetOpeningBalance') ?? '',
-			employmentIncome: formData.get('employmentIncome') ?? '',
-			essentialExpenses: formData.get('essentialExpenses') ?? '',
-			incomeAccountChoice: formData.get('incomeAccountChoice') ?? '',
-			expenseAccountChoice: formData.get('expenseAccountChoice') ?? '',
-			useSameAccount: formData.get('useSameAccount') ?? '',
-			incomeAccountName: formData.get('incomeAccountName') ?? '',
-			incomeAccountInterestRate: formData.get('incomeAccountInterestRate') ?? '',
-			incomeAccountOpeningBalance: formData.get('incomeAccountOpeningBalance') ?? '',
-			expenseAccountName: formData.get('expenseAccountName') ?? '',
-			expenseAccountInterestRate: formData.get('expenseAccountInterestRate') ?? '',
-			expenseAccountOpeningBalance: formData.get('expenseAccountOpeningBalance') ?? ''
+		const rawValues = {
+			name: String(formData.get('name') ?? ''),
+			startMonth: String(formData.get('startMonth') ?? ''),
+			personDob: String(formData.get('personDob') ?? ''),
+			retirementAge: String(formData.get('retirementAge') ?? ''),
+			propertyUse: String(formData.get('propertyUse') ?? ''),
+			propertyMarketValue: String(formData.get('propertyMarketValue') ?? ''),
+			propertySaleDate: String(formData.get('propertySaleDate') ?? ''),
+			propertyMarketGrowthRate: String(formData.get('propertyMarketGrowthRate') ?? '5'),
+			propertyFixedSellingCosts: String(formData.get('propertyFixedSellingCosts') ?? '10000'),
+			propertyVariableSellingCosts: String(formData.get('propertyVariableSellingCosts') ?? '1.65'),
+			propertyOwnershipExpense: String(formData.get('propertyOwnershipExpense') ?? ''),
+			shareCapitalGrowthRate: String(formData.get('shareCapitalGrowthRate') ?? ''),
+			shareDividendYield: String(formData.get('shareDividendYield') ?? ''),
+			shareDividendsTakenAsIncomeDate: String(formData.get('shareDividendsTakenAsIncomeDate') ?? ''),
+			shareBrokerageAccountOpeningBalance: String(formData.get('shareBrokerageAccountOpeningBalance') ?? ''),
+			sharePaysIntoAccountId: String(formData.get('sharePaysIntoAccountId') ?? ''),
+			superPersonId: String(formData.get('superPersonId') ?? ''),
+			superPreservationAge: String(formData.get('superPreservationAge') ?? ''),
+			superCapitalGrowthRate: String(formData.get('superCapitalGrowthRate') ?? ''),
+			superManagementFeeRate: String(formData.get('superManagementFeeRate') ?? ''),
+			superOpeningBalance: String(formData.get('superOpeningBalance') ?? ''),
+			superPaysIntoAccountId: String(formData.get('superPaysIntoAccountId') ?? ''),
+			mortgagePropertyId: String(formData.get('mortgagePropertyId') ?? ''),
+			mortgageTermYears: String(formData.get('mortgageTermYears') ?? ''),
+			mortgageTermMonths: String(formData.get('mortgageTermMonths') ?? ''),
+			mortgageInterestOnly: String(formData.get('mortgageInterestOnly') ?? ''),
+			mortgageInterestOnlyEnd: String(formData.get('mortgageInterestOnlyEnd') ?? ''),
+			mortgageAccountName: String(formData.get('mortgageAccountName') ?? ''),
+			mortgageAccountInterestRate: String(formData.get('mortgageAccountInterestRate') ?? ''),
+			mortgageAccountOpeningBalance: String(formData.get('mortgageAccountOpeningBalance') ?? ''),
+			mortgagePaymentSourceChoice: String(formData.get('mortgagePaymentSourceChoice') ?? ''),
+			mortgagePaymentSourceName: String(formData.get('mortgagePaymentSourceName') ?? ''),
+			mortgagePaymentSourceInterestRate: String(formData.get('mortgagePaymentSourceInterestRate') ?? ''),
+			mortgagePaymentSourceOpeningBalance: String(formData.get('mortgagePaymentSourceOpeningBalance') ?? ''),
+			mortgageOffsetChoice: String(formData.get('mortgageOffsetChoice') ?? 'none'),
+			mortgageOffsetName: String(formData.get('mortgageOffsetName') ?? ''),
+			mortgageOffsetInterestRate: String(formData.get('mortgageOffsetInterestRate') ?? ''),
+			mortgageOffsetOpeningBalance: String(formData.get('mortgageOffsetOpeningBalance') ?? ''),
+			employmentIncome: String(formData.get('employmentIncome') ?? ''),
+			essentialExpenses: String(formData.get('essentialExpenses') ?? ''),
+			incomeAccountChoice: String(formData.get('incomeAccountChoice') ?? ''),
+			expenseAccountChoice: String(formData.get('expenseAccountChoice') ?? ''),
+			useSameAccount: String(formData.get('useSameAccount') ?? ''),
+			incomeAccountName: String(formData.get('incomeAccountName') ?? ''),
+			incomeAccountInterestRate: String(formData.get('incomeAccountInterestRate') ?? ''),
+			incomeAccountOpeningBalance: String(formData.get('incomeAccountOpeningBalance') ?? ''),
+			expenseAccountName: String(formData.get('expenseAccountName') ?? ''),
+			expenseAccountInterestRate: String(formData.get('expenseAccountInterestRate') ?? ''),
+			expenseAccountOpeningBalance: String(formData.get('expenseAccountOpeningBalance') ?? '')
 		};
 
-		const parsed = createAssetSchema.safeParse(payload);
-		if (!parsed.success) {
-			const errors = parsed.error.flatten().fieldErrors;
-			return fail(400, { errors, values: payload });
-		}
-
-		const {
-			name,
-			startMonth,
-			personDob,
-			retirementAge,
-			propertyUse,
-			propertyMarketValue,
-			propertySaleDate,
-			propertyMarketGrowthRate,
-			propertyFixedSellingCosts,
-			propertyVariableSellingCosts,
-			propertyOwnershipExpense,
-			shareCapitalGrowthRate,
-			shareDividendYield,
-			shareDividendsTakenAsIncomeDate,
-			shareBrokerageAccountOpeningBalance,
-			sharePaysIntoAccountId,
-			superPersonId,
-			superPreservationAge,
-			superCapitalGrowthRate,
-			superManagementFeeRate,
-			superOpeningBalance,
-			superPaysIntoAccountId,
-			mortgagePropertyId,
-			mortgageTermYears,
-			mortgageTermMonths,
-			mortgageInterestOnly,
-			mortgageInterestOnlyEnd,
-			mortgageAccountName,
-			mortgageAccountInterestRate,
-			mortgageAccountOpeningBalance,
-			mortgagePaymentSourceChoice,
-			mortgagePaymentSourceName,
-			mortgagePaymentSourceInterestRate,
-			mortgagePaymentSourceOpeningBalance,
-			mortgageOffsetChoice,
-			mortgageOffsetName,
-			mortgageOffsetInterestRate,
-			mortgageOffsetOpeningBalance,
-			employmentIncome,
-			essentialExpenses,
-			incomeAccountChoice,
-			expenseAccountChoice,
-			useSameAccount,
-			incomeAccountName,
-			incomeAccountInterestRate,
-			incomeAccountOpeningBalance,
-			expenseAccountName,
-			expenseAccountInterestRate,
-			expenseAccountOpeningBalance
-		} = parsed.data;
-
-		const startDate = normalizeMonth(startMonth);
-
 		try {
-			if (assetType.data === 'person') {
-				await createPersonAssetWithCashflows({
-					scenarioId: scenario.id,
-					userId,
-					name,
-					dob: normalizeMonth(personDob ?? ''),
-					retirementAge: Number(retirementAge),
-					startDate,
-					employmentIncome: employmentIncome ? currencySchema.parse(employmentIncome) : 0,
-					essentialExpenses: currencySchema.parse(essentialExpenses ?? ''),
-					expenseAccount:
-						expenseAccountChoice === 'new'
-							? {
-									type: 'new',
-									name: expenseAccountName ?? 'Expense account',
-									interestRate: roundToTwo(
-										decimalUpToTwoPlacesSchema.parse(expenseAccountInterestRate ?? '0')
-									),
-									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
-								}
-							: { type: 'existing', accountId: expenseAccountChoice ?? '' },
-					incomeAccount:
-						useSameAccount === 'on'
-							? expenseAccountChoice === 'new'
-								? {
-										type: 'new',
-										name: expenseAccountName ?? 'Expense account',
-										interestRate: roundToTwo(
-											decimalUpToTwoPlacesSchema.parse(expenseAccountInterestRate ?? '0')
-										),
-										openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
-									}
-								: { type: 'existing', accountId: expenseAccountChoice ?? '' }
-							: incomeAccountChoice === 'new'
-								? {
-										type: 'new',
-										name: incomeAccountName ?? 'Income account',
-										interestRate: roundToTwo(
-											decimalUpToTwoPlacesSchema.parse(incomeAccountInterestRate ?? '0')
-										),
-										openingBalance: currencySchema.parse(incomeAccountOpeningBalance ?? '0')
-									}
-								: { type: 'existing', accountId: incomeAccountChoice ?? '' }
-				});
-			} else if (assetType.data === 'property') {
-				const resolvedPropertyUse = propertyUseSchema.safeParse(propertyUse).success
-					? propertyUseSchema.parse(propertyUse)
-					: properties.length === 0
-						? 'primary_residence'
-						: 'investment_property';
-				await createPropertyAssetWithExpense({
-					scenarioId: scenario.id,
-					userId,
-					name,
-					startDate,
-					propertyUse: resolvedPropertyUse,
-					marketValue: currencySchema.parse(propertyMarketValue ?? ''),
-					marketGrowthRate: decimalUpToOnePlaceSchema.parse(propertyMarketGrowthRate ?? '5'),
-					fixedSellingCosts: currencySchema.parse(propertyFixedSellingCosts ?? '10000'),
-					variableSellingCosts: decimalUpToTwoPlacesSchema.parse(
-						propertyVariableSellingCosts ?? '1.65'
-					),
-					saleDate: propertySaleDate ? normalizeMonth(propertySaleDate) : undefined,
-					ownershipExpense: currencySchema.parse(propertyOwnershipExpense ?? ''),
-					expenseAccount:
-						expenseAccountChoice === 'new'
-							? {
-									type: 'new',
-									name: expenseAccountName ?? 'Expenses account',
-									interestRate: roundToTwo(
-										decimalUpToTwoPlacesSchema.parse(expenseAccountInterestRate ?? '0')
-									),
-									openingBalance: currencySchema.parse(expenseAccountOpeningBalance ?? '0')
-								}
-							: { type: 'existing', accountId: expenseAccountChoice ?? '' }
-				});
-			} else if (assetType.data === 'mortgage') {
-				const mortgageDetails: Record<string, unknown> = {
-					termYears: Number(mortgageTermYears ?? 0),
-					termMonths: Number(mortgageTermMonths ?? 0),
-					interestOnly: mortgageInterestOnly === 'on'
-				};
-				if (mortgageInterestOnly === 'on') {
-					mortgageDetails.interestOnlyEnd = normalizeMonth(mortgageInterestOnlyEnd ?? '');
+			switch (assetType.data) {
+				case 'person': {
+					const result = personSchema.safeParse(rawValues);
+					if (!result.success) {
+						return fail(400, { errors: result.error.flatten().fieldErrors, values: rawValues });
+					}
+					await handlePerson(result.data, scenario.id, userId);
+					break;
 				}
-				await createMortgageAssetWithAccounts({
-					scenarioId: scenario.id,
-					userId,
-					name,
-					startDate,
-					propertyId: mortgagePropertyId ?? '',
-					details: mortgageDetails,
-					mortgageAccount: {
-						name: mortgageAccountName ?? 'Mortgage account',
-						interestRate: roundToTwo(
-							decimalUpToTwoPlacesSchema.parse(mortgageAccountInterestRate ?? '0')
-						),
-						openingBalance: currencySchema.parse(mortgageAccountOpeningBalance ?? '0')
-					},
-					paymentSourceAccount:
-						mortgagePaymentSourceChoice === 'new'
-							? {
-									type: 'new',
-									name: mortgagePaymentSourceName ?? 'Payment source account',
-									interestRate: roundToTwo(
-										decimalUpToTwoPlacesSchema.parse(mortgagePaymentSourceInterestRate ?? '0')
-									),
-									openingBalance: currencySchema.parse(mortgagePaymentSourceOpeningBalance ?? '0')
-								}
-							: {
-									type: 'existing',
-									accountId: mortgagePaymentSourceChoice ?? ''
-								},
-					offsetAccount:
-						mortgageOffsetChoice === 'none'
-							? { type: 'none' }
-							: mortgageOffsetChoice === 'same_as_payment_source'
-								? { type: 'same_as_payment_source' }
-								: mortgageOffsetChoice === 'new'
-									? {
-											type: 'new',
-											name: mortgageOffsetName ?? 'Offset account',
-											interestRate: roundToTwo(
-												decimalUpToTwoPlacesSchema.parse(mortgageOffsetInterestRate ?? '0')
-											),
-											openingBalance: currencySchema.parse(mortgageOffsetOpeningBalance ?? '0')
-										}
-									: {
-											type: 'existing',
-											accountId: mortgageOffsetChoice ?? ''
-										}
-				});
-			} else if (assetType.data === 'shares') {
-				const cashAccountIds = new Set(
-					(await getAccountsForScenario(scenario.id))
-						.filter((account) => account.account_type === 'cash_account')
-						.map((account) => account.id)
-				);
-				if (!cashAccountIds.has(sharePaysIntoAccountId ?? '')) {
-					const errors: Record<string, string[]> = {
-						sharePaysIntoAccountId: ['Select a valid cash account']
-					};
-					return fail(400, {
-						errors,
-						values: payload
-					});
+				case 'property': {
+					const result = propertySchema.safeParse(rawValues);
+					if (!result.success) {
+						return fail(400, { errors: result.error.flatten().fieldErrors, values: rawValues });
+					}
+					const properties = await getAssetsForScenario(scenario.id);
+					const hasPrimaryResidence = properties.some(
+						(a) => a.asset_type === 'property' && a.details?.propertyUse === 'primary_residence'
+					);
+					await handleProperty(result.data, scenario.id, userId, hasPrimaryResidence);
+					break;
 				}
-				await createShareAssetWithBrokerage({
-					scenarioId: scenario.id,
-					name,
-					startDate,
-					capitalGrowthRate: decimalUpToOnePlaceSchema.parse(shareCapitalGrowthRate ?? '0'),
-					dividendYield: decimalUpToOnePlaceSchema.parse(shareDividendYield ?? '0'),
-					dividendsTakenAsIncomeDate: normalizeMonth(shareDividendsTakenAsIncomeDate ?? ''),
-					brokerageOpeningBalance: currencySchema.parse(shareBrokerageAccountOpeningBalance ?? '0'),
-					paysIntoAccountId: sharePaysIntoAccountId ?? ''
-				});
-			} else if (assetType.data === 'superannuation') {
-				const personAssets = (await getAssetsForScenario(scenario.id)).filter(
-					(asset) => asset.asset_type === 'person'
-				);
-				if (!personAssets.some((person) => person.id === superPersonId)) {
-					const errors: Record<string, string[]> = {
-						superPersonId: ['Select a valid person asset']
-					};
-					return fail(400, {
-						errors,
-						values: payload
-					});
+				case 'mortgage': {
+					const result = mortgageSchema.safeParse(rawValues);
+					if (!result.success) {
+						return fail(400, { errors: result.error.flatten().fieldErrors, values: rawValues });
+					}
+					await handleMortgage(result.data, scenario.id, userId);
+					break;
 				}
-				const cashAccountIds = new Set(
-					(await getAccountsForScenario(scenario.id))
-						.filter((account) => account.account_type === 'cash_account')
-						.map((account) => account.id)
-				);
-				if (!cashAccountIds.has(superPaysIntoAccountId ?? '')) {
-					const errors: Record<string, string[]> = {
-						superPaysIntoAccountId: ['Select a valid cash account']
-					};
-					return fail(400, {
-						errors,
-						values: payload
-					});
+				case 'shares': {
+					const result = sharesSchema.safeParse(rawValues);
+					if (!result.success) {
+						return fail(400, { errors: result.error.flatten().fieldErrors, values: rawValues });
+					}
+					const dbResult = await handleShares(result.data, scenario.id, rawValues);
+					if (dbResult) return dbResult;
+					break;
 				}
-				await createSuperannuationAssetWithAccount({
-					scenarioId: scenario.id,
-					name,
-					startDate,
-					personId: superPersonId ?? '',
-					paysIntoAccountId: superPaysIntoAccountId ?? '',
-					preservationAge: Number(superPreservationAge ?? 60),
-					capitalGrowthRate: decimalUpToTwoPlacesSchema.parse(superCapitalGrowthRate ?? '0'),
-					managementFeeRate: decimalUpToTwoPlacesSchema.parse(superManagementFeeRate ?? '0'),
-					openingBalance: currencySchema.parse(superOpeningBalance ?? '0')
-				});
-			} else {
-				await createAsset({
-					scenarioId: scenario.id,
-					assetType: assetType.data,
-					name,
-					startDate,
-					details: {}
-				});
+				case 'superannuation': {
+					const result = superannuationSchema.safeParse(rawValues);
+					if (!result.success) {
+						return fail(400, { errors: result.error.flatten().fieldErrors, values: rawValues });
+					}
+					const dbResult = await handleSuperannuation(result.data, scenario.id, rawValues);
+					if (dbResult) return dbResult;
+					break;
+				}
 			}
-		} catch (error) {
+		} catch {
 			return fail(500, {
 				formError: 'Unable to create asset. Please check the inputs and try again.',
-				values: payload
+				values: rawValues
 			});
 		}
 
