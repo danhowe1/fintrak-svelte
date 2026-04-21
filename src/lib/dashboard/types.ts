@@ -27,6 +27,11 @@ export type AccountListItem = {
 	start_date: number;
 	opening_balance: number;
 	details: Record<string, unknown>;
+	created_at: string;
+	relationships: {
+		assetName: string;
+		role: 'held_in' | 'funding_source' | 'offsets' | 'secured_by' | 'pays_into';
+	}[];
 };
 
 export type AssetAccountLink = {
@@ -182,16 +187,36 @@ export type TransferEditDraft = {
 
 export type AutoFundingRule = {
 	id: string;
+	scenario_id: string;
 	source_account_id: string;
 	target_account_id: string;
 	priority_order: number;
+	enabled: boolean;
+	min_target_balance: number;
+	created_at: string;
+	updated_at: string;
 };
 
 export type AutoSweepRule = {
 	id: string;
+	scenario_id: string;
 	source_account_id: string;
 	destination_account_id: string;
 	priority_order: number;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
+};
+
+export type AccountBalanceTarget = {
+	id: string;
+	scenario_id: string;
+	account_id: string;
+	min_balance: number;
+	max_balance: number | null;
+	enabled: boolean;
+	created_at: string;
+	updated_at: string;
 };
 
 export type Stage3Profile = 'Conservative' | 'Balanced' | 'Growth';

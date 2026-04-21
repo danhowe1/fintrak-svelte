@@ -1,8 +1,7 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { afterUpdate, onDestroy, onMount, tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/stores';
-	import Chart from 'chart.js/auto';
 	import { formatYearMonthInput, normalizeYearMonthValue } from '$lib/yearMonth';
 	import { postAction } from '$lib/dashboard/action-client';
 	import {
@@ -210,7 +209,6 @@
 		dashboardLoadState.setWhatIfLoadError(message);
 	const dashboardUiState = createDashboardUiStateStore();
 
-	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
 	const cashflowCategoryOptions = [
 		{ value: 'living_expenses', label: 'Living expenses' },
 		{ value: 'employment_income', label: 'Employment income' },
@@ -2141,129 +2139,6 @@
 		transactionSortDirection = 'asc';
 	};
 
-	const formatAxisCurrency = (value: number) =>
-		new Intl.NumberFormat('en-AU', {
-			style: 'currency',
-			currency: 'AUD',
-			maximumFractionDigits: 0
-		}).format(value);
-
-	let chart: Chart | null = null;
-	let chartCanvas: HTMLCanvasElement | null = null;
-	const buildChartData = () => {
-		const labels = chartAxisPoints.map((point: any) => point.monthLabel);
-		const datasets = [];
-
-		if (totalSeries) {
-			datasets.push({
-				label: 'Total',
-				data: totalSeries.points.map((point) => point.balance),
-				borderColor: '#111827',
-				backgroundColor: 'rgba(17,24,39,0.08)',
-				borderWidth: 2.5,
-				pointRadius: 0,
-				tension: 0.2
-			});
-		}
-
-		for (const [index, series] of chartProjection.series.entries()) {
-			datasets.push({
-				label: series.name,
-				data: series.points.map((point: any) => point.balance),
-				borderColor: chartColors[index % chartColors.length],
-				backgroundColor: 'transparent',
-				borderWidth: 2,
-				pointRadius: 0,
-				tension: 0.2
-			});
-		}
-
-		return { labels, datasets };
-	};
-
-	const buildChartOptions = () => ({
-		responsive: true,
-		maintainAspectRatio: false,
-		plugins: {
-			legend: {
-				display: true,
-				position: 'bottom' as const,
-				labels: {
-					usePointStyle: true,
-					boxWidth: 8,
-					boxHeight: 8,
-					color: '#64748b',
-					font: { size: 11, weight: 600 }
-				}
-			},
-			tooltip: {
-				enabled: true,
-				callbacks: {
-					label: (context: any) => {
-						const label = context?.dataset?.label ?? '';
-						const yValue = typeof context?.parsed?.y === 'number' ? context.parsed.y : 0;
-						return `${label}: ${formatAxisCurrency(yValue)}`;
-					}
-				}
-			},
-			zeroLine: {}
-		},
-		scales: {
-			x: {
-				ticks: {
-					autoSkip: false,
-					maxRotation: 60,
-					minRotation: 60,
-					color: '#94a3b8',
-					font: { size: 9 }
-				},
-				grid: {
-					color: '#e2e8f0',
-					borderDash: [4, 4]
-				}
-			},
-			y: {
-				min: balanceExtent.min,
-				max: balanceExtent.max,
-				ticks: {
-					color: '#94a3b8',
-					font: { size: 9 },
-					callback: (value: number | string) =>
-						formatAxisCurrency(typeof value === 'string' ? Number(value) : value)
-				},
-				title: {
-					display: true,
-					text: '$ Amount',
-					color: '#64748b',
-					font: { size: 10, weight: '600' }
-				},
-				grid: {
-					color: '#e2e8f0',
-					borderDash: [4, 4]
-				}
-			}
-		}
-	});
-
-	const zeroLinePlugin = {
-		id: 'zeroLine',
-		afterDraw: (chartInstance: Chart) => {
-			const yScale = chartInstance.scales?.y;
-			if (!yScale) return;
-			const zeroY = yScale.getPixelForValue(0);
-			if (zeroY < yScale.top || zeroY > yScale.bottom) return;
-			const ctx = chartInstance.ctx;
-			ctx.save();
-			ctx.strokeStyle = '#94a3b8';
-			ctx.lineWidth = 1.5;
-			ctx.beginPath();
-			ctx.moveTo(chartInstance.chartArea.left, zeroY);
-			ctx.lineTo(chartInstance.chartArea.right, zeroY);
-			ctx.stroke();
-			ctx.restore();
-		}
-	};
-
 	$: dashboardMutations = createDashboardMutationController({
 		scenarioId: data.scenario.id,
 		getAutoRunProjection: () => autoRunProjection,
@@ -2278,16 +2153,16 @@
 		setFundingTabError: (value) => {
 			fundingTabError = value;
 		},
-		getAutoFundingRules: () => (autoFundingRules ?? []) as Array<Record<string, unknown>>,
+		getAutoFundingRules: () => autoFundingRules ?? [],
 		setAutoFundingRules: (rules) => {
-			setAutoFundingRules(rules as typeof autoFundingRules);
+			setAutoFundingRules(rules);
 		},
-		getAutoSweepRules: () => (autoSweepRules ?? []) as Array<Record<string, unknown>>,
+		getAutoSweepRules: () => autoSweepRules ?? [],
 		setAutoSweepRules: (rules) => {
-			dashboardWhatIfState.setAutoSweepRules(rules as typeof autoSweepRules);
+			dashboardWhatIfState.setAutoSweepRules(rules);
 		},
 		setAccountBalanceTargets: (targets) => {
-			dashboardWhatIfState.setAccountBalanceTargets(targets as typeof accountBalanceTargets);
+			dashboardWhatIfState.setAccountBalanceTargets(targets);
 		},
 		getFundingReserveDraft: (accountId) => fundingReserveDrafts[accountId] ?? '0',
 		getFundingCapDraft: (accountId) => fundingCapDrafts[accountId] ?? '',
@@ -2336,9 +2211,9 @@
 		setAccountEditDraft: (accountId, updates) => {
 			setAccountEditDraft(accountId, updates);
 		},
-		getAccountsList: () => accountsList as Array<Record<string, unknown>>,
+		getAccountsList: () => accountsList,
 		setAccountsList: (accounts) => {
-			dashboardWhatIfState.setAccountsList(accounts as typeof accountsList);
+			dashboardWhatIfState.setAccountsList(accounts);
 		},
 		setAccountInlineError: (message) => {
 			dashboardUiState.setAccountInlineError(message);
@@ -2360,7 +2235,11 @@
 			formatRate,
 			queueInflationRateChange,
 			projectionError: $dashboardLoadState.projectionError,
+			projectionVersion,
 			chartProjection,
+			totalSeries,
+			balanceExtent,
+			chartAxisPoints,
 			balanceSheetHeaders,
 			balanceSheetRows,
 			profitLossRows,
@@ -2608,46 +2487,6 @@
 		});
 	});
 
-	onDestroy(() => {
-		chart?.destroy();
-		chart = null;
-	});
-
-	const initChart = () => {
-		if (projectionView !== 'balances') return;
-		if (!chartCanvas || chart) return;
-		chart = new Chart(chartCanvas, {
-			type: 'line',
-			data: buildChartData(),
-			options: buildChartOptions(),
-			plugins: [zeroLinePlugin]
-		});
-	};
-
-	$: if (projectionView !== 'balances' && chart) {
-		chart.destroy();
-		chart = null;
-	}
-	$: if (projectionView === 'balances' && chartProjection.series.length === 0 && chart) {
-		chart.destroy();
-		chart = null;
-	}
-
-	$: if (
-		chart &&
-		projectionView === 'balances' &&
-		projectionVersion &&
-		projectionBalanceSource &&
-		projectionRange
-	) {
-		chart.data = buildChartData();
-		chart.options = buildChartOptions();
-		chart.update();
-	}
-
-	afterUpdate(() => {
-		initChart();
-	});
 </script>
 
 <section class="dashboard-shell not-prose -mt-8">
@@ -2658,7 +2497,6 @@
 				bind:projectionView
 				bind:projectionBalanceSource
 				bind:autoRunProjection
-				bind:chartCanvas
 			/>
 			<WhatIfPanel
 				{...dashboardSections.whatIfPanelProps}

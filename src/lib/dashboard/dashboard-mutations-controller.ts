@@ -1,6 +1,10 @@
 import { getPayloadErrorMessage, postAction } from '$lib/dashboard/action-client';
 import type {
+	AccountBalanceTarget,
 	AccountEditDraft,
+	AccountListItem,
+	AutoFundingRule,
+	AutoSweepRule,
 	CashflowDraft,
 	CashflowSummary,
 	TransferDraft,
@@ -51,11 +55,11 @@ export type DashboardMutationControllerDeps = {
 	setWhatIfLoadError?: SetWhatIfLoadError;
 
 	setFundingTabError: (value: string) => void;
-	getAutoFundingRules: () => Array<Record<string, unknown>>;
-	setAutoFundingRules: (rules: Array<Record<string, unknown>>) => void;
-	getAutoSweepRules: () => Array<Record<string, unknown>>;
-	setAutoSweepRules: (rules: Array<Record<string, unknown>>) => void;
-	setAccountBalanceTargets: (targets: Array<Record<string, unknown>>) => void;
+	getAutoFundingRules: () => AutoFundingRule[];
+	setAutoFundingRules: (rules: AutoFundingRule[]) => void;
+	getAutoSweepRules: () => AutoSweepRule[];
+	setAutoSweepRules: (rules: AutoSweepRule[]) => void;
+	setAccountBalanceTargets: (targets: AccountBalanceTarget[]) => void;
 	getFundingReserveDraft: (accountId: string) => string;
 	getFundingCapDraft: (accountId: string) => string;
 	setReserveOrderOverride: (targetAccountId: string, orderedRuleIds: string[]) => void;
@@ -87,8 +91,8 @@ export type DashboardMutationControllerDeps = {
 
 	getAccountEditDraft: (accountId: string) => AccountEditDraft;
 	setAccountEditDraft: (accountId: string, updates: Partial<AccountEditDraft>) => void;
-	getAccountsList: () => Array<Record<string, unknown>>;
-	setAccountsList: (accounts: Array<Record<string, unknown>>) => void;
+	getAccountsList: () => AccountListItem[];
+	setAccountsList: (accounts: AccountListItem[]) => void;
 	setAccountInlineError: (message: string) => void;
 	normalizeYearMonthValue: (value: unknown) => number | null;
 	roundToTwo: (value: number) => number;
@@ -121,7 +125,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				selectedSourceAccountId,
 				scenarioId: deps.scenarioId,
 				autoRunProjection: deps.getAutoRunProjection(),
-				autoFundingRules: deps.getAutoFundingRules() as any,
+				autoFundingRules: deps.getAutoFundingRules(),
 				withLock: deps.withLock,
 				postAction,
 				setAutoFundingRules: deps.setAutoFundingRules,
@@ -136,7 +140,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				ruleId,
 				scenarioId: deps.scenarioId,
 				autoRunProjection: deps.getAutoRunProjection(),
-				autoFundingRules: deps.getAutoFundingRules() as any,
+				autoFundingRules: deps.getAutoFundingRules(),
 				withLock: deps.withLock,
 				postAction,
 				setAutoFundingRules: deps.setAutoFundingRules,
@@ -153,7 +157,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				direction,
 				scenarioId: deps.scenarioId,
 				autoRunProjection: deps.getAutoRunProjection(),
-				autoFundingRules: deps.getAutoFundingRules() as any,
+				autoFundingRules: deps.getAutoFundingRules(),
 				withLock: deps.withLock,
 				postAction,
 				setAutoFundingRules: deps.setAutoFundingRules,
@@ -173,7 +177,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				selectedDestinationAccountId,
 				scenarioId: deps.scenarioId,
 				autoRunProjection: deps.getAutoRunProjection(),
-				autoSweepRules: deps.getAutoSweepRules() as any,
+				autoSweepRules: deps.getAutoSweepRules(),
 				withLock: deps.withLock,
 				postAction,
 				setAutoSweepRules: deps.setAutoSweepRules,
@@ -188,7 +192,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				ruleId,
 				scenarioId: deps.scenarioId,
 				autoRunProjection: deps.getAutoRunProjection(),
-				autoSweepRules: deps.getAutoSweepRules() as any,
+				autoSweepRules: deps.getAutoSweepRules(),
 				withLock: deps.withLock,
 				postAction,
 				setAutoSweepRules: deps.setAutoSweepRules,
@@ -205,7 +209,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 				direction,
 				scenarioId: deps.scenarioId,
 				autoRunProjection: deps.getAutoRunProjection(),
-				autoSweepRules: deps.getAutoSweepRules() as any,
+				autoSweepRules: deps.getAutoSweepRules(),
 				withLock: deps.withLock,
 				postAction,
 				setAutoSweepRules: deps.setAutoSweepRules,
@@ -497,7 +501,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 			accountId,
 			draft: deps.getAccountEditDraft(accountId),
 			scenarioId: deps.scenarioId,
-			accounts: deps.getAccountsList() as any,
+			accounts: deps.getAccountsList(),
 			autoRunProjection: deps.getAutoRunProjection(),
 			withLock: deps.withLock,
 			isValidMonthYear: deps.isValidMonthYear,
@@ -511,7 +515,7 @@ export const createDashboardMutationController = (deps: DashboardMutationControl
 			deps.setProjectionError(result.error);
 			return;
 		}
-		deps.setAccountsList(result.accounts as any);
+		deps.setAccountsList(result.accounts);
 		deps.setAccountEditDraft(accountId, result.nextDraft);
 		deps.setAccountInlineError('');
 	};

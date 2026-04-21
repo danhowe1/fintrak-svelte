@@ -9,7 +9,7 @@ type PlannerPanelProps = ComponentProps<typeof PlannerPanel>;
 
 export type ProjectionPanelStaticProps = Omit<
 	ProjectionPanelProps,
-	'projectionView' | 'projectionBalanceSource' | 'autoRunProjection' | 'chartCanvas'
+	'projectionView' | 'projectionBalanceSource' | 'autoRunProjection'
 >;
 
 export type WhatIfPanelStaticProps = Omit<WhatIfPanelProps, 'assetPanelTab' | 'whatIfPanelElement'>;

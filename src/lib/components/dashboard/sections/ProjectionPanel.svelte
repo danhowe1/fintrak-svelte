@@ -1,5 +1,7 @@
 <script lang="ts">
 	import type { TransactionSortKey } from '$lib/dashboard/types';
+	import { afterUpdate, onDestroy } from 'svelte';
+	import Chart from 'chart.js/auto';
 	import AppTable from '$lib/components/ui/AppTable.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import SegmentedControl from '$lib/components/ui/SegmentedControl.svelte';
@@ -10,6 +12,7 @@
 	export let projectionView: 'balances' | 'balance_sheet' | 'profit_loss' | 'transactions';
 	export let projectionBalanceSource: 'assets' | 'accounts' | 'net_worth' | 'liquidity';
 	export let projectionRange: '1y' | '5y' | '10y' | 'all';
+	export let projectionVersion: number;
 	export let isUpdating: boolean;
 	export let autoRunProjection: boolean;
 	export let runProjectionNow: () => void | Promise<void>;
@@ -22,7 +25,9 @@
 		series: any[];
 		transactions: any[];
 	};
-	export let chartCanvas: HTMLCanvasElement | null = null;
+	export let totalSeries: { points: Array<{ balance: number }> } | null;
+	export let balanceExtent: { min: number; max: number };
+	export let chartAxisPoints: Array<{ monthLabel: string }>;
 	export let balanceSheetHeaders: string[];
 	export let balanceSheetRows: Array<{ name: string; values: number[] }>;
 	export let profitLossRows: any[];
@@ -78,6 +83,162 @@
 						value.toLowerCase().includes(normalizedTransactionSearch)
 					)
 				);
+
+	const chartColors = ['#0f766e', '#1d4ed8', '#7c3aed', '#b45309', '#be123c', '#0f172a'];
+	let chart: Chart | null = null;
+	let chartCanvas: HTMLCanvasElement | null = null;
+
+	const formatAxisCurrency = (value: number) =>
+		new Intl.NumberFormat('en-AU', {
+			style: 'currency',
+			currency: 'AUD',
+			maximumFractionDigits: 0
+		}).format(value);
+
+	const buildChartData = () => {
+		const labels = chartAxisPoints.map((point) => point.monthLabel);
+		const datasets = [];
+		if (totalSeries) {
+			datasets.push({
+				label: 'Total',
+				data: totalSeries.points.map((point) => point.balance),
+				borderColor: '#111827',
+				backgroundColor: 'rgba(17,24,39,0.08)',
+				borderWidth: 2.5,
+				pointRadius: 0,
+				tension: 0.2
+			});
+		}
+		for (const [index, series] of chartProjection.series.entries()) {
+			datasets.push({
+				label: series.name,
+				data: series.points.map((point: any) => point.balance),
+				borderColor: chartColors[index % chartColors.length],
+				backgroundColor: 'transparent',
+				borderWidth: 2,
+				pointRadius: 0,
+				tension: 0.2
+			});
+		}
+		return { labels, datasets };
+	};
+
+	const buildChartOptions = () => ({
+		responsive: true,
+		maintainAspectRatio: false,
+		plugins: {
+			legend: {
+				display: true,
+				position: 'bottom' as const,
+				labels: {
+					usePointStyle: true,
+					boxWidth: 8,
+					boxHeight: 8,
+					color: '#64748b',
+					font: { size: 11, weight: 600 }
+				}
+			},
+			tooltip: {
+				enabled: true,
+				callbacks: {
+					label: (context: any) => {
+						const label = context?.dataset?.label ?? '';
+						const yValue = typeof context?.parsed?.y === 'number' ? context.parsed.y : 0;
+						return `${label}: ${formatAxisCurrency(yValue)}`;
+					}
+				}
+			},
+			zeroLine: {}
+		},
+		scales: {
+			x: {
+				ticks: {
+					autoSkip: false,
+					maxRotation: 60,
+					minRotation: 60,
+					color: '#94a3b8',
+					font: { size: 9 }
+				},
+				grid: { color: '#e2e8f0', borderDash: [4, 4] }
+			},
+			y: {
+				min: balanceExtent.min,
+				max: balanceExtent.max,
+				ticks: {
+					color: '#94a3b8',
+					font: { size: 9 },
+					callback: (value: number | string) =>
+						formatAxisCurrency(typeof value === 'string' ? Number(value) : value)
+				},
+				title: {
+					display: true,
+					text: '$ Amount',
+					color: '#64748b',
+					font: { size: 10, weight: '600' }
+				},
+				grid: { color: '#e2e8f0', borderDash: [4, 4] }
+			}
+		}
+	});
+
+	const zeroLinePlugin = {
+		id: 'zeroLine',
+		afterDraw: (chartInstance: Chart) => {
+			const yScale = chartInstance.scales?.y;
+			if (!yScale) return;
+			const zeroY = yScale.getPixelForValue(0);
+			if (zeroY < yScale.top || zeroY > yScale.bottom) return;
+			const ctx = chartInstance.ctx;
+			ctx.save();
+			ctx.strokeStyle = '#94a3b8';
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.moveTo(chartInstance.chartArea.left, zeroY);
+			ctx.lineTo(chartInstance.chartArea.right, zeroY);
+			ctx.stroke();
+			ctx.restore();
+		}
+	};
+
+	const initChart = () => {
+		if (projectionView !== 'balances') return;
+		if (!chartCanvas || chart) return;
+		chart = new Chart(chartCanvas, {
+			type: 'line',
+			data: buildChartData(),
+			options: buildChartOptions(),
+			plugins: [zeroLinePlugin]
+		});
+	};
+
+	$: if (projectionView !== 'balances' && chart) {
+		chart.destroy();
+		chart = null;
+	}
+	$: if (projectionView === 'balances' && chartProjection.series.length === 0 && chart) {
+		chart.destroy();
+		chart = null;
+	}
+	$: if (
+		chart &&
+		projectionView === 'balances' &&
+		projectionVersion &&
+		projectionBalanceSource &&
+		projectionRange
+	) {
+		chart.data = buildChartData();
+		chart.options = buildChartOptions();
+		chart.update();
+	}
+
+	onDestroy(() => {
+		chart?.destroy();
+		chart = null;
+	});
+
+	afterUpdate(() => {
+		initChart();
+	});
 </script>
 
 <div class="app-panel relative">
